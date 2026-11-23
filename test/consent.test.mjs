@@ -116,5 +116,5 @@ test('grant recovery is explicitly scoped ONLY to NEXT client, not the old Bridg
  assert.notEqual(new URL(log[0].url).searchParams.get('client_id'),BRIDGE_OAUTH_CLIENT_ID);
 });
 test('revoking a grant fails closed if there is no authenticated NEXT session',async()=>{
- await assert.rejects(revokeNextGrant({url:'https://myproject.supabase.co',key:'sb_publishable_test',token:''}),/войти/);
+ await assert.rejects(revokeNextGrant({url:'https://myproject.supabase.co',key:'sb_publishable_test',token:''}),/войди/);
 });
