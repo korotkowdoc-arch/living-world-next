@@ -6,6 +6,7 @@
  */
 import {buildNextContext,validateScene} from '../public/core/continuity.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
+import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
 import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
 
 const version='2025-06-18';
@@ -14,6 +15,7 @@ const toolsList=[
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes, and narration guidance. Reports incomplete history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
   {name:'search_story_memories',description:'Search the ENTIRE active branch by exact text substring, including scenes older than 1000. Returns scene IDs and evidence excerpts, never other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},query:{type:'string',minLength:2,maxLength:180},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','query']}},
   {name:'get_story_scene',description:'Retrieve exact original text of a saved scene by ID, annotated whether it belongs to CURRENT active ancestry. Inactive alternatives are NOT canonical facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'}},required:['world_id','scene_id']}},
+  {name:'get_actor_memory',description:'Recall a character from the entire played active branch WITHOUT manual annotation: separately return proven structured events and raw literal mentions with exact source scene IDs. Text mentions are clues, not confirmed facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:2,maxLength:140},limit:{type:'integer',minimum:1,maximum:40},event_offset:{type:'integer',minimum:0},mention_offset:{type:'integer',minimum:0}},required:['world_id','actor']}},
   {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_branch_history',description:'Read exact saved scenes of active branch, newest first, in pages, without other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'get_npc_agency',description:'Read evidence-backed independent NPC plans and their statuses across all annotated active-branch scenes. A plan is not a completed action and there is no hidden background simulation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140}},required:['world_id']}},
@@ -142,6 +144,27 @@ async function callTool(name,args,env,token){
    const active=await rpc(env,token,'nw_scene_in_active_branch',{p_world_id:args.world_id,p_scene_id:args.scene_id});
    return {...rows[0],in_active_branch:active===true,
     memory_policy:active===true?'Confirmed scene in current ancestry':'An alternate/discarded branch: not evidence for CURRENT story'};
+  }
+  case 'get_actor_memory':{
+   const world=await ownerWorld(env,token,args.world_id);
+   const before=await branch(env,token,world);
+   const actor=String(args.actor??'').trim();
+   if(actor.length<2||actor.length>140)throw Error('Actor name must be 2-140 characters');
+   const limit=Math.max(1,Math.min(40,Math.floor(Number(args.limit)||20)));
+   const eventOffset=Math.max(0,Math.floor(Number(args.event_offset)||0));
+   const mentionOffset=Math.max(0,Math.floor(Number(args.mention_offset)||0));
+   const [confirmed,mentions]=await Promise.all([
+    rpc(env,token,'nw_actor_history',{p_world_id:world.id,p_actor:actor,p_limit:limit,p_offset:eventOffset}),
+    rpc(env,token,'nw_search_history',{p_world_id:world.id,p_query:actor,p_limit:limit,p_offset:mentionOffset})
+   ]);
+   const afterWorld=await ownerWorld(env,token,world.id);
+   const after=await branch(env,token,afterWorld);
+   if(afterWorld.active_branch_id!==world.active_branch_id||after.head_scene_id!==before.head_scene_id)
+    throw Error('Active branch changed while collecting actor memory; retry');
+   return {...actorMemoryEvidence({actor,confirmedEvents:confirmed,textMentions:mentions,headSceneId:before.head_scene_id}),
+    next_event_offset:eventOffset+confirmed.length,next_mention_offset:mentionOffset+mentions.length,
+    more_confirmed_may_exist:confirmed.length===limit,more_mentions_may_exist:mentions.length===limit,
+    matches_are_literal:true,active_branch_only:true};
   }
   case 'get_actor_history':{
    await ownerWorld(env,token,args.world_id);
