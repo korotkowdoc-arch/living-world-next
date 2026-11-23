@@ -46,3 +46,17 @@ test('context does not imply unannotated scenes contain no activity',()=>{
  const context=buildNextContext({world,scenes:[s('s',null,'Жизнь продолжается, но события ещё не размечены.') ]});
  assert.match(context.memory_warning,/Неразмеченные/);assert.equal(context.confirmed_scene_count,1);
 });
+test('history remains factual when rules are added afterwards',()=>{
+ const body='Гарри и Малфой стали друзьями после долгой истории.';
+ const old=s('old',null,body,[e('ev-old','relationship','стали друзьями',{a:'Гарри',b:'Малфой',stance:'friends'})]);
+ const projection=replay([old],[lock]);
+ assert.equal(projection.relationships.length,1);
+ assert.equal(projection.validation_warnings.length,0);
+ assert.equal(validateScene({body,events:old.events,directives:[lock]}).ok,false);
+});
+test('respect prohibition is independent from reconciliation prohibition',()=>{
+ const ownerLock={metadata:{relationship_locks:[{a:'Гарри',b:'Малфой',forbid_reconciliation:false,forbid_respect:true}]}};
+ const body='Гарри стал уважать Малфоя за победу.';
+ assert.equal(validateScene({body,events:[e('1','relationship','стал уважать',{a:'Гарри',b:'Малфой',stance:'respect'})],directives:[ownerLock]}).ok,false);
+ assert.equal(validateScene({body,events:[e('1','relationship','стал уважать',{a:'Гарри',b:'Малфой',stance:'hatred'})],directives:[ownerLock]}).ok,true);
+});

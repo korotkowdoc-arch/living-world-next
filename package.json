@@ -1,12 +1,12 @@
 {
   "name": "living-world-next",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Mobile-first causal interactive worlds; ChatGPT narration, Supabase persistence",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check": "node --check public/app.js && node --check public/core/world.mjs && node --check public/core/directives.mjs && node --check public/core/continuity.mjs && node --check public/lib/session.mjs && node --check public/lib/storage.mjs && node --check public/lib/oauth-consent.mjs && node --check public/oauth/consent.js && node --check worker/mcp.mjs",
+    "check": "node --check public/app.js && node --check public/core/world.mjs && node --check public/core/directives.mjs && node --check public/core/continuity.mjs && node --check public/core/revisions.mjs && node --check public/lib/session.mjs && node --check public/lib/storage.mjs && node --check public/lib/oauth-consent.mjs && node --check public/oauth/consent.js && node --check worker/mcp.mjs",
     "dev": "node scripts/serve.mjs"
   },
   "engines": {"node": ">=20"}

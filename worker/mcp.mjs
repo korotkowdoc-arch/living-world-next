@@ -6,7 +6,7 @@
  */
 import {buildNextContext,validateScene} from '../public/core/continuity.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
-import {classifyDirective} from '../public/core/directives.mjs';
+import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
 
 const version='2025-06-18';
 const toolsList=[
@@ -17,6 +17,10 @@ const toolsList=[
   {name:'add_world_directive',description:'Save the owner’s plain-language world rule verbatim. Never rewrite it to sound more conciliatory.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},text:{type:'string'}},required:['world_id','text']}},
   {name:'save_scene',description:'Atomically save an already narrated scene on the currently selected branch using expected_head and request_id; requires owner opt-in auto_save. Events must have literal evidence.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},request_id:{type:'string',format:'uuid'},body:{type:'string'},world_time:{type:['string','null']},events:{type:'array',items:{type:'object'}}},required:['world_id','branch_id','expected_head','expected_rules_version','request_id','body']}},
   {name:'fork_before_scene',description:'Create a new active alternative branch before the given scene; does not delete older history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'},name:{type:'string'}},required:['world_id','scene_id']}},
+  {name:'get_scene_receipt',description:'Check whether a request_id has already saved a scene, especially after a lost network response; never retry with a NEW id blindly.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},request_id:{type:'string',format:'uuid'}},required:['world_id','request_id']}},
+  {name:'revise_scene',description:'Atomically replace a scene in a new branch, retaining an EXACT text prefix and its evidence-backed events. Do not re-use old ending. Old branch is preserved.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},source_scene_id:{type:'string',format:'uuid'},prefix:{type:'string'},continuation:{type:'string'},events:{type:'array',items:{type:'object'}},request_id:{type:'string',format:'uuid'},world_time:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0}},required:['world_id','source_scene_id','prefix','continuation','request_id','expected_rules_version']}},
+  {name:'edit_world_directive',description:'Edit an owner-authored natural-language rule in place with persistent before/after audit log and rules-version check.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},directive_id:{type:'string',format:'uuid'},text:{type:'string'},expected_rules_version:{type:'integer'}},required:['world_id','directive_id','text','expected_rules_version']}},
+  {name:'toggle_world_directive',description:'Disable or enable an existing world rule with an audit log; old scenes remain unchanged.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},directive_id:{type:'string',format:'uuid'},active:{type:'boolean'},expected_rules_version:{type:'integer'}},required:['world_id','directive_id','active','expected_rules_version']}},
   {name:'switch_branch',description:'Switch active branch to an existing owner branch without copying invalid scenes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'}},required:['world_id','branch_id']}}
 ].map(t=>({...t,securitySchemes:[{type:'oauth2',scopes:['email']}],_meta:{securitySchemes:[{type:'oauth2',scopes:['email']}]}}));
 
@@ -88,7 +92,7 @@ async function callTool(name,args,env,token){
    const world=await ownerWorld(env,token,args.world_id);
    const [rules,active,history]=await Promise.all([directives(env,token,world.id),branch(env,token,world),getAllHistory(env,token,world.id)]);
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes});
-   return {...ctx,head_scene_id:active.head_scene_id,history_complete:history.complete,
+   return {...ctx,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     narration_guidance:promptForNarrator({world,directives:rules,history:history.scenes.slice(-2),projection:ctx.memory}),
     warning:history.complete?ctx.memory_warning:'Only latest 1000 scenes were replayed: fetch older pages; DO NOT infer missing facts.'};
   }
@@ -99,13 +103,13 @@ async function callTool(name,args,env,token){
   case 'create_world':{
    const {buildWorldDraft}=await import('../public/core/world.mjs');const draft=buildWorldDraft(args.description);
    const id=await rpc(env,token,'nw_create_world',{p_title:String(args.title||draft.title).slice(0,100),p_seed:draft.seed,p_start_marker:String(args.start_marker||draft.start_marker)});
-   const seedRule=classifyDirective(draft.seed);
-   if(seedRule.relationship_lock)await rpc(env,token,'nw_add_directive',{p_world_id:id,p_text:seedRule.text,p_category:seedRule.category,p_metadata:{relationship_lock:seedRule.relationship_lock,tags:seedRule.tags}});
+   const seedRule=draft.seed.length<=5000?classifyDirective(draft.seed):null;
+   if(seedRule?.relationship_locks.length)await rpc(env,token,'nw_add_directive',{p_world_id:id,p_text:seedRule.text,p_category:seedRule.category,p_metadata:{relationship_lock:seedRule.relationship_lock,relationship_locks:seedRule.relationship_locks,tags:seedRule.tags}});
    return {world_id:id,initial_description:draft.seed};
   }
   case 'add_world_directive':{
    const world=await ownerWorld(env,token,args.world_id);const directive=classifyDirective(args.text);
-   const directiveId=await rpc(env,token,'nw_add_directive',{p_world_id:world.id,p_text:directive.text,p_category:directive.category,p_metadata:{tags:directive.tags,relationship_lock:directive.relationship_lock}});
+   const directiveId=await rpc(env,token,'nw_add_directive',{p_world_id:world.id,p_text:directive.text,p_category:directive.category,p_metadata:{tags:directive.tags,relationship_lock:directive.relationship_lock,relationship_locks:directive.relationship_locks}});
    return {directive_id:directiveId,stored_verbatim:true,classification:directive.category};
   }
   case 'save_scene':{
@@ -128,6 +132,42 @@ async function callTool(name,args,env,token){
    const world=await ownerWorld(env,token,args.world_id);
    const id=await rpc(env,token,'nw_fork_before',{p_world_id:world.id,p_scene_id:assertUuid(args.scene_id),p_name:args.name||'Альтернативная линия'});
    return {new_branch_id:id,old_branch_preserved:true};
+  }
+  case 'get_scene_receipt':{
+   await ownerWorld(env,token,args.world_id);
+   return await rpc(env,token,'nw_scene_receipt',{p_world_id:args.world_id,p_request_id:assertUuid(args.request_id)});
+  }
+  case 'edit_world_directive':{
+   await ownerWorld(env,token,args.world_id);
+   const rule=classifyDirective(args.text);
+   await rpc(env,token,'nw_edit_directive',{p_world_id:args.world_id,p_directive_id:assertUuid(args.directive_id),p_text:rule.text,p_category:rule.category,
+    p_metadata:{tags:rule.tags,relationship_lock:rule.relationship_lock,relationship_locks:rule.relationship_locks},p_expected_version:args.expected_rules_version});
+   return {updated:true,stored_verbatim:true,requires_context_refresh:true};
+  }
+  case 'toggle_world_directive':{
+   await ownerWorld(env,token,args.world_id);
+   if(typeof args.active!=='boolean')throw Error('Explicit active boolean required');
+   await rpc(env,token,'nw_toggle_directive',{p_world_id:args.world_id,p_directive_id:assertUuid(args.directive_id),p_active:args.active,p_expected_version:args.expected_rules_version});
+   return {active:args.active,requires_context_refresh:true};
+  }
+  case 'revise_scene':{
+   const world=await ownerWorld(env,token,args.world_id);
+   if(!world.auto_save)throw Error('Owner disabled MCP autosave');
+   if(world.directive_version!==args.expected_rules_version)throw Error('Rules changed; fetch world context again');
+   assertUuid(args.request_id);assertUuid(args.source_scene_id);
+   const rows=await rest(env,token,`nw_scenes?select=id,body,events,world_time&world_id=eq.${ep(world.id)}&id=eq.${ep(args.source_scene_id)}&limit=1`);
+   const original=rows?.[0];if(!original)throw Error('Source scene not found');
+   if(typeof args.prefix!=='string'||!original.body.startsWith(args.prefix))throw Error('Prefix does not match original scene');
+   if(typeof args.continuation!=='string')throw Error('Missing continuation');
+   const preserved=(Array.isArray(original.events)?original.events:[]).filter(e=>e&&typeof e.evidence==='string'&&e.evidence.trim()&&args.prefix.includes(e.evidence));
+   const all=[...preserved,...(args.events||[])];
+   const rules=await directives(env,token,world.id);
+   const checked=validateScene({body:args.prefix+args.continuation,events:all,directives:rules});
+   if(!checked.ok)throw Error(checked.errors.join(' '));
+   const receipt=await rpc(env,token,'nw_revise_scene',{p_world_id:world.id,p_source_scene_id:args.source_scene_id,
+      p_prefix:args.prefix,p_continuation:args.continuation,p_events:args.events||[],p_request_id:args.request_id,
+      p_world_time:args.world_time??null,p_expected_rules_version:args.expected_rules_version});
+   return {...receipt,saved:true,old_branch_preserved:true,request_id:args.request_id};
   }
   case 'switch_branch':{
    const world=await ownerWorld(env,token,args.world_id);
@@ -155,7 +195,7 @@ export default {
   let msg;try{const raw=await request.text();if(raw.length>1000000)return response(JSON.stringify({error:'Request too large'}),413);msg=JSON.parse(raw);}catch{return response(JSON.stringify(error(null,-32700,'Parse error')),400);}
   if(!msg||msg.jsonrpc!=='2.0'||typeof msg.method!=='string')return response(JSON.stringify(error(msg?.id??null,-32600,'Invalid JSON-RPC request')),400);
   if(msg.id===undefined||msg.method==='notifications/initialized')return new Response(null,{status:202});
-  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.1.0'}})));
+  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.2.0'}})));
   if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
   if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
   if(msg.method==='server/discover')return response(JSON.stringify(done(msg.id,{resultType:'complete',supportedVersions:['2026-07-28',version],capabilities:{tools:{}},ttlMs:0,cacheScope:'public'})));

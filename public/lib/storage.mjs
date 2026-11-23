@@ -8,15 +8,28 @@ export async function getWorld(id){const rows=await dbRequest(`/rest/v1/nw_world
 export async function createWorld(text){
  const draft=buildWorldDraft(text);
  const id=await rpc('nw_create_world',{p_title:draft.title,p_seed:draft.seed,p_start_marker:draft.start_marker});
- const explicit=classifyDirective(draft.seed);
- if(explicit.relationship_lock){await addDirective(id,draft.seed);}
+ if(draft.seed.length<=5000){
+  const explicit=classifyDirective(draft.seed);
+  if(explicit.relationship_locks.length)await addDirective(id,draft.seed);
+ }
  return id;
 }
 export async function listDirectives(worldId){return dbRequest(`/rest/v1/nw_directives?select=*&world_id=eq.${enc(worldId)}&order=created_at.asc`);}
 export async function addDirective(worldId,text){
  const directive=classifyDirective(text);
- return rpc('nw_add_directive',{p_world_id:worldId,p_text:directive.text,p_category:directive.category,p_metadata:{tags:directive.tags,relationship_lock:directive.relationship_lock}});
+ return rpc('nw_add_directive',{p_world_id:worldId,p_text:directive.text,p_category:directive.category,p_metadata:{tags:directive.tags,relationship_lock:directive.relationship_lock,relationship_locks:directive.relationship_locks}});
 }
+export async function editDirective(worldId,directiveId,text,version){
+ const d=classifyDirective(text);return rpc('nw_edit_directive',{p_world_id:worldId,p_directive_id:directiveId,p_text:d.text,p_category:d.category,p_metadata:{tags:d.tags,relationship_lock:d.relationship_lock,relationship_locks:d.relationship_locks},p_expected_version:version});
+}
+export async function setDirectiveActive(worldId,directiveId,active,version){
+ return rpc('nw_toggle_directive',{p_world_id:worldId,p_directive_id:directiveId,p_active:!!active,p_expected_version:version});
+}
+export async function directiveHistory(worldId){return dbRequest(`/rest/v1/nw_directive_edits?select=*&world_id=eq.${enc(worldId)}&order=created_at.desc&limit=100`);}
+export async function reviseScene({world,sourceSceneId,prefix,continuation,events=[],requestId=crypto.randomUUID(),worldTime=null}){
+ return rpc('nw_revise_scene',{p_world_id:world.id,p_source_scene_id:sourceSceneId,p_prefix:prefix,p_continuation:continuation,p_events:events,p_request_id:requestId,p_world_time:worldTime,p_expected_rules_version:world.directive_version});
+}
+export async function sceneReceipt(worldId,requestId){return rpc('nw_scene_receipt',{p_world_id:worldId,p_request_id:requestId});}
 export async function listBranches(worldId){return dbRequest(`/rest/v1/nw_branches?select=*&world_id=eq.${enc(worldId)}&order=created_at.asc`);}
 export async function activeHistory(worldId,{limit=200,offset=0}={}){
  return rpc('nw_active_history',{p_world_id:worldId,p_limit:limit,p_offset:offset});

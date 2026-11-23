@@ -19,11 +19,25 @@ test('all psychological principles are in every narrator prompt',()=>{
 test('natural-language rule stores exact text, no positive rewrites',()=>{
  const t='Гарри и Малфой — враги. Никакого примирения и уважения!';const d=classifyDirective(t);
  assert.equal(d.text,t);assert.equal(d.category,'relations');
- assert.deepEqual(d.relationship_lock,{a:'Гарри',b:'Малфой',forbid_reconciliation:true});
+ assert.deepEqual(d.relationship_lock,{a:'Гарри',b:'Малфой',forbid_reconciliation:true,forbid_respect:true});
  assert.equal(extractLocks([{metadata:{relationship_lock:d.relationship_lock}}]).length,1);
  assert.equal(pairKey('Малфой','ГАРРИ'),pairKey('гарри','МАЛФОЙ'));
 });
 test('ambiguous instructions remain as text, not invented structured relationships',()=>{
  const d=classifyDirective('Все меня ненавидят, но я не скажу кто');assert.equal(d.relationship_lock,null);
  assert.equal(d.text,'Все меня ненавидят, но я не скажу кто');
+});
+test('explicit anti-respect condition protects a different axis from friendship',()=>{
+ const rule=classifyDirective('Гарри и Малфой — враги. Никакого уважения.');
+ assert.equal(rule.relationship_lock.forbid_respect,true);
+ assert.equal(rule.relationship_lock.forbid_reconciliation,false);
+});
+test('several pairs do not inherit the ban from an unrelated pair',()=>{
+ const rule=classifyDirective('Гарри и Малфой — враги. Никакого примирения. Рон и Невилл — соперники.');
+ assert.equal(rule.relationship_locks.length,1);
+ assert.equal(rule.relationship_locks[0].a,'Гарри');
+});
+test('an archived directive stops blocking new scenes but remains available for audit',()=>{
+ const lock={active:false,metadata:{relationship_lock:{a:'Гарри',b:'Малфой',forbid_reconciliation:true}}};
+ assert.deepEqual(extractLocks([lock]),[]);
 });

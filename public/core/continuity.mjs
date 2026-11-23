@@ -10,7 +10,7 @@ export function validateScene({body,events=[],directives=[]}) {
   if(typeof body!=='string'||body.trim().length<10)errors.push('Текст сцены слишком короткий.');
   if(typeof body==='string'&&body.length>200000)errors.push('Сцена длиннее 200 000 символов.');
   if(!Array.isArray(events)||events.length>100)errors.push('Слишком много событий или неверный формат.');
-  const locks=new Set(extractLocks(directives).map(x=>pairKey(x.a,x.b)));
+  const locks=new Map(extractLocks(directives).map(x=>[pairKey(x.a,x.b),x]));
   const ids=new Set();
   for(const [i,event] of (Array.isArray(events)?events:[]).entries()){
     const prefix=`Событие ${i+1}`;
@@ -21,8 +21,11 @@ export function validateScene({body,events=[],directives=[]}) {
     if(!asText(event.evidence)||!body.includes(event.evidence))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
     if(event.type==='relationship'){
       if(!asText(event.a)||!asText(event.b))errors.push(`${prefix}: нужны оба участника.`);
-      if(locks.has(pairKey(event.a,event.b))&&RECONCILED.has(event.stance))
+      const lock=locks.get(pairKey(event.a,event.b));
+      if(lock?.forbid_reconciliation&&RECONCILED.has(event.stance))
         errors.push(`${prefix}: противоречит закреплённому запрету на примирение.`);
+      if(lock?.forbid_respect&&(event.stance==='respect'||event.stance==='admiration'||event.respect===true))
+        errors.push(`${prefix}: противоречит закреплённому запрету на уважение.`);
     }
     if(event.type==='money'){
       if(!asText(event.actor)||!asText(event.currency)||!Number.isSafeInteger(event.delta))
@@ -41,7 +44,8 @@ export function replay(scenes=[],directives=[]) {
   const evidence=[]; const failures=[];
   for(const scene of scenes){
     for(const event of (Array.isArray(scene.events)?scene.events:[])){
-      const result=validateScene({body:scene.body,events:[event],directives});
+      // Current rules must NEVER retroactively invalidate valid old scenes. Locks apply at commit time.
+      const result=validateScene({body:scene.body,events:[event],directives:[]});
       if(!result.ok){failures.push({scene_id:scene.id,event_id:event?.id,errors:result.errors});continue;}
       const from={scene_id:scene.id,event_id:event.id,world_time:scene.world_time??null};
       const value={...event,source:from};
@@ -93,9 +97,9 @@ export function branchAncestry(allScenes,headId) {
 export function buildNextContext({world,directives=[],scenes=[]}){
   const projection=replay(scenes,directives);
   return {world_id:world.id,world_title:world.title,world_seed:world.seed,start_marker:world.start_marker,
-    active_branch_id:world.active_branch_id,head_scene_id:scenes.at(-1)?.id??null,
+    active_branch_id:world.active_branch_id,head_scene_id:scenes.at(-1)?.id??null,directive_version:world.directive_version,auto_save:world.auto_save,
     confirmed_scene_count:scenes.length,
-    directives:directives.map(({text,category,metadata})=>({text,category,metadata})),
+    directives:directives.filter(d=>d.active!==false).map(({text,category,metadata})=>({text,category,metadata})),
     memory:projection,
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,

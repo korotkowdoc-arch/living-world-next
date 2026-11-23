@@ -1,7 +1,8 @@
 import {FOUNDATIONS,buildWorldDraft,promptForNarrator} from './core/world.mjs';
 import {replay,validateScene} from './core/continuity.mjs';
+import {prepareRevision} from './core/revisions.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
-import {listWorlds,getWorld,createWorld,listDirectives,addDirective,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld} from './lib/storage.mjs';
+import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
@@ -64,25 +65,74 @@ function renderStory(){const w=state.world;
   const container=node('div','story');state.scenes.forEach((s,i)=>{
     const card=node('article','scene');const chapter=node('h3','',`Сцена ${i+1}${s.world_time?' · '+s.world_time:''}`);const details=node('details','scene-details');if(i===state.scenes.length-1)details.open=true;
     const summary=node('summary','',details.open?'Текст сцены':'Читать сцену');const body=node('div','scene-body',s.body);add(details,summary,body);
-    const actions=add(node('div','scene-actions'),button('На это: новая ветка',()=>{state.revision={scene_id:s.id};renderWorld();document.querySelector('#sceneEditor')?.focus();},'text-button'));
+    const actions=add(node('div','scene-actions'),button('На это: новая ветка',()=>{state.revision={scene_id:s.id,source_scene:s};renderWorld();document.querySelector('#sceneEditor')?.focus();},'text-button'));
     add(card,chapter,details,actions);container.append(card);
   });root.append(container);
-  const p=panel(node('div','eyebrow',state.revision?'Режим альтернативной истории':'Резервное сохранение'),title(state.revision?'Перепиши выбранную сцену':'Добавить сцену вручную'));
-  if(state.revision)p.append(node('div','notice','Будет создана новая ветка ДО выбранной сцены. Прежний вариант останется доступным. Введи полный заменяющий текст сцены.'));
-  const editor=field('Текст новой сцены…','field large-field');editor.id='sceneEditor';editor.rows=8;const worldTime=node('input','field');worldTime.placeholder='Время сцены (если известно), например: 1991-09-01 10:00';worldTime.type='text';
-  add(p,editor,para('Время не будет придумано автоматически.'),worldTime,row(button(state.revision?'Создать ветку и сохранить':'Сохранить сцену',()=>busy(async()=>{
-    const body=editor.value.trim();const check=validateScene({body,events:[],directives:state.directives});if(!check.ok)throw Error(check.errors.join(' '));
-    if(state.revision){await forkBefore(w.id,state.revision.scene_id);state.revision=null;await reloadWorld(w.id);}
-    await saveScene({world:state.world,body,worldTime:worldTime.value.trim()||null});
+  const changing=!!state.revision;
+  const p=panel(node('div','eyebrow',changing?'Точная правка без потери прошлого':'Резервное сохранение'),title(changing?'На это: другое продолжение':'Добавить сцену вручную'));
+  if(changing)p.append(para('Начало выбранной сцены можно сохранить. Укажи последнюю короткую уникальную фразу, которая должна остаться. Если оставить поле пустым, вся сцена будет заменена. Старая ветка сохранится.'));
+  const anchor=changing?node('input','field'):null;
+  if(anchor){anchor.placeholder='Последняя сохранённая фраза (необязательно)';anchor.type='text';p.append(anchor);}
+  const editor=field(changing?'Напиши новое продолжение после сохранённой фразы…':'Текст новой сцены…','field large-field');editor.id='sceneEditor';editor.rows=8;
+  const worldTime=node('input','field');worldTime.placeholder='Время сцены (если известно), например: 1991-09-01 10:00';worldTime.type='text';
+  if(changing)worldTime.value=state.revision.source_scene.world_time||'';
+  const save=button(changing?'Сохранить новую ветку целиком':'Сохранить сцену',()=>busy(async()=>{
+    if(changing){
+      const rev=prepareRevision(state.revision.source_scene,{lastKeptQuote:anchor.value,newContinuation:editor.value});
+      const checked=validateScene({body:rev.body,events:rev.preservedEvents,directives:[]});
+      if(!checked.ok)throw Error(checked.errors.join(' '));
+      // The DB makes fork+replacement one transaction; no empty branch after an error.
+      await reviseScene({world:w,sourceSceneId:state.revision.scene_id,prefix:rev.prefix,continuation:rev.continuation,worldTime:worldTime.value.trim()||null});
+      state.revision=null;
+    }else{
+      const body=editor.value.trim();const checked=validateScene({body,events:[],directives:state.directives});
+      if(!checked.ok)throw Error(checked.errors.join(' '));
+      await saveScene({world:w,body,worldTime:worldTime.value.trim()||null});
+    }
     await reloadWorld(w.id);toast('Сцена сохранена.');renderWorld();
-  })),...(state.revision?[button('Отменить',()=>{state.revision=null;renderWorld();},'btn ghost')]:[])));
+  }));
+  add(p,editor,para(changing?'Подтверждённые события в сохранённом начале сцены останутся; события отменённого окончания не перейдут в новую ветку.':'Время не будет придумано автоматически.'),worldTime,
+    row(save,...(changing?[button('Отменить',()=>{state.revision=null;renderWorld();},'btn ghost')]:[])));
   root.append(p);
 }
-function renderDirectives(){const w=state.world;add(root,panel(node('div','eyebrow','Никаких длинных форм'),title('Измени мир обычными словами'),para('Например: «Гарри и Малфой — враги. Они никогда не помирятся». Условие сохранится отдельно от будущих сцен.'),(()=>{
-  const text=field('Что должно измениться или оставаться неизменным?','field large-field');const c=node('div');add(c,text,row(button('Запомнить условие',()=>busy(async()=>{await addDirective(w.id,text.value);state.directives=await listDirectives(w.id);toast('Условие сохранено.');renderWorld();}))));return c;
-})()));
- add(root,panel(title('Твои условия'),...(state.directives.length?state.directives.map(d=>{const p=node('div','rule user');add(p,node('strong','',d.category),para(d.text));return p;}):[para('Пока нет дополнительных условий. Основа мира и постоянные принципы уже действуют.')])));
- const f=panel(title('Постоянные принципы рассказчика'));for(const rule of FOUNDATIONS){const item=node('div','rule');add(item,node('strong','',rule.name),para(rule.text));f.append(item);}root.append(f);
+function renderDirectives(){const w=state.world;
+  add(root,panel(node('div','eyebrow','Никаких длинных форм'),title('Измени мир обычными словами'),para('Каждое условие сохраняется дословно. Его можно позже исправить или отключить, не переписывая прошлые сцены.'),(()=>{
+    const text=field('Например: «Гарри и Малфой — враги. Никакого примирения и уважения».','field large-field');
+    return add(node('div'),text,row(button('Запомнить условие',()=>busy(async()=>{
+      await addDirective(w.id,text.value);await reloadWorld(w.id);toast('Условие сохранено.');renderWorld();
+    }))));
+  })()));
+  const items=panel(title('Твои условия'));
+  if(!state.directives.length)items.append(para('Дополнительных условий нет. Постоянные принципы действуют всегда.'));
+  for(const rule of state.directives){
+    const part=node('div','rule user');add(part,node('strong','',rule.active===false?'Отключено · '+rule.category:rule.category),para(rule.text));
+    const editor=field('Исправь формулировку…');editor.value=rule.text;editor.rows=3;editor.hidden=true;
+    const edit=button('Изменить',()=>{editor.hidden=!editor.hidden;},'text-button');
+    const save=button('Сохранить правку',()=>busy(async()=>{
+      await editDirective(w.id,rule.id,editor.value,w.directive_version);
+      await reloadWorld(w.id);toast('Правило изменено с записью в журнале.');renderWorld();
+    }),'btn secondary');
+    const toggle=button(rule.active===false?'Включить':'Отключить',()=>busy(async()=>{
+      await setDirectiveActive(w.id,rule.id,rule.active===false,w.directive_version);
+      await reloadWorld(w.id);toast('Состояние правила сохранено.');renderWorld();
+    }),'text-button');
+    add(part,row(edit,toggle),editor,row(save));save.hidden=true;
+    edit.addEventListener('click',()=>{save.hidden=editor.hidden;});
+    items.append(part);
+  }
+  root.append(items);
+  const history=panel(title('Журнал изменений'),para('Предыдущие формулировки остаются в истории аудита.'));
+  const hbox=node('div');history.append(button('Показать последние изменения',()=>busy(async()=>{
+    const edits=await directiveHistory(w.id);hbox.replaceChildren();
+    if(!edits.length)hbox.append(para('Изменений ещё нет.'));
+    for(const h of edits){const cell=node('div','rule');
+      add(cell,node('strong','',`${h.action} · ${new Date(h.created_at).toLocaleString('ru-RU')}`),para('Было: '+(h.before_state?.text||'')),para('Стало: '+(h.after_state?.text||'')));
+      hbox.append(cell);
+    }
+  }),'btn secondary'),hbox);root.append(history);
+  const f=panel(title('Постоянные принципы рассказчика'));
+  for(const rule of FOUNDATIONS){const item=node('div','rule');add(item,node('strong','',rule.name),para(rule.text));f.append(item);}
+  root.append(f);
 }
 function renderBranches(){const w=state.world;add(root,panel(title('Альтернативные линии'),para('«На это» создаёт новую ветку от состояния перед выбранной сценой. История старой ветки не удаляется.')));
  const list=panel();state.branches.forEach(b=>{const active=b.id===w.active_branch_id;const card=node('div','branch-card');add(card,node('span','',b.name+(active?' · текущая':'')),button(active?'Открыта':'Перейти',()=>busy(async()=>{if(active)return;await switchBranch(w.id,b.id);await reloadWorld(w.id);renderWorld();}),'btn secondary'));list.append(card);});root.append(list);
