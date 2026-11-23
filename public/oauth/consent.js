@@ -1,5 +1,5 @@
 import {readConfig,readSession,saveConfig,signIn,activeToken} from '../lib/session.mjs';
-import {authorizationDetails,decideAuthorization,safeChatGPTCallback,assertNextAuthorization,isAuthorizationId} from '../lib/oauth-consent.mjs';
+import {authorizationDetails,decideAuthorization,safeChatGPTCallback,trustedOAuthRequest,verifyBridgeOwner,isAuthorizationId} from '../lib/oauth-consent.mjs';
 import {authReturnPath} from '../lib/oauth-return.mjs';
 const mount=document.querySelector('#consent');
 const id=new URL(location.href).searchParams.get('authorization_id');
@@ -21,7 +21,7 @@ function showLogin(){
  const email=entry('email','Email');email.autocomplete='email';
  const password=entry('password','Пароль');password.autocomplete='current-password';
  const box=form();
- add(box,n('p','small','Для входа нужен пароль владельца миров NEXT, не пароль панели Supabase.com.'),
+ add(box,n('p','small','Для подтверждения нужен вход владельца мира, не пароль панели Supabase.com. Если уже вошёл в NEXT, повторный пароль не понадобится.'),
   email,password,add(n('div','btn-row'),btn('Войти и продолжить',()=>run(async()=>{
    try{await signIn(email.value,password.value);password.value='';await showDetails();}
    catch(e){password.value='';throw e;}
@@ -35,14 +35,19 @@ function showLogin(){
 }
 async function showDetails(){if(!readConfig())return showSetup();if(!readSession())return showLogin();mount.replaceChildren(n('div','loading','Проверяю запрос подключения…'));
  try{
-  const token=await activeToken();const c=readConfig();const details=assertNextAuthorization(await authorizationDetails({...c,token,id}),id);
-  if(details.redirect_url)return redirect(details.redirect_url);
+  const token=await activeToken();const c=readConfig();
+  const details=await authorizationDetails({...c,token,id});
+  const route=trustedOAuthRequest(details,id);
+  if(route.client.kind==='bridge')await verifyBridgeOwner({...c,token});
+  if(route.redirect_url)return redirect(route.redirect_url);
   const client=details.client||{};const box=form();
   add(box,n('h2','',client.name||'ChatGPT'),n('p','small','Сервис запрашивает разрешение действовать от твоего имени. Прочитай адрес и права перед подтверждением.'),
      n('p','small','Адрес приложения: '+(client.uri||client.id||'не указан')),
      n('p','small','Разрешённый возврат: '+(details.redirect_uri||'не указан')),
      n('p','small','Запрошенные права: '+(details.scope||'не указаны')),
-     n('div','notice','После подключения ChatGPT сможет читать миры и при включённом автосохранении записывать сыгранные сцены. Не подключай неизвестное приложение.'));
+     n('div','notice',route.client.kind==='bridge'
+       ?'Старый LIVING WORLD Bridge: действуют прежние ограничения чтения и записи. Миры NEXT через Bridge не доступны.'
+       :'LIVING WORLD NEXT: ChatGPT сможет читать миры и сохранять сцены только при включённом автосохранении.'));
   const buttons=n('div','btn-row');add(buttons,btn('Разрешить',()=>run(async()=>{redirect(await decideAuthorization({...c,token:await activeToken(),id,approved:true}));})),
     btn('Отклонить',()=>run(async()=>{redirect(await decideAuthorization({...c,token:await activeToken(),id,approved:false}));}),'btn ghost'));
   box.append(buttons);mount.replaceChildren(n('div','eyebrow','OAuth 2.1 · разрешения'),n('h1','hero-title','Подтверждение доступа'),box);
@@ -52,7 +57,7 @@ async function showDetails(){if(!readConfig())return showSetup();if(!readSession
    const link=n('a','btn secondary','Открыть настройки Supabase');
    link.href='https://supabase.com/dashboard/project/bcwzlsljcxubqtvzsucz/auth/url-configuration';link.target='_blank';link.rel='noopener noreferrer';
    mount.append(link);
-  }else mount.append(btn('Повторить',()=>run(showDetails),'btn secondary'));
+  }else if(e.code!=='OAUTH_ALREADY_PROCESSED')mount.append(btn('Повторить',()=>run(showDetails),'btn secondary'));
   const back=n('a','text-button','← Вернуться к мирам');back.href='/';mount.append(back);
  }
 }

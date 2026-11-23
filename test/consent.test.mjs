@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {isAuthorizationId,assertAuthorizationId,safeChatGPTCallback,authorizationDetails,decideAuthorization,assertNextAuthorization,NEXT_REDIRECT_URI} from '../public/lib/oauth-consent.mjs';
+import {isAuthorizationId,assertAuthorizationId,safeChatGPTCallback,authorizationDetails,decideAuthorization,assertNextAuthorization,NEXT_REDIRECT_URI,trustedOAuthRequest,TRUSTED_OAUTH_CLIENTS,BRIDGE_OAUTH_CLIENT_ID,BRIDGE_REDIRECT_URIS,verifyBridgeOwner} from '../public/lib/oauth-consent.mjs';
 const id='exampleauthrequest0123456789abcdef';const base={url:'https://myproject.supabase.co',key:'sb_publishable_test',token:'access',id};
 test('consent accepts Supabase opaque authorization IDs, rejects unsafe path segments',()=>{
  assert.equal(assertAuthorizationId(id),id);
@@ -61,4 +61,42 @@ test('a genuinely expired OAuth request is distinguished from an invalid Origin'
 test('a different Supabase HTTP failure is never masked as expiration',async()=>{
  const fetchImpl=async()=>Response.json({msg:'invalid arbitrary configuration'},{status:400});
  await assert.rejects(authorizationDetails({...base,fetchImpl}),e=>e.code==='OAUTH_RESPONSE_ERROR'&&/HTTP 400/.test(e.message));
+});
+
+test('shared OAuth screen accepts two specific clients but rejects swapped redirect URIs',()=>{
+ assert.equal(TRUSTED_OAUTH_CLIENTS.length,2);
+ const next={authorization_id:id,client:{id:'9ec1beb6-e638-432b-93fe-405e0bd01e53'},redirect_uri:NEXT_REDIRECT_URI};
+ const bridge={authorization_id:id,client:{id:BRIDGE_OAUTH_CLIENT_ID},redirect_uri:BRIDGE_REDIRECT_URIS[0]};
+ assert.equal(trustedOAuthRequest(next,id).client.kind,'next');
+ assert.equal(trustedOAuthRequest(bridge,id).client.kind,'bridge');
+ assert.throws(()=>assertNextAuthorization(bridge,id));
+ assert.throws(()=>trustedOAuthRequest({...next,redirect_uri:BRIDGE_REDIRECT_URIS[0]},id));
+ assert.throws(()=>trustedOAuthRequest({...bridge,redirect_uri:NEXT_REDIRECT_URI},id));
+ assert.throws(()=>trustedOAuthRequest({...bridge,client:{id:'unknown'}},id));
+});
+test('previously granted OAuth goes directly to its exactly registered ChatGPT callback',()=>{
+ for(const callback of [NEXT_REDIRECT_URI,...BRIDGE_REDIRECT_URIS]){
+  const redirect_url=callback+'?code=approved&state=unchanged';
+  const route=trustedOAuthRequest({redirect_url},id);
+  assert.equal(route.redirect_url,redirect_url);
+ }
+ for(const target of [
+  'https://attacker.test/callback?code=x',
+  NEXT_REDIRECT_URI+'#fragment',
+  NEXT_REDIRECT_URI,
+  BRIDGE_REDIRECT_URIS[0]+'?token=untrusted'
+ ])assert.throws(()=>safeChatGPTCallback(target));
+});
+test('old Bridge consent requires server-confirmed owner, not locally stored user metadata',async()=>{
+ const opts={url:'https://example.supabase.co',key:'sb_publishable_test',token:'session-token'};
+ const valid=await verifyBridgeOwner({...opts,fetchImpl:async(_url,req)=>{
+  assert.equal(req.headers.authorization,'Bearer session-token');
+  return Response.json({id:'0a3fbf41-c3c6-4743-a88c-f9a7870fd244'});
+ }});
+ assert.equal(valid,true);
+ await assert.rejects(verifyBridgeOwner({...opts,fetchImpl:async()=>Response.json({id:'someone-else'})}),/не является владельцем/);
+});
+test('already processed OAuth ID is recognized without an endless retry button',async()=>{
+ const fetchImpl=async()=>Response.json({msg:'authorization request cannot be processed'},{status:400});
+ await assert.rejects(authorizationDetails({...base,fetchImpl}),e=>e.code==='OAUTH_ALREADY_PROCESSED');
 });

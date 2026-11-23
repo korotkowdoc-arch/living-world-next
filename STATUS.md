@@ -94,3 +94,9 @@
 - [x] v0.6.5: OAuth-screen has exit to worlds, retry after incorrect password, return from NEXT login to OAuth using same-origin paths, reuses existing NEXT session; Supabase Dashboard sessions are separate.
 - [x] Service worker cannot cache OAuth URLs with query parameters. Cache version v7.
 - [ ] Full ChatGPT token exchange not confirmed.
+
+## OAuth v0.7.0 — общий экран для двух клиентов
+- [x] NEXT и Bridge: раздельные точные client ID и ChatGPT callback. Bridge дополнительно проверяет владельца по Supabase /auth/v1/user.
+- [x] Повторно выданное разрешение: одноразовый redirect_url ведёт сразу в ChatGPT, а HTTP 400 завершённого authorization_id теперь не предлагает бесконечный повтор.
+- [ ] OAuth Server настроен глобально: Authorization Path объединяется с Site URL. Пока он ведёт на устаревший living-world-a3c.pages.dev, новый код NEXT не получает запросы автоматически. Для общего экрана нужно Site URL=https://living-world-next.pages.dev, Authorization Path=/oauth/consent; адрес старого сайта оставить в Redirect URLs (и проверить старые ссылки сброса пароля). Из доступных инструментов изменить этот параметр нельзя.
+- [ ] Пользовательский E2E: новое подключение ChatGPT → OAuth callback → обмен токена → list_worlds, отдельно проверить старый Bridge.
