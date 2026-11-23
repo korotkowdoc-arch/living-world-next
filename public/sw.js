@@ -1,5 +1,5 @@
 /** Offline app shell only. NEVER cache Supabase, MCP, responses, or personal story data. */
-const CACHE='living-world-next-shell-v11';
+const CACHE='living-world-next-shell-v12';
 const SHELL=['/','/index.html','/style.css','/app.js','/manifest.webmanifest','/icon.svg',
  '/core/reader.mjs','/core/actor-memory.mjs','/core/story-drivers.mjs','/core/world.mjs','/core/continuity.mjs','/core/revisions.mjs','/core/directives.mjs','/core/portable.mjs','/core/literary-review.mjs','/core/request-identity.mjs',
  '/lib/session.mjs','/lib/storage.mjs','/lib/public-config.mjs','/lib/oauth-consent.mjs','/lib/oauth-return.mjs'];
@@ -21,5 +21,12 @@ self.addEventListener('fetch',e=>{
      const clone=response.clone();e.waitUntil(caches.open(CACHE).then(c=>c.put(request,clone)));
    }
    return response;
- }).catch(async()=>await caches.match(request)||await caches.match('/index.html')));
+ }).catch(async()=>{
+  const cached=await caches.match(request);
+  if(cached)return cached;
+  if(request.mode==='navigate')return await caches.match('/index.html')||
+    new Response('Offline page unavailable',{status:503,headers:{'content-type':'text/plain'}});
+  // An HTML document is NOT a valid JS module, stylesheet, or manifest.
+  return new Response('Offline asset unavailable',{status:503,headers:{'content-type':'text/plain'}});
+ }));
 });

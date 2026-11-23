@@ -12,3 +12,9 @@ test('PWA shell never fetch-caches OAuth pages or cross-origin user data',()=>{
  assert.match(sw,/if\(!SHELL.includes\(path\)\)return/);
  assert.doesNotMatch(sw,/['"]\/oauth\/consent\.html['"]/);
 });
+
+test('missing offline JS never falls back to index HTML as a module',()=>{
+ assert.match(sw,/request.mode==='navigate'/);
+ assert.match(sw,/Offline asset unavailable/);
+ assert.doesNotMatch(sw,/caches.match\(request\)\|\|await caches.match\('\/index.html'\)/);
+});
