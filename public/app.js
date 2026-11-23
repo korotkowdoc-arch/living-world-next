@@ -4,6 +4,7 @@ import {prepareRevision} from './core/revisions.mjs';
 import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
 import {storyDrivers} from './core/story-drivers.mjs';
+import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
@@ -105,7 +106,43 @@ async function reloadWorld(id){const [world,branches,directives,history]=await P
   const branch=branches.find(b=>b.id===world.active_branch_id);
   state.world={...world,head_scene_id:branch?.head_scene_id||null};state.branches=branches;state.directives=directives;state.scenes=history.slice().reverse();state.hasOlder=history.length===50;state.historyComplete=!state.hasOlder;
 }
-function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,button('← Все миры',()=>busy(openWorlds),'back'),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
+/** Read-only cloud change detection: never replace the text being read or edited. */
+let syncChecking=false;
+function confirmLeaveDraft(){
+ const editor=document.querySelector('#sceneEditor');
+ return !editor?.value?.trim()||confirm('В редакторе есть несохранённый текст. Загрузить облачную версию и оставить правки?');
+}
+async function refreshFromCloud(worldId){
+ if(!confirmLeaveDraft())return;
+ await reloadWorld(worldId);
+ renderWorld();
+ toast('История и настройки синхронизированы.');
+}
+async function checkCloudChanges(){
+ if(syncChecking||state.pending||state.screen!=='world'||!state.world||!readSession()||document.visibilityState!=='visible')return;
+ syncChecking=true;
+ const snapshot=state.world;
+ try{
+  const latest=await getWorld(snapshot.id);
+  if(latest.updated_at===snapshot.updated_at&&latest.active_branch_id===snapshot.active_branch_id&&
+     latest.directive_version===snapshot.directive_version&&latest.auto_save===snapshot.auto_save)return;
+  const branches=await listBranches(snapshot.id);
+  const head=branches.find(b=>b.id===latest.active_branch_id)?.head_scene_id??null;
+  const change=detectWorldChange(snapshot,latest,head);
+  if(!change||state.world?.id!==snapshot.id||state.screen!=='world')return;
+  if(document.querySelector('#cloud-change-banner'))return;
+  const buttonReload=button('Загрузить изменения',()=>busy(()=>refreshFromCloud(snapshot.id)),'btn secondary');
+  const banner=panel(title('Есть изменения в облаке'),para(change.message),
+   para('Текст и место чтения сохранены. Новые данные загрузятся только по твоему нажатию.'),
+   row(buttonReload));
+  banner.id='cloud-change-banner';
+  banner.setAttribute('role','status');
+  root.prepend(banner);
+ }catch(e){console.warn('Cloud change check skipped',e);}
+ finally{syncChecking=false;}
+}
+
+function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
   const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
   if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
@@ -353,6 +390,10 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
 accountButton.addEventListener('click',()=>busy(async()=>{if(readSession()){await signOut();showAuth();}else showAuth();}));
 document.querySelector('#homeLink').addEventListener('click',e=>{e.preventDefault();busy(openWorlds);});
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Ошибка подключения. Попробуй обновить страницу.',true);});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void checkCloudChanges();});
+window.addEventListener('focus',()=>void checkCloudChanges());
+// While visible, check only inexpensive owner/branch metadata; never download scenes automatically.
+setInterval(()=>{if(document.visibilityState==='visible')void checkCloudChanges();},90000);
 if(!(readSession()&&resumeOAuth()))openWorlds();
 
 if('serviceWorker' in navigator && window.isSecureContext)navigator.serviceWorker.register('/sw.js').catch(()=>{});
