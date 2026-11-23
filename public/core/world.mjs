@@ -55,7 +55,10 @@ export function promptForNarrator({world, directives = [], history = [], project
   const locks=extractLocks(active);
   if(locks.length)blocks.push('ЖЁСТКИЕ ОГРАНИЧЕНИЯ ОТНОШЕНИЙ — НЕ ПЕРЕОСМЫСЛЯЙ:\n' + locks.map(x=>`${x.a} ↔ ${x.b}: ${x.forbid_reconciliation?'нет примирения/дружбы; ':''}${x.forbid_respect?'нет взаимного уважения; ':''}совместная опасность/помощь не меняет эту установку`).join('\n'));
   if (projection){
-    blocks.push('ДОКАЗАТЕЛЬНАЯ ПАМЯТЬ ДЛЯ СЛЕДУЮЩЕЙ СЦЕНЫ (выборка, не исчерпывающий архив):\n' + JSON.stringify(limitedNarratorMemory(projection)));
+    const sample=limitedNarratorMemory(projection);
+    blocks.push('ДОКАЗАТЕЛЬНАЯ ПАМЯТЬ ДЛЯ СЛЕДУЮЩЕЙ СЦЕНЫ (выборка, не исчерпывающий архив):\n' + JSON.stringify(sample));
+    const omitted=Object.entries(sample.omitted||{});
+    if(omitted.length)blocks.push('ПРОПУЩЕННЫЕ ЗАПИСИ ДЛИННОЙ ПАМЯТИ (не значит, что событий не было): '+omitted.map(([key,count])=>key+': '+count).join('; ')+'. Запроси первоисточники через MCP перед утверждением фактов.');
     blocks.push('Если краткая память не содержит нужного факта, он НЕ становится ложным или неизвестным — найди первоисточник в MCP по всей действующей ветке.');
     const pending=(projection.plans||[]).filter(p=>['active','paused'].includes(p.status));
     if(pending.length)blocks.push('САМОСТОЯТЕЛЬНЫЕ ПЛАНЫ ПЕРСОНАЖЕЙ (это ЕЩЁ НЕ произошедшие действия):\n'+
