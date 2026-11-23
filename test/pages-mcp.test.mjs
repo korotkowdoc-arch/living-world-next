@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {onRequest,MCP_BASE} from '../functions/[[path]].js';
-import {PUBLIC_SUPABASE_CONFIG} from '../public/lib/public-config.mjs';
+import {PUBLIC_SUPABASE_CONFIG,PUBLIC_OAUTH_CLIENT_ID} from '../public/lib/public-config.mjs';
 const routeJson=JSON.parse(readFileSync(new URL('../public/_routes.json',import.meta.url),'utf8'));
 const env={SUPABASE_OAUTH_CLIENT_ID:'next-chatgpt-client'};
 const req=(path,method='GET',body=null)=>new Request('https://living-world-next.pages.dev'+path,{method,headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
@@ -41,9 +41,10 @@ test('MCP protected resource and unauthenticated tool call use the canonical Pag
  assert.match(initialize.headers.get('www-authenticate'),/oauth-protected-resource/);
 });
 
-test('missing OAuth client binding fails closed for user data',async()=>{
+test('separately registered NEXT OAuth public client ID activates readiness without secrets',async()=>{
+ assert.equal(PUBLIC_OAUTH_CLIENT_ID,'9ec1beb6-e638-432b-93fe-405e0bd01e53');
  const health=await handle(req('/health'),undefined,{});
- assert.equal((await health.json()).oauth_metadata_ready,false);
+ assert.equal((await health.json()).oauth_metadata_ready,true);
  const call=await handle(req('/mcp','POST',{jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'list_worlds',arguments:{}}}),undefined,{});
  assert.equal(call.status,401);
 });
@@ -51,4 +52,9 @@ test('missing OAuth client binding fails closed for user data',async()=>{
 test('routing configuration does not consume normal iPhone static requests',()=>{
  for(const p of ['/','/index.html','/style.css','/app.js','/oauth/consent.html','/manifest.webmanifest'])
    assert.ok(!routeJson.include.includes(p),p);
+});
+
+test('Cloudflare OAuth client identifier is overridable without changing public project key',async()=>{
+ const result=await handle(req('/health'),undefined,{SUPABASE_OAUTH_CLIENT_ID:'a-different-client'});
+ assert.equal((await result.json()).oauth_metadata_ready,true);
 });

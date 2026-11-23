@@ -5,4 +5,4 @@ export const PUBLIC_SUPABASE_CONFIG=Object.freeze({
 });
 // Public identifier for the separately registered NEXT OAuth client, not a secret.
 // Set after registration; an environment override in Cloudflare takes precedence.
-export const PUBLIC_OAUTH_CLIENT_ID=null;
+export const PUBLIC_OAUTH_CLIENT_ID='9ec1beb6-e638-432b-93fe-405e0bd01e53';

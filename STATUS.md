@@ -72,3 +72,10 @@
 - [ ] В Supabase пока зарегистрирован только старый LIVING WORLD Bridge MCP; нужен отдельный OAuth client ID и точный ChatGPT callback URL.
 - [ ] После регистрации NEXT-клиента записать его публичный UUID в PUBLIC_OAUTH_CLIENT_ID, дождаться Cloudflare и проверить действительный обмен токенов.
 - [ ] Глобальные OAuth Authorization Path и Site URL в общем Supabase Auth не менять без проверки совместимости со старым проектом.
+
+## 2026-11-23 — отдельный OAuth-клиент создан
+
+- [x] В реальном Supabase создан Public OAuth-клиент `LIVING WORLD NEXT`, ID `9ec1beb6-e638-432b-93fe-405e0bd01e53`, точный ChatGPT redirect `https://chatgpt.com/connector/oauth/vcwt3WXJ1Lt0`.
+- [x] Client ID привязан в публичной конфигурации NEXT (не секрет), MCP валидирует токен по этому ID; Cloudflare переменная не требуется.
+- [x] Общий старый consent UI в репозитории `living-world` дополнен строгим allowlist из двух пар (client ID, redirect URI). Существующие ограничения Bridge сохраняются.
+- [ ] Дождаться развёртывания обоих Pages-сайтов и реально пройти ChatGPT OAuth + список миров + запись сцены.
