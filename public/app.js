@@ -3,9 +3,10 @@ import {replay,validateScene} from './core/continuity.mjs';
 import {prepareRevision} from './core/revisions.mjs';
 import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
+import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
-import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,fullStructuredMemory} from './lib/storage.mjs';
+import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,fullStructuredMemory} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
@@ -24,6 +25,20 @@ const panel=(...children)=>add(node('section','panel'),...children);
 const title=(text)=>node('h2','',text);
 const para=(text,cls='small')=>node('p',cls,text);
 const busy=async(action)=>{if(state.pending)return;state.pending=true;try{await action();}catch(e){console.error(e);toast(e.message||'Ошибка операции',true);}finally{state.pending=false;}};
+const readerStorage=(()=>{try{return window.localStorage;}catch{return null;}})();
+let readerPrefs=readReaderPrefs(readerStorage);
+function updateSceneTypography(){
+ for(const element of document.querySelectorAll('.scene-body')){
+  element.style.fontSize=readerPrefs.fontSize+'px';
+  element.style.lineHeight=String(readerPrefs.lineHeight);
+ }
+ const label=document.querySelector('#readerSizeLabel');
+ if(label)label.textContent=readerPrefs.fontSize+' px · '+readerPrefs.lineHeight+' интервал';
+}
+function changeReaderPrefs(change){
+ readerPrefs=saveReaderPrefs(readerStorage,{...readerPrefs,...change});
+ updateSceneTypography();
+}
 let toastTimer,archiveUrl=null;
 function toast(message,error=false){const n=document.querySelector('#toast');n.textContent=message;n.className='toast visible';n.style.borderColor=error?'#a86d85':'';clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.className='toast',4500);}
 function clear(){if(archiveUrl){URL.revokeObjectURL(archiveUrl);archiveUrl=null;}root.replaceChildren();window.scrollTo({top:0});accountButton.textContent=readSession()?'Выйти':'Аккаунт';}
@@ -97,11 +112,24 @@ function renderWorld(){if(!state.world)return openWorlds();const w=state.world;s
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
   const heading=node('div','section-head');add(heading,title('Хроника'),node('span','count',state.scenes.length+' загружено'));root.append(heading);
-  if(state.hasOlder){root.append(panel(para('Есть более ранние сцены.'),row(button('Загрузить историю полностью',()=>busy(async()=>{const r=await allActiveHistory(w.id);state.scenes=r.scenes;state.hasOlder=!r.complete;state.historyComplete=r.complete;renderWorld();}),'btn secondary'))));}
+  const readerInfo=node('span','count',readerPrefs.fontSize+' px · '+readerPrefs.lineHeight+' интервал');
+  readerInfo.id='readerSizeLabel';
+  root.append(panel(title('Удобство чтения на iPhone'),row(
+   button('A−',()=>changeReaderPrefs({fontSize:readerPrefs.fontSize-2}),'btn secondary'),
+   readerInfo,
+   button('A+',()=>changeReaderPrefs({fontSize:readerPrefs.fontSize+2}),'btn secondary'),
+   button('Строки −',()=>changeReaderPrefs({lineHeight:readerPrefs.lineHeight-0.1}),'btn secondary'),
+   button('Строки +',()=>changeReaderPrefs({lineHeight:readerPrefs.lineHeight+0.1}),'btn secondary')
+  ),para('Размер и интервал сохраняются только в этом браузере. Сюжет и история не изменяются.')));
+  if(state.hasOlder){root.append(panel(para('Есть более ранние сцены. Подгружай порциями без скачивания всей истории в память телефона.'),
+   row(button('Загрузить предыдущие 50 сцен',()=>busy(async()=>{
+     const result=await loadEarlierHistory(w,state.scenes,{pageSize:50});
+     state.scenes=result.scenes;state.hasOlder=result.hasOlder;state.historyComplete=result.complete;renderWorld();
+   }),'btn secondary'))));}
   if(!state.scenes.length)root.append(node('div','empty','История ещё не началась. Первый эпизод можно сыграть в ChatGPT и затем сохранить.'));
   const container=node('div','story');state.scenes.forEach((s,i)=>{
-    const card=node('article','scene');const chapter=node('h3','',`Сцена ${i+1}${s.world_time?' · '+s.world_time:''}`);const details=node('details','scene-details');if(i===state.scenes.length-1)details.open=true;
-    const summary=node('summary','',details.open?'Текст сцены':'Читать сцену');const body=node('div','scene-body',s.body);add(details,summary,body);
+    const card=node('article','scene');const chapter=node('h3','',`${state.historyComplete?'Сцена '+(i+1):'Сцена из действующей ветки'}${s.world_time?' · '+s.world_time:''}`);const details=node('details','scene-details');if(i===state.scenes.length-1)details.open=true;
+    const summary=node('summary','',details.open?'Текст сцены':'Читать сцену');const body=node('div','scene-body',s.body);body.style.fontSize=readerPrefs.fontSize+'px';body.style.lineHeight=String(readerPrefs.lineHeight);add(details,summary,body);
     const actions=add(node('div','scene-actions'),button('На это: новая ветка',()=>{state.revision={scene_id:s.id,source_scene:s};renderWorld();document.querySelector('#sceneEditor')?.focus();},'text-button'));
     add(card,chapter,details,actions);container.append(card);
   });root.append(container);

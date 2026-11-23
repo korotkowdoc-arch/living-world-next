@@ -1,5 +1,6 @@
 import {dbRequest} from './session.mjs';
 import {requestIdentity} from '../core/request-identity.mjs';
+import {prependHistoryPage} from '../core/reader.mjs';
 import {buildWorldDraft} from '../core/world.mjs';
 import {classifyDirective} from '../core/directives.mjs';
 import {makeWorldArchive,sealArchive,readVerifiedArchive} from '../core/portable.mjs';
@@ -45,6 +46,20 @@ export async function sceneReceipt(worldId,requestId){return rpc('nw_scene_recei
 export async function listBranches(worldId){return dbRequest(`/rest/v1/nw_branches?select=*&world_id=eq.${enc(worldId)}&order=created_at.asc`);}
 export async function activeHistory(worldId,{limit=200,offset=0}={}){
  return rpc('nw_active_history',{p_world_id:worldId,p_limit:limit,p_offset:offset});
+}
+/** Load one older page without mixing histories after a concurrent branch switch. */
+export async function loadEarlierHistory(world,existing,{pageSize=50}={}){
+ const [before,branchesBefore]=await Promise.all([getWorld(world.id),listBranches(world.id)]);
+ const firstHead=branchesBefore.find(b=>b.id===before.active_branch_id)?.head_scene_id??null;
+ if(before.active_branch_id!==world.active_branch_id||firstHead!==world.head_scene_id)
+  throw Error('История изменилась. Обнови ветку перед чтением.');
+ const page=await activeHistory(world.id,{limit:pageSize,offset:existing.length});
+ const [after,branchesAfter]=await Promise.all([getWorld(world.id),listBranches(world.id)]);
+ const lastHead=branchesAfter.find(b=>b.id===after.active_branch_id)?.head_scene_id??null;
+ if(after.active_branch_id!==world.active_branch_id||lastHead!==firstHead)
+  throw Error('Ветка изменилась во время чтения. Обнови мир.');
+ return {scenes:prependHistoryPage(existing,page,{expectedHead:firstHead}),
+   hasOlder:page.length===pageSize,complete:page.length<pageSize};
 }
 export async function allActiveHistory(worldId,{limit=2000}={}){
  const newest=[];
