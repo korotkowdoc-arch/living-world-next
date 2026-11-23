@@ -1,5 +1,5 @@
 import {readConfig,readSession,saveConfig,signIn,activeToken} from '../lib/session.mjs';
-import {authorizationDetails,decideAuthorization,safeChatGPTCallback,assertNextAuthorization} from '../lib/oauth-consent.mjs';
+import {authorizationDetails,decideAuthorization,safeChatGPTCallback,assertNextAuthorization,isAuthorizationId} from '../lib/oauth-consent.mjs';
 const mount=document.querySelector('#consent');
 const id=new URL(location.href).searchParams.get('authorization_id');
 const n=(tag,cls='',text='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;return e;};
@@ -35,5 +35,5 @@ async function showDetails(){if(!readConfig())return showSetup();if(!readSession
   box.append(buttons);mount.replaceChildren(n('div','eyebrow','OAuth 2.1 · разрешения'),n('h1','hero-title','Подтверждение доступа'),box);
  }catch(e){mount.replaceChildren(n('div','notice',e.message||'Ошибка'),btn('Повторить',()=>run(showDetails),'btn secondary'));}
 }
-if(!id||!/^[0-9a-f-]{36}$/i.test(id))mount.replaceChildren(n('div','notice','Отсутствует идентификатор запроса Supabase OAuth.'));
+if(!isAuthorizationId(id))mount.replaceChildren(n('div','notice','Отсутствует корректный идентификатор запроса Supabase OAuth. Начни подключение заново в ChatGPT.'));
 else showDetails();

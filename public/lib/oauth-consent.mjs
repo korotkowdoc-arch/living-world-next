@@ -1,7 +1,12 @@
 /** OAuth consent REST calls, with the authenticated owner's Supabase session. */
+/** Supabase OAuth issues opaque authorization IDs (e.g. 32-character base64url strings),
+ * NOT necessarily PostgreSQL UUIDs. Treat them as untrusted path segments.
+ */
+export function isAuthorizationId(id){
+ return typeof id==='string'&&/^[A-Za-z0-9_-]{16,128}$/.test(id);
+}
 export function assertAuthorizationId(id){
- if(typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
-  throw Error('Некорректный идентификатор запроса авторизации.');
+ if(!isAuthorizationId(id))throw Error('Некорректный идентификатор запроса авторизации.');
  return id;
 }
 import {PUBLIC_OAUTH_CLIENT_ID} from './public-config.mjs';
