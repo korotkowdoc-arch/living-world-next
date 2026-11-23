@@ -1,5 +1,5 @@
 import {readConfig,readSession,saveConfig,signIn,activeToken} from '../lib/session.mjs';
-import {authorizationDetails,decideAuthorization,safeChatGPTCallback} from '../lib/oauth-consent.mjs';
+import {authorizationDetails,decideAuthorization,safeChatGPTCallback,assertNextAuthorization} from '../lib/oauth-consent.mjs';
 const mount=document.querySelector('#consent');
 const id=new URL(location.href).searchParams.get('authorization_id');
 const n=(tag,cls='',text='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;return e;};
@@ -22,7 +22,7 @@ function showLogin(){mount.replaceChildren();const email=entry('email','Email');
 }
 async function showDetails(){if(!readConfig())return showSetup();if(!readSession())return showLogin();mount.replaceChildren(n('div','loading','Проверяю запрос подключения…'));
  try{
-  const token=await activeToken();const c=readConfig();const details=await authorizationDetails({...c,token,id});
+  const token=await activeToken();const c=readConfig();const details=assertNextAuthorization(await authorizationDetails({...c,token,id}),id);
   if(details.redirect_url)return redirect(details.redirect_url);
   const client=details.client||{};const box=form();
   add(box,n('h2','',client.name||'ChatGPT'),n('p','small','Сервис запрашивает разрешение действовать от твоего имени. Прочитай адрес и права перед подтверждением.'),

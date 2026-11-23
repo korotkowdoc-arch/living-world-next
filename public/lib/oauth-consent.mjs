@@ -4,9 +4,27 @@ export function assertAuthorizationId(id){
   throw Error('Некорректный идентификатор запроса авторизации.');
  return id;
 }
+import {PUBLIC_OAUTH_CLIENT_ID} from './public-config.mjs';
+
+export const NEXT_REDIRECT_URI='https://chatgpt.com/connector/oauth/vcwt3WXJ1Lt0';
+
+/** Only this registered NEXT client and its exact ChatGPT callback can approve worlds. */
+export function assertNextAuthorization(details,id){
+ assertAuthorizationId(id);
+ if(details?.redirect_url){
+  safeChatGPTCallback(details.redirect_url);
+  return details;
+ }
+ if(details?.authorization_id!==id||details?.client?.id!==PUBLIC_OAUTH_CLIENT_ID||
+    details?.redirect_uri!==NEXT_REDIRECT_URI)
+  throw Error('OAuth-запрос не относится к клиенту LIVING WORLD NEXT. Проверь подключение.');
+ return details;
+}
 export function safeChatGPTCallback(raw){
- const dest=new URL(raw);
- if(dest.protocol!=='https:'||dest.username||dest.password||dest.hostname!=='chatgpt.com')
+ let dest;try{dest=new URL(raw);}catch{throw Error('Некорректная ссылка OAuth.');}
+ const expected=new URL(NEXT_REDIRECT_URI);
+ if(dest.protocol!=='https:'||dest.username||dest.password||dest.hash||
+    dest.origin!==expected.origin||dest.pathname!==expected.pathname)
   throw Error('Сервер вернул неожиданную ссылку подтверждения. Переход остановлен.');
  return dest.href;
 }
