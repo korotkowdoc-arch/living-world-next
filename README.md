@@ -2,7 +2,7 @@
 
 Новый проект интерактивных миров для iPhone. Старый `korotkowdoc-arch/living-world` остаётся нетронутым.
 
-**Версия исходников: v0.3.1 (мобильное веб-приложение).**
+**Версия исходников: v0.5 (мобильное веб-приложение + MCP через Pages Functions).**
 
 **Идея:** создание мира за одно описание, настройка условиями на обычном языке, истории в ChatGPT, независимые персонажи, реальная причинность, отношения без автоматического примирения и сохранение по действующей ветке.
 
@@ -66,3 +66,15 @@ git pull --ff-only; npm test; npm run check
 После `supabase/schema.sql` и `supabase/migrations/001_story_controls.sql` выполни **`supabase/migrations/002_memory_retrieval.sql`**, затем **`supabase/migrations/003_atomic_world_creation.sql`**. Иначе вкладки «Поиск» и «Персонажи» не смогут получить данные из нового SQL RPC. Весь пакет оставляет старые таблицы `lw_*` нетронутыми.
 
 Windows: `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1` запускает локальные проверки без коммитов/публикации. GitHub-репозиторий уже создан; для повседневной разработки больше не нужен скрипт первоначальной публикации.
+
+## MCP на Cloudflare Pages (v0.5)
+
+Поскольку сайт уже развёрнут с GitHub-интеграцией, MCP теперь публикуется вместе с ним. Файл `functions/[[path]].js` подключает прежнюю серверную реализацию `worker/mcp.mjs`, а `public/_routes.json` направляет в Functions **только** `/mcp`, `/health` и два OAuth protected resource discovery URL. Статический интерфейс остаётся обычным Pages сайтом. Дополнительный Workers-проект не требуется.
+
+Основной MCP URL: `https://living-world-next.pages.dev/mcp`.
+
+Для полной OAuth авторизации нужно создать отдельного клиента в **Supabase → Authentication → OAuth Server**, а затем добавить **Production** переменную `SUPABASE_OAUTH_CLIENT_ID` в **Cloudflare Pages → Settings → Variables and Secrets**. Использовать старый client_id нельзя: он принадлежит другому проекту. Должны быть включены OAuth 2.1 Server и его корректный Authorization Path `/oauth/consent.html`, а Site URL задан на `https://living-world-next.pages.dev`. Redirect URL берётся из ChatGPT-подключения, не придумывается.
+
+Публичный Supabase publishable key берётся из `public/lib/public-config.mjs`. **service_role не добавлять**. До установки нового client_id MCP отдаёт discovery и метаданные, но закрывает вызовы, читающие личные истории.
+
+Проверка: `/health` должен вернуть `running:true`; `oauth_metadata_ready` отражает только конфигурацию, не фактический вход. До полноценного теста ChatGPT `oauth_e2e_verified:false` остаётся честным.

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "include": [
+    "/mcp",
+    "/health",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp"
+  ],
+  "exclude": []
+}

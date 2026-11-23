@@ -71,3 +71,11 @@ git pull --ff-only; npm test; npm run check
 - `get_story_scene` дополнительно вызывает `nw_scene_in_active_branch` и маркирует альтернативные сцены, чтобы они не попадали в текущие воспоминания.
 
 **Проверка:** после установки миграции создай тестовый мир и несколько сцен (включая намерение NPC и его подтверждённое событие); проверь вкладку «Персонажи», `get_npc_agency`, совпадающий повтор `request_id`, отказ на изменённое содержимое с прежним ID, пометку альтернативной сцены. Не утверждай, что это сделано, без фактического онлайн-теста.
+
+## v0.5: MCP уже внутри Cloudflare Pages
+
+Код `functions/[[path]].js` и `public/_routes.json` разворачивается автоматически при push в уже подключённый проект Pages. Старую секцию об отдельном `worker/wrangler.toml` следует считать альтернативным, **необязательным** способом развёртывания. Основной URL MCP: `https://living-world-next.pages.dev/mcp`. Отдельный workers.dev не нужен.
+
+Проверить `https://living-world-next.pages.dev/health` и `https://living-world-next.pages.dev/.well-known/oauth-protected-resource`. Затем в Supabase (Authentication > OAuth Server) включить сервер и настроить Authorization Path, отдельного клиента OAuth 2.1 для NEXT, и в Cloudflare Pages Production Variables задать `SUPABASE_OAUTH_CLIENT_ID`. OAuth Redirect URL строго из ChatGPT. Старый LIVING WORLD OAuth клиент не изменять.
+
+Проверить MCP initialize, tools/list, unauthenticated tools/call → HTTP 401. Прохождение этих тестов само по себе не доказывает пользовательский OAuth E2E.
