@@ -48,3 +48,17 @@ test('opaque authorization IDs survive consent details fetch and approval withou
  assert.ok(urls[0].url.endsWith('/'+opaqueId));
  assert.ok(urls[1].url.endsWith('/'+opaqueId+'/consent'));
 });
+
+test('Supabase rejects unlisted NEXT Origin with an actionable error, not false expiry',async()=>{
+ const fetchImpl=async()=>Response.json({code:'validation_failed',msg:'unauthorized request origin'},{status:400});
+ await assert.rejects(authorizationDetails({...base,fetchImpl}),e=>e.code==='OAUTH_ORIGIN_NOT_ALLOWED'&&/URL Configuration/.test(e.message));
+ await assert.rejects(decideAuthorization({...base,approved:true,fetchImpl}),e=>e.code==='OAUTH_ORIGIN_NOT_ALLOWED'&&/NEXT/.test(e.message));
+});
+test('a genuinely expired OAuth request is distinguished from an invalid Origin',async()=>{
+ const fetchImpl=async()=>Response.json({code:'oauth_authorization_not_found',msg:'authorization not found'},{status:404});
+ await assert.rejects(authorizationDetails({...base,fetchImpl}),e=>e.code==='OAUTH_REQUEST_NOT_FOUND');
+});
+test('a different Supabase HTTP failure is never masked as expiration',async()=>{
+ const fetchImpl=async()=>Response.json({msg:'invalid arbitrary configuration'},{status:400});
+ await assert.rejects(authorizationDetails({...base,fetchImpl}),e=>e.code==='OAUTH_RESPONSE_ERROR'&&/HTTP 400/.test(e.message));
+});

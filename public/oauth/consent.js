@@ -33,7 +33,14 @@ async function showDetails(){if(!readConfig())return showSetup();if(!readSession
   const buttons=n('div','btn-row');add(buttons,btn('Разрешить',()=>run(async()=>{redirect(await decideAuthorization({...c,token:await activeToken(),id,approved:true}));})),
     btn('Отклонить',()=>run(async()=>{redirect(await decideAuthorization({...c,token:await activeToken(),id,approved:false}));}),'btn ghost'));
   box.append(buttons);mount.replaceChildren(n('div','eyebrow','OAuth 2.1 · разрешения'),n('h1','hero-title','Подтверждение доступа'),box);
- }catch(e){mount.replaceChildren(n('div','notice',e.message||'Ошибка'),btn('Повторить',()=>run(showDetails),'btn secondary'));}
+ }catch(e){
+  mount.replaceChildren(n('div','notice',e.message||'Ошибка'));
+  if(e.code==='OAUTH_ORIGIN_NOT_ALLOWED'){
+   const link=n('a','btn secondary','Открыть настройки Supabase');
+   link.href='https://supabase.com/dashboard/project/bcwzlsljcxubqtvzsucz/auth/url-configuration';link.target='_blank';link.rel='noopener noreferrer';
+   mount.append(link);
+  }else mount.append(btn('Повторить',()=>run(showDetails),'btn secondary'));
+ }
 }
 if(!isAuthorizationId(id))mount.replaceChildren(n('div','notice','Отсутствует корректный идентификатор запроса Supabase OAuth. Начни подключение заново в ChatGPT.'));
 else showDetails();
