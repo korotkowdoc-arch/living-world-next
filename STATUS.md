@@ -1,6 +1,6 @@
 # LIVING WORLD NEXT — единый актуальный план
 
-Обновлено: 2026-11-23. Исходники v0.6, реальная база Supabase подключена. Старый `korotkowdoc-arch/living-world` не изменяем.
+Обновлено: 2026-11-23. Исходники v0.6, Supabase и Cloudflare Pages подключены. Старый `korotkowdoc-arch/living-world` не изменяем.
 
 ## Готово и проверено автоматическими тестами
 
@@ -31,7 +31,7 @@
 - [x] Повтор «На это» после изменения правил/автосохранения восстанавливает квитанцию без дублей.
 - [ ] Новый клиент Supabase NEXT не создан: старый OAuth-клиент не переиспользовать, ожидать новый UUID и фактический E2E.
 
-- [x] Статический сайт `https://living-world-next.pages.dev/` развёрнут; вход в аккаунт и экран создания миров видны на предоставленных скриншотах. Реальная запись мира не подтверждена.
+- [x] Статический сайт `https://living-world-next.pages.dev/` развёрнут; вход в аккаунт и экран создания миров видны на предоставленных скриншотах. Сохранение первого мира подтверждено экраном iPhone и SQL-запросом.
 - [x] MCP добавлен через Cloudflare Pages Functions к уже подключённому GitHub: `https://living-world-next.pages.dev/mcp`, также `/health` и OAuth protected resource discovery. GitHub CI прошёл, но при проверке `https://living-world-next.pages.dev/health` пока возвращается HTML веб-приложения — Pages Functions ещё не активированы. Cloudflare рекомендует включить Build command `exit 0` для статических проектов с Functions; только после этого маршрут будет проверен.
 - [ ] Создать **нового** OAuth клиента для ChatGPT NEXT, задать `SUPABASE_OAUTH_CLIENT_ID` в Cloudflare Pages, проверить действительный code+PKCE+refresh. Старый LIVING WORLD OAuth-клиент не менять.
 - [ ] Энд-ту-энд: написать сцену в ChatGPT, сохранить через MCP, прочитать на iPhone, восстановить квитанцию после сетевого сбоя.
@@ -65,3 +65,10 @@
 3. В Supabase OAuth Server создать нового клиента NEXT и настроить `SUPABASE_OAUTH_CLIENT_ID` в Cloudflare Pages. Не менять общую страницу согласия OAuth прежнего проекта без отдельной проверки, потому что у двух приложений один Supabase Auth.
 4. Проверить действительное создание мира и авторизованное MCP-сохранение из ChatGPT, затем прочитать сцену на iPhone.
 5. Продолжать автономность NPC, расписания, автоматическую доказательную память и восстановление архива без ручных анкет.
+
+## OAuth NEXT: текущая зависимость
+
+- [x] MCP и HTTPS OAuth discovery доступны; 72/72 тестов прошли, /health показывает running=true.
+- [ ] В Supabase пока зарегистрирован только старый LIVING WORLD Bridge MCP; нужен отдельный OAuth client ID и точный ChatGPT callback URL.
+- [ ] После регистрации NEXT-клиента записать его публичный UUID в PUBLIC_OAUTH_CLIENT_ID, дождаться Cloudflare и проверить действительный обмен токенов.
+- [ ] Глобальные OAuth Authorization Path и Site URL в общем Supabase Auth не менять без проверки совместимости со старым проектом.

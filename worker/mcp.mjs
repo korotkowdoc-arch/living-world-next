@@ -26,7 +26,7 @@ const toolsList=[
   {name:'edit_world_directive',description:'Edit an owner-authored natural-language rule in place with persistent before/after audit log and rules-version check.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},directive_id:{type:'string',format:'uuid'},text:{type:'string'},expected_rules_version:{type:'integer'}},required:['world_id','directive_id','text','expected_rules_version']}},
   {name:'toggle_world_directive',description:'Disable or enable an existing world rule with an audit log; old scenes remain unchanged.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},directive_id:{type:'string',format:'uuid'},active:{type:'boolean'},expected_rules_version:{type:'integer'}},required:['world_id','directive_id','active','expected_rules_version']}},
   {name:'switch_branch',description:'Switch active branch to an existing owner branch without copying invalid scenes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'}},required:['world_id','branch_id']}}
-].map(t=>({...t,securitySchemes:[{type:'oauth2',scopes:['openid','email','offline_access']}],_meta:{securitySchemes:[{type:'oauth2',scopes:['email']}]}}));
+].map(t=>({...t,securitySchemes:[{type:'oauth2',scopes:['openid','email','offline_access']}],_meta:{securitySchemes:[{type:'oauth2',scopes:['openid','email','offline_access']}]}}));
 
 function result(value){return {resultType:'complete',content:[{type:'text',text:JSON.stringify(value,null,2)}],structuredContent:value,isError:false};}
 function fail(message){return {resultType:'complete',content:[{type:'text',text:message}],isError:true};}

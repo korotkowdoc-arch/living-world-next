@@ -26,7 +26,11 @@ test('valid OAuth client-scoped token allows owner list; unregistered client blo
      body:JSON.stringify({jsonrpc:'2.0',id:17,method,params:method==='initialize'?{protocolVersion:'2025-06-18'}:{}})});
    const response=await worker.fetch(req,env);assert.equal(response.status,200);
    const out=(await response.json()).result;
-   if(method==='tools/list')assert.ok(out.tools.length>5);
+   if(method==='tools/list'){
+    assert.ok(out.tools.length>5);
+    assert.deepEqual(out.tools[0].securitySchemes[0].scopes,['openid','email','offline_access']);
+    assert.deepEqual(out.tools[0]._meta.securitySchemes[0].scopes,['openid','email','offline_access']);
+   }
    else assert.equal(out.serverInfo.name,'living-world-next');
   }
  }finally{globalThis.fetch=original;}
