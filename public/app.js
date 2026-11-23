@@ -3,6 +3,7 @@ import {replay,validateScene} from './core/continuity.mjs';
 import {prepareRevision} from './core/revisions.mjs';
 import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
+import {storyDrivers} from './core/story-drivers.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
@@ -326,6 +327,19 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  for(const [name,arr] of [['Персонажи',p.people],['Отношения',p.relationships],['Знания',p.knowledge],['Финансы',p.balances],['Вещи',p.items],['Обязательства',p.obligations],['Планы NPC',p.plans],['События вне кадра',p.offscreen]])stats.append(para(`${name}: ${arr.length}`));
  if(!state.historyComplete)stats.append(node('div','notice','Загружена только часть истории. Проекция не полная. Нельзя делать выводы о старых событиях.'));
  if(p.validation_warnings.length)stats.append(node('div','notice',`Некоторые события отклонены: ${p.validation_warnings.length}.`));root.append(stats);
+ const drivers=storyDrivers(p,state.directives);
+ const pressure=panel(title('Что движет персонажами'),para('Настоящие желания, обещания и конфликты из подтверждённых источников. Это подсказки для повествования, не произошедшие автоматически события.'));
+ if(!drivers.length)pressure.append(para('Структурных мотивов пока нет. Это не значит, что герои лишены собственных целей: точные первоисточники доступны через поиск.'));
+ for(const d of drivers){
+  const source=d.source?.scene_id?' · источник: '+d.source.scene_id:'';
+  const label=d.kind==='npc_intention'?d.actor+' — '+d.goal+' ('+d.status+')':
+   d.kind==='recorded_commitment'?'Обязательство '+d.commitment_id+' ('+d.status+')':
+   d.kind==='established_antagonism'?d.actors.join(' → ')+' · '+d.stance:
+   d.actors.join(' ↔ ')+' · авторский запрет';
+  pressure.append(add(node('div','rule'),node('strong','',label),para(d.guidance+source)));
+ }
+ if(!state.historyComplete)pressure.append(node('div','notice','Загружена часть истории. Ранее записанные цели могут пока не отображаться.'));
+ root.append(pressure);
  const audit=literaryReview(state.scenes);
  const literary=panel(title('Литературные повторения'),para('Диагностика нежелательных клише: «разрешите мне всё», примирение вопреки характеру и универсальная дипломатичность. Совпадение — повод проверить сцену, не автоматический запрет.'));
  if(!audit.samples.length)literary.append(para('В загруженных сценах характерных повторений не найдено. Это не доказывает идеальность текста.'));

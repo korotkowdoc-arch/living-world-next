@@ -1,4 +1,5 @@
 import { classifyDirective,extractLocks } from './directives.mjs';
+import {storyDrivers,storyDriverPrompt} from './story-drivers.mjs';
 
 export const FOUNDATIONS = Object.freeze([
   {
@@ -59,6 +60,7 @@ export function promptForNarrator({world, directives = [], history = [], project
       pending.map(p=>`• ${p.actor}: ${p.goal} [${p.status}]; последний источник: ${p.source?.scene_id||'неизвестен'}`).join('\n')+
       '\nГерои могут действовать по этим намерениям, менять их или ссориться, если обстоятельства позволяют. Не приписывай им действий без сцены, основания, времени и подтверждения. Не заставляй всех искать примирение.');
   }
+  if (projection) blocks.push(storyDriverPrompt(storyDrivers(projection,active)));
   if (history.length) blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ:\n' + history.map(x=>`[${x.id}; ${x.world_time || 'время не указано'}]\n${x.body}`).join('\n\n'));
   blocks.push('Не вводи новые подтверждённые факты без сцены. Создавай важных новых NPC постепенно, когда того требует история. Не сглаживай заранее установленные антагонизмы. Не требуй выбора после каждого абзаца. Если точных сведений нет, сохраняй неопределённость.');
   return blocks.join('\n\n');
