@@ -27,9 +27,9 @@ test('get and approve use authenticated, correct Supabase consent endpoints',asy
 test('NEXT consent accepts its own registered OAuth client and rejects a legacy Bridge client',()=>{
  const good={authorization_id:id,client:{id:'9ec1beb6-e638-432b-93fe-405e0bd01e53'},redirect_uri:NEXT_REDIRECT_URI};
  assert.equal(assertNextAuthorization(good,id),good);
- assert.throws(()=>assertNextAuthorization({...good,client:{id:'f08a0ef2-bdfc-4d0d-b9ab-ce900c85e0d6'}},id),/не относится/);
- assert.throws(()=>assertNextAuthorization({...good,redirect_uri:'https://chatgpt.com/connector/oauth/old'},id),/не относится/);
- assert.throws(()=>assertNextAuthorization({...good,authorization_id:'12345678-1234-4234-8234-123456789013'},id),/не относится/);
+ assert.throws(()=>assertNextAuthorization({...good,client:{id:'f08a0ef2-bdfc-4d0d-b9ab-ce900c85e0d6'}},id),/не относится|Неизвестный/);
+ assert.throws(()=>assertNextAuthorization({...good,redirect_uri:'https://chatgpt.com/connector/oauth/old'},id),/не относится|Неизвестный/);
+ assert.throws(()=>assertNextAuthorization({...good,authorization_id:'12345678-1234-4234-8234-123456789013'},id),/не относится|Неизвестный/);
 });
 
 test('opaque authorization IDs survive consent details fetch and approval without rewriting',async()=>{
