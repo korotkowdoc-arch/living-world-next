@@ -21,6 +21,14 @@ test('valid OAuth client-scoped token allows owner list; unregistered client blo
   const good=await worker.fetch(call(oauthToken(),'list_worlds'),env);
   assert.equal(good.status,200);assert.equal((await good.json()).result.structuredContent[0].id,worldId);
   assert.equal(userChecks,1);
+  for(const method of ['initialize','tools/list']){
+   const req=new Request(env.MCP_PUBLIC_URL,{method:'POST',headers:{authorization:'Bearer '+oauthToken()},
+     body:JSON.stringify({jsonrpc:'2.0',id:17,method,params:method==='initialize'?{protocolVersion:'2025-06-18'}:{}})});
+   const response=await worker.fetch(req,env);assert.equal(response.status,200);
+   const out=(await response.json()).result;
+   if(method==='tools/list')assert.ok(out.tools.length>5);
+   else assert.equal(out.serverInfo.name,'living-world-next');
+  }
  }finally{globalThis.fetch=original;}
 });
 test('save retries use request_id, not a stale-head precheck in worker',async()=>{

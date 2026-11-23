@@ -26,7 +26,7 @@ const toolsList=[
   {name:'edit_world_directive',description:'Edit an owner-authored natural-language rule in place with persistent before/after audit log and rules-version check.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},directive_id:{type:'string',format:'uuid'},text:{type:'string'},expected_rules_version:{type:'integer'}},required:['world_id','directive_id','text','expected_rules_version']}},
   {name:'toggle_world_directive',description:'Disable or enable an existing world rule with an audit log; old scenes remain unchanged.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},directive_id:{type:'string',format:'uuid'},active:{type:'boolean'},expected_rules_version:{type:'integer'}},required:['world_id','directive_id','active','expected_rules_version']}},
   {name:'switch_branch',description:'Switch active branch to an existing owner branch without copying invalid scenes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'}},required:['world_id','branch_id']}}
-].map(t=>({...t,securitySchemes:[{type:'oauth2',scopes:['email']}],_meta:{securitySchemes:[{type:'oauth2',scopes:['email']}]}}));
+].map(t=>({...t,securitySchemes:[{type:'oauth2',scopes:['openid','email','offline_access']}],_meta:{securitySchemes:[{type:'oauth2',scopes:['email']}]}}));
 
 function result(value){return {resultType:'complete',content:[{type:'text',text:JSON.stringify(value,null,2)}],structuredContent:value,isError:false};}
 function fail(message){return {resultType:'complete',content:[{type:'text',text:message}],isError:true};}
@@ -39,8 +39,8 @@ function mcpResource(env) {
  return url.toString();
 }
 function authServer(env){const u=new URL(env.SUPABASE_URL);if(u.protocol!=='https:')throw Error('Invalid Supabase URL');return u.origin+'/auth/v1';}
-function resourceMetadata(env){return {resource:mcpResource(env),authorization_servers:[authServer(env)],scopes_supported:['email']};}
-function challenge(env){return `Bearer resource_metadata="${new URL(mcpResource(env)).origin}/.well-known/oauth-protected-resource", scope="email", error="invalid_token"`;}
+function resourceMetadata(env){return {resource:mcpResource(env),authorization_servers:[authServer(env)],scopes_supported:['openid','email','offline_access']};}
+function challenge(env){return `Bearer resource_metadata="${new URL(mcpResource(env)).origin}/.well-known/oauth-protected-resource", scope="openid email offline_access", error="invalid_token"`;}
 function jwtClaims(token) {
  try {
   if(typeof token!=='string'||token.length>16000)throw Error();
@@ -225,9 +225,18 @@ async function callTool(name,args,env,token){
   }
   case 'revise_scene':{
    const world=await ownerWorld(env,token,args.world_id);
+   assertUuid(args.request_id);assertUuid(args.source_scene_id);
+   // An already committed revision can be replayed after autosave or rule changes.
+   // The SQL RPC validates original request content before returning its receipt.
+   const previous=await rest(env,token,`nw_revisions?select=request_id&world_id=eq.${ep(world.id)}&request_id=eq.${ep(args.request_id)}&limit=1`);
+   if(previous?.length){
+    const receipt=await rpc(env,token,'nw_revise_scene',{p_world_id:world.id,p_source_scene_id:args.source_scene_id,
+     p_prefix:args.prefix,p_continuation:args.continuation,p_events:args.events||[],p_request_id:args.request_id,
+     p_world_time:args.world_time??null,p_expected_rules_version:args.expected_rules_version});
+    return {...receipt,saved:true,old_branch_preserved:true,request_id:args.request_id};
+   }
    if(!world.auto_save)throw Error('Owner disabled MCP autosave');
    if(world.directive_version!==args.expected_rules_version)throw Error('Rules changed; fetch world context again');
-   assertUuid(args.request_id);assertUuid(args.source_scene_id);
    const rows=await rest(env,token,`nw_scenes?select=id,body,events,world_time&world_id=eq.${ep(world.id)}&id=eq.${ep(args.source_scene_id)}&limit=1`);
    const original=rows?.[0];if(!original)throw Error('Source scene not found');
    if(typeof args.prefix!=='string'||!original.body.startsWith(args.prefix))throw Error('Prefix does not match original scene');
@@ -267,23 +276,26 @@ export default {
   if(declaredLength>1000000)return response(JSON.stringify({error:'Request too large'}),413);
   let msg;try{const raw=await request.text();if(raw.length>1000000)return response(JSON.stringify({error:'Request too large'}),413);msg=JSON.parse(raw);}catch{return response(JSON.stringify(error(null,-32700,'Parse error')),400);}
   if(!msg||msg.jsonrpc!=='2.0'||typeof msg.method!=='string')return response(JSON.stringify(error(msg?.id??null,-32600,'Invalid JSON-RPC request')),400);
+  // All protected MCP methods demand OAuth, including the initial handshake and tool scan.
+  // Public discovery and health remain available to ChatGPT before the user signs in.
   if(msg.id===undefined||msg.method==='notifications/initialized')return new Response(null,{status:202});
-  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.4.0'}})));
-  if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
-  if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
   if(msg.method==='server/discover')return response(JSON.stringify(done(msg.id,{resultType:'complete',supportedVersions:['2026-07-28',version],capabilities:{tools:{}},ttlMs:0,cacheScope:'public'})));
-  if(msg.method==='tools/call'){
+  if(['initialize','ping','tools/list','tools/call'].includes(msg.method)){
+   let token;
+   try{
+    const raw=request.headers.get('authorization')||'';
+    if(!/^Bearer [A-Za-z0-9._~-]+$/.test(raw))throw Error('Missing token');
+    token=raw.slice(7);
+    await verifyOAuthUser(env,token);
+   }catch{
+    let hint='Bearer';try{hint=challenge(env);}catch{}
+    return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
+   }
+   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.6.0'}})));
+   if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
+   if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
    const name=msg.params?.name;
    if(typeof name!=='string')return response(JSON.stringify(error(msg.id,-32602,'Missing tool name')),400);
-   let token;try{
-     const raw=request.headers.get('authorization')||'';
-     if(!/^Bearer [A-Za-z0-9._~-]+$/.test(raw))throw Error('Missing token');
-     token=raw.slice(7);
-     await verifyOAuthUser(env,token);
-   }catch{
-     let hint='Bearer';try{hint=challenge(env);}catch{}
-     return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
-   }
    try{return response(JSON.stringify(done(msg.id,result(await callTool(name,msg.params?.arguments||{},env,token)))));}
    catch(e){return response(JSON.stringify(done(msg.id,fail(e.message||'Tool failed'))));}
   }

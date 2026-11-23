@@ -1,6 +1,6 @@
 # LIVING WORLD NEXT — единый актуальный план
 
-Обновлено: 2026-11-23. Исходники v0.5, реальная база Supabase подключена. Старый `korotkowdoc-arch/living-world` не изменяем.
+Обновлено: 2026-11-23. Исходники v0.6, реальная база Supabase подключена. Старый `korotkowdoc-arch/living-world` не изменяем.
 
 ## Готово и проверено автоматическими тестами
 
@@ -26,6 +26,11 @@
 - [ ] Дополнительно проверить RLS из двух независимых настоящих OAuth-сессий, конкурентные HTTP-записи и каскадное удаление реальных тестовых миров.
 
 ## Cloudflare Pages и MCP
+- [x] v0.6 OAuth challenge на `initialize`, `tools/list` и `tools/call`, `offline_access` для обновления токенов.
+- [x] Публичная настройка нового OAuth client ID через GitHub с приоритетом переменной Cloudflare; до регистрации отдельного клиента доступ закрыт.
+- [x] Повтор «На это» после изменения правил/автосохранения восстанавливает квитанцию без дублей.
+- [ ] Новый клиент Supabase NEXT не создан: старый OAuth-клиент не переиспользовать, ожидать новый UUID и фактический E2E.
+
 - [x] Статический сайт `https://living-world-next.pages.dev/` развёрнут; вход в аккаунт и экран создания миров видны на предоставленных скриншотах. Реальная запись мира не подтверждена.
 - [x] MCP добавлен через Cloudflare Pages Functions к уже подключённому GitHub: `https://living-world-next.pages.dev/mcp`, также `/health` и OAuth protected resource discovery. GitHub CI прошёл, но при проверке `https://living-world-next.pages.dev/health` пока возвращается HTML веб-приложения — Pages Functions ещё не активированы. Cloudflare рекомендует включить Build command `exit 0` для статических проектов с Functions; только после этого маршрут будет проверен.
 - [ ] Создать **нового** OAuth клиента для ChatGPT NEXT, задать `SUPABASE_OAUTH_CLIENT_ID` в Cloudflare Pages, проверить действительный code+PKCE+refresh. Старый LIVING WORLD OAuth-клиент не менять.

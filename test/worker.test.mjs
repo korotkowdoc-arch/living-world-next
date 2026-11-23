@@ -3,10 +3,12 @@ const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_ANON_KEY:'sb_publ
 test('health reports OAuth metadata config, not claimed e2e verification',async()=>{
  const r=await worker.fetch(new Request('https://host/health'),env);assert.equal(r.status,200);assert.equal((await r.json()).oauth_e2e_verified,false);
 });
-test('unauthorized MCP exposes only tools metadata and protects calls',async()=>{
+test('unauthorized MCP requests trigger OAuth before tool discovery',async()=>{
  const base={method:'POST',headers:{'content-type':'application/json'}};
  const request=(method,params)=>new Request('https://host/mcp',{...base,body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
- const list=await worker.fetch(request('tools/list'),env);assert.equal(list.status,200);assert.ok((await list.json()).result.tools.length>3);
+ const init=await worker.fetch(request('initialize',{protocolVersion:'2025-06-18'}),env);assert.equal(init.status,401);
+ assert.match(init.headers.get('www-authenticate'),/oauth-protected-resource/);
+ const list=await worker.fetch(request('tools/list'),env);assert.equal(list.status,401);
  const call=await worker.fetch(request('tools/call',{name:'list_worlds',arguments:{}}),env);assert.equal(call.status,401);
  assert.match(call.headers.get('www-authenticate'),/oauth-protected-resource/);
 });

@@ -29,6 +29,7 @@ test('MCP protected resource and unauthenticated tool call use the canonical Pag
  const doc=await meta.json();
  assert.equal(doc.resource,MCP_BASE);
  assert.deepEqual(doc.authorization_servers,[PUBLIC_SUPABASE_CONFIG.url+'/auth/v1']);
+ assert.deepEqual(doc.scopes_supported,['openid','email','offline_access']);
  const nested=await handle(req('/.well-known/oauth-protected-resource/mcp'));
  assert.equal(nested.status,200);
  assert.equal((await nested.json()).resource,MCP_BASE);
@@ -36,9 +37,8 @@ test('MCP protected resource and unauthenticated tool call use the canonical Pag
  assert.equal(call.status,401);
  assert.match(call.headers.get('www-authenticate'),/oauth-protected-resource/);
  const initialize=await handle(req('/mcp','POST',{jsonrpc:'2.0',id:2,method:'initialize',params:{protocolVersion:'2025-06-18'}}));
- assert.equal(initialize.status,200);
- const data=await initialize.json();
- assert.equal(data.result.serverInfo.name,'living-world-next');
+ assert.equal(initialize.status,401);
+ assert.match(initialize.headers.get('www-authenticate'),/oauth-protected-resource/);
 });
 
 test('missing OAuth client binding fails closed for user data',async()=>{

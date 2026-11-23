@@ -82,3 +82,9 @@ Windows: `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1` зап�
 ### Диагностика публикации Functions
 
 Для Cloudflare Pages с нативными Functions необходимо выставить **Build command: `exit 0`** (output `public`). Пустой Build command использовался при чисто статической первоначальной публикации, но не гарантирует обнаружение Functions. Проверить `/release.json` (версия статики), `/health` (JSON от MCP) и метаданные OAuth по `/.well-known/oauth-protected-resource`. Если `/health` показывает HTML входа в приложение, серверный маршрут **не работает**, несмотря на успешный CI GitHub.
+
+## OAuth v0.6
+
+MCP теперь возвращает challenge `401 Unauthorized` при попытке `initialize`, `tools/list` или `tools/call` без авторизации. Метаданные OAuth содержат `openid email offline_access` для обновляемых токенов. Клиенту ChatGPT требуется отдельная официальная OAuth-регистрация в Supabase (старый клиент не изменять).
+
+После регистрации нового клиента его **публичный** UUID можно добавить в `PUBLIC_OAUTH_CLIENT_ID` файла `public/lib/public-config.mjs` через GitHub. Cloudflare автоматически применит изменение. Секреты не нужны. Значение `SUPABASE_OAUTH_CLIENT_ID` из Cloudflare имеет приоритет. Пока клиент не зарегистрирован, доступ к персональным инструментам закрыт.

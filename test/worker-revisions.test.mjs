@@ -13,10 +13,14 @@ const world={id:w,seed:'Хогвартс 1991',title:'Хогвартс',directiv
 const original='Гарри открыл дверь. Малфой ушёл и не вернулся.';
 const ev={id:'old',type:'world',key:'door',evidence:'открыл дверь'};
 test('new tools advertised for owner read, rule edits and atomic revisions',async()=>{
- const request=new Request(env.MCP_PUBLIC_URL,{method:'POST',body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/list'})});
- const res=await worker.fetch(request,env);
- const names=(await res.json()).result.tools.map(x=>x.name);
- for(const name of ['get_scene_receipt','revise_scene','edit_world_directive','toggle_world_directive'])assert.ok(names.includes(name),name);
+ const prev=globalThis.fetch;
+ globalThis.fetch=stub(p=>p.pathname==='/auth/v1/user'?Response.json({id:u}):null);
+ try{
+  const request=new Request(env.MCP_PUBLIC_URL,{method:'POST',headers:{authorization:'Bearer '+token},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/list'})});
+  const res=await worker.fetch(request,env);
+  const names=(await res.json()).result.tools.map(x=>x.name);
+  for(const name of ['get_scene_receipt','revise_scene','edit_world_directive','toggle_world_directive'])assert.ok(names.includes(name),name);
+ }finally{globalThis.fetch=prev;}
 });
 test('revise_scene forwards one transaction with unchanged prefix and only new events',async()=>{
  const old=globalThis.fetch;let rpcBody;
@@ -64,5 +68,20 @@ test('rule updates are versioned and receipt supports lost-response recovery',as
   const payload=calls[0].data;assert.equal(payload.p_expected_version,1);assert.equal(payload.p_metadata.relationship_locks[0].forbid_respect,true);
   response=await worker.fetch(call('get_scene_receipt',{world_id:w,request_id:r}),env);
   assert.equal((await response.json()).result.structuredContent.saved,true);
+ }finally{globalThis.fetch=old;}
+});
+
+test('revision retry remains valid after autosave and rule version change',async()=>{
+ const old=globalThis.fetch;let called=0;
+ globalThis.fetch=stub((p,opt)=>{
+  if(p.pathname==='/auth/v1/user')return Response.json({id:u});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{...world,auto_save:false,directive_version:9}]);
+  if(p.pathname==='/rest/v1/nw_revisions')return Response.json([{request_id:r}]);
+  if(p.pathname==='/rest/v1/rpc/nw_revise_scene'){called++;return Response.json({scene_id:s,branch_id:b,reused:true});}
+ });
+ try{
+  const response=await worker.fetch(call('revise_scene',{world_id:w,source_scene_id:s,prefix:'Гарри открыл дверь.',continuation:' Другой исход.',request_id:r,expected_rules_version:1,events:[]}),env);
+  assert.equal((await response.json()).result.structuredContent.reused,true);
+  assert.equal(called,1);
  }finally{globalThis.fetch=old;}
 });
