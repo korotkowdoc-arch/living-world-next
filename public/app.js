@@ -244,10 +244,35 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
      const full=node('div','scene-body');full.hidden=true;
      add(block,button('Показать сцену-источник',()=>busy(async()=>{const scene=await getScene(w.id,r.scene_id);full.textContent=scene.body;full.hidden=false;}),'text-button'),full);results.append(block);
    }more.hidden=rows.length<40;
+   if(!append)await findMentions(false);
+ };
+ const mentions=node('div');let mentionOffset=0,mentionActor='';
+ const moreMentions=button('Ещё упоминания в тексте',()=>busy(()=>findMentions(true)),'btn secondary');
+ moreMentions.hidden=true;
+ const findMentions=async(append=false)=>{
+  if(!append){mentionOffset=0;mentionActor=fieldName.value.trim();mentions.replaceChildren();}
+  if(mentionActor.length<2){if(!append)mentions.append(para('Для поиска по исходным сценам нужно хотя бы два символа имени.'));return;}
+  const hits=await searchActiveScenes(w.id,mentionActor,{limit:20,offset:mentionOffset});
+  mentionOffset+=hits.length;
+  if(!hits.length&&!append)mentions.append(para('Буквальных упоминаний имени не найдено. Это не доказывает, что герой не появлялся под другим именем.'));
+  for(const hit of hits){
+   const card=node('div','rule');
+   const body=node('div','scene-body');body.hidden=true;
+   add(card,node('strong','',hit.world_time||'Время не указано'),
+    para(hit.snippet||'В тексте найдено совпадение.'),
+    para('Только совпадение текста, а не подтверждённый факт или изменение отношений.'),
+    button('Прочитать сцену',()=>busy(async()=>{
+     const scene=await getScene(w.id,hit.scene_id);
+     body.textContent=scene.body;body.style.fontSize=readerPrefs.fontSize+'px';
+     body.style.lineHeight=String(readerPrefs.lineHeight);body.hidden=false;
+    }),'text-button'),body);
+   mentions.append(card);
+  }
+  moreMentions.hidden=hits.length<20;
  };
  const form=node('form');form.addEventListener('submit',e=>{e.preventDefault();busy(()=>load());});
- const submit=node('button','btn','Найти события героя');submit.type='submit';
- add(form,fieldName,row(submit));add(box,choices,form,results,row(more));
+ const submit=node('button','btn','Найти историю героя');submit.type='submit';
+ add(form,fieldName,row(submit));add(box,choices,form,title('Подтверждённые события'),results,row(more),title('Упоминания в исходных сценах'),para('Находим упоминания имени даже без ручной разметки. Цитата — подсказка: чтобы установить факт, открой сцену и проверь контекст.'),mentions,row(moreMentions));
  root.append(box);
  const ties=panel(title('Подтверждённые связи'),para('Направленные отношения: отношение А к Б не означает того же чувства у Б к А.'));
  if(!projection.relationships.length)ties.append(para('Связи ещё не отмечены в сохранённых событиях.'));
