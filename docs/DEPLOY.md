@@ -14,7 +14,7 @@
 
 **Или direct upload из ПК:** `npx wrangler pages deploy public --project-name living-world-next` после авторизации и создания Cloudflare Pages проекта. Это альтернативный способ, не обязательно совмещать его с Git-integrated Pages.
 
-Открой новый HTTPS-адрес на iPhone. На первом входе вводишь URL Supabase и его публичный ключ, затем email/password своего пользователя. Создай тестовый мир, открой заново, проверь сохранение, затем новую сцену и новую ветку.
+Открой новый HTTPS-адрес на iPhone. Публичный URL Supabase и publishable key уже включены в `public/lib/public-config.mjs` для этого проекта: на первом входе нужен только email/password. Использовать чужой проект можно через ручное изменение конфигурации. Ключ `service_role` никогда не публикуется. Создай тестовый мир, открой заново, проверь сохранение, затем новую сцену и новую ветку.
 
 ## 3. OAuth для ChatGPT + отдельный MCP Worker
 

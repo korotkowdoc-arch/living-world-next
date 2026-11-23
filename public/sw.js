@@ -1,8 +1,8 @@
 /** Offline app shell only. NEVER cache Supabase, MCP, responses, or personal story data. */
-const CACHE='living-world-next-shell-v5';
+const CACHE='living-world-next-shell-v6';
 const SHELL=['/','/index.html','/style.css','/app.js','/manifest.webmanifest','/icon.svg',
  '/core/world.mjs','/core/continuity.mjs','/core/revisions.mjs','/core/directives.mjs','/core/portable.mjs','/core/literary-review.mjs','/core/request-identity.mjs',
- '/lib/session.mjs','/lib/storage.mjs'];
+ '/lib/session.mjs','/lib/storage.mjs','/lib/public-config.mjs'];
 self.addEventListener('install',e=>{
  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));
 });

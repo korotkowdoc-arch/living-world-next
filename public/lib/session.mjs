@@ -1,9 +1,10 @@
+import {PUBLIC_SUPABASE_CONFIG} from './public-config.mjs';
 const CONFIG_KEY='lw-next-config-v1';
 const SESSION_KEY='lw-next-session-v1';
 const storage=()=>window.localStorage;
 let configCache=null, sessionCache=null;
 function safeJson(raw){try{return JSON.parse(raw);}catch{return null;}}
-export function readConfig(){return configCache||(configCache=safeJson(storage().getItem(CONFIG_KEY))||null);}
+export function readConfig(){return configCache||(configCache=safeJson(storage().getItem(CONFIG_KEY))||PUBLIC_SUPABASE_CONFIG);}
 export function readSession(){return sessionCache||(sessionCache=safeJson(storage().getItem(SESSION_KEY))||null);}
 export function saveConfig({url,key}){
   const origin=new URL(String(url).trim());
