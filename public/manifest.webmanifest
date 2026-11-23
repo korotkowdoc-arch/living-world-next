@@ -1,0 +1,10 @@
+{
+  "name":"LIVING WORLD NEXT",
+  "short_name":"LIVING NEXT",
+  "description":"Интерактивные истории с живой памятью мира",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#111422",
+  "theme_color":"#111422",
+  "icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

@@ -1,0 +1,14 @@
+name = "living-world-next-mcp"
+main = "mcp.mjs"
+compatibility_date = "2026-11-23"
+workers_dev = true
+
+[vars]
+# Use the URL of the Supabase project where supabase/schema.sql was installed.
+SUPABASE_URL = "https://YOUR-PROJECT.supabase.co"
+# Exact public Worker endpoint. Register this as the protected resource in Supabase OAuth server.
+MCP_PUBLIC_URL = "https://living-world-next-mcp.YOUR-SUBDOMAIN.workers.dev/mcp"
+# Create an OAuth 2.1 client in Supabase Auth settings for ChatGPT; do not reuse old world client without verification.
+SUPABASE_OAUTH_CLIENT_ID = "YOUR-SUPABASE-OAUTH-CLIENT-ID"
+# Configure SUPABASE_ANON_KEY using `npx wrangler secret put SUPABASE_ANON_KEY`.
+# Never store service_role keys in this project.

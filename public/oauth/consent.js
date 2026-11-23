@@ -1,0 +1,39 @@
+import {readConfig,readSession,saveConfig,signIn,activeToken} from '../lib/session.mjs';
+import {authorizationDetails,decideAuthorization,safeChatGPTCallback} from '../lib/oauth-consent.mjs';
+const mount=document.querySelector('#consent');
+const id=new URL(location.href).searchParams.get('authorization_id');
+const n=(tag,cls='',text='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;return e;};
+const add=(parent,...parts)=>{parts.forEach(x=>parent.append(x));return parent;};
+const entry=(type,placeholder,value='')=>{const input=n('input','field');input.type=type;input.placeholder=placeholder;input.value=value;return input;};
+const btn=(text,action,cls='btn')=>{const b=n('button',cls,text);b.type='button';b.addEventListener('click',action);return b;};
+const form=()=>n('section','panel');
+let busy=false;
+const run=async(fn)=>{if(busy)return;busy=true;try{await fn();}catch(e){mount.prepend(n('div','notice',e.message||'Ошибка авторизации.'));}finally{busy=false;}};
+const redirect=link=>{location.assign(safeChatGPTCallback(link));};
+function showSetup(){mount.replaceChildren();const c=readConfig();const url=entry('url','https://project.supabase.co',c?.url||'');const key=entry('password','Публичный anon/publishable key',c?.key||'');
+ add(mount,n('div','eyebrow','Соединение с ChatGPT'),n('h1','hero-title','Подключить мир к ChatGPT'),add(form(),
+  n('h2','','Настройки Supabase'),n('p','small','Этот экран нужен один раз. Не вводи service_role или секретные ключи.'),url,key,
+  add(n('div','btn-row'),btn('Продолжить',()=>run(async()=>{saveConfig({url:url.value,key:key.value});showLogin();})))));
+}
+function showLogin(){mount.replaceChildren();const email=entry('email','Email');const password=entry('password','Пароль');
+ add(mount,n('div','eyebrow','Подтверждение владельца'),n('h1','hero-title','Разрешить доступ к мирам?'),add(form(),
+  n('p','small','Сначала войди в тот же Supabase-аккаунт, где созданы твои истории.'),email,password,
+  add(n('div','btn-row'),btn('Войти и продолжить',()=>run(async()=>{await signIn(email.value,password.value);await showDetails();})))));
+}
+async function showDetails(){if(!readConfig())return showSetup();if(!readSession())return showLogin();mount.replaceChildren(n('div','loading','Проверяю запрос подключения…'));
+ try{
+  const token=await activeToken();const c=readConfig();const details=await authorizationDetails({...c,token,id});
+  if(details.redirect_url)return redirect(details.redirect_url);
+  const client=details.client||{};const box=form();
+  add(box,n('h2','',client.name||'ChatGPT'),n('p','small','Сервис запрашивает разрешение действовать от твоего имени. Прочитай адрес и права перед подтверждением.'),
+     n('p','small','Адрес приложения: '+(client.uri||client.id||'не указан')),
+     n('p','small','Разрешённый возврат: '+(details.redirect_uri||'не указан')),
+     n('p','small','Запрошенные права: '+(details.scope||'не указаны')),
+     n('div','notice','После подключения ChatGPT сможет читать миры и при включённом автосохранении записывать сыгранные сцены. Не подключай неизвестное приложение.'));
+  const buttons=n('div','btn-row');add(buttons,btn('Разрешить',()=>run(async()=>{redirect(await decideAuthorization({...c,token:await activeToken(),id,approved:true}));})),
+    btn('Отклонить',()=>run(async()=>{redirect(await decideAuthorization({...c,token:await activeToken(),id,approved:false}));}),'btn ghost'));
+  box.append(buttons);mount.replaceChildren(n('div','eyebrow','OAuth 2.1 · разрешения'),n('h1','hero-title','Подтверждение доступа'),box);
+ }catch(e){mount.replaceChildren(n('div','notice',e.message||'Ошибка'),btn('Повторить',()=>run(showDetails),'btn secondary'));}
+}
+if(!id||!/^[0-9a-f-]{36}$/i.test(id))mount.replaceChildren(n('div','notice','Отсутствует идентификатор запроса Supabase OAuth.'));
+else showDetails();
