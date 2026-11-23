@@ -2,7 +2,7 @@ import {dbRequest} from './session.mjs';
 import {requestIdentity} from '../core/request-identity.mjs';
 import {buildWorldDraft} from '../core/world.mjs';
 import {classifyDirective} from '../core/directives.mjs';
-import {makeWorldArchive,sealArchive} from '../core/portable.mjs';
+import {makeWorldArchive,sealArchive,readVerifiedArchive} from '../core/portable.mjs';
 const enc=encodeURIComponent;
 export async function rpc(name,payload){return dbRequest(`/rest/v1/rpc/${name}`,{method:'POST',body:payload});}
 export async function listWorlds(){return dbRequest('/rest/v1/nw_worlds?select=*&order=updated_at.desc');}
@@ -135,4 +135,20 @@ export async function fullStructuredMemory(world,{maxScenes=50000}={}){
   }
  }
  return {scenes:newest.reverse(),complete:false};
+}
+
+/** Restore an owner-verified archive to a new world, never over existing saves.
+ * SQL owns the transaction and remaps every ID. All archive bytes are verified locally.
+ */
+export async function restoreWorldArchive(data){
+ const a=await readVerifiedArchive(data);
+ const bytes=new TextEncoder().encode(JSON.stringify(a)).byteLength;
+ if(bytes>30*1024*1024)
+  throw Error('Архив больше 30 МБ. Для такого мира требуется постраничное восстановление.');
+ if(a.scenes.length>5000)
+  throw Error('Архив содержит более 5000 сцен; текущий атомарный режим поддерживает до 5000.');
+ const result=await rpc('nw_restore_archive',{p_archive:a});
+ if(!result?.world_id||result.world_id===a.world.id)
+  throw Error('Сервер не подтвердил создание отдельного мира. Проверь список миров.');
+ return result;
 }

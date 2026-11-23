@@ -1,5 +1,5 @@
 /** Offline app shell only. NEVER cache Supabase, MCP, responses, or personal story data. */
-const CACHE='living-world-next-shell-v7';
+const CACHE='living-world-next-shell-v8';
 const SHELL=['/','/index.html','/style.css','/app.js','/manifest.webmanifest','/icon.svg',
  '/core/world.mjs','/core/continuity.mjs','/core/revisions.mjs','/core/directives.mjs','/core/portable.mjs','/core/literary-review.mjs','/core/request-identity.mjs',
  '/lib/session.mjs','/lib/storage.mjs','/lib/public-config.mjs','/lib/oauth-consent.mjs','/lib/oauth-return.mjs'];

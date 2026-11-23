@@ -5,7 +5,7 @@ import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
-import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,fullStructuredMemory} from './lib/storage.mjs';
+import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,fullStructuredMemory} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
@@ -55,16 +55,44 @@ function renderWorlds(){state.screen='worlds';clear();add(root,node('div','eyebr
   else{const list=node('div','world-list');for(const w of state.worlds){
     const card=button('',()=>busy(()=>openWorld(w.id)),'world-card');add(card,node('span','world-meta',w.start_marker||'Начало не установлено'),node('strong','',w.title),para(w.seed));list.append(card);
   }root.append(list);}
+  renderRestoreArchive();
 }
+function renderRestoreArchive(){
+ const section=panel(node('div','eyebrow','Сохранность истории'),title('Восстановить мир из архива'),
+   para('Загрузи JSON-файл резервной копии. После SHA-256 проверки будут восстановлены все ветки, сцены, правила и история правок в новый мир. Существующие миры не трогаем.'));
+ const fileInput=node('input','field');fileInput.type='file';fileInput.accept='.json,application/json';
+ const out=node('div');
+ fileInput.addEventListener('change',()=>busy(async()=>{
+  out.replaceChildren();
+  const file=fileInput.files?.[0];if(!file)return;
+  if(file.size>30*1024*1024)throw Error('Архив больше 30 МБ: нужен постраничный режим.');
+  const raw=await file.text();
+  const info=await inspectArchive(raw);
+  const save=button('Восстановить как отдельный мир',()=>busy(async()=>{
+   if(!confirm(`Восстановить «${info.title}» как НОВЫЙ мир, не удаляя существующие?`))return;
+   save.disabled=true;
+   try{
+    const result=await restoreWorldArchive(raw);
+    toast('Восстановлен новый мир, сцен: '+result.scenes);
+    await openWorld(result.world_id);
+   }finally{save.disabled=false;}
+  }));
+  out.replaceChildren(para(`Проверено: «${info.title}», ${info.scene_count} сцен, ${info.branch_count} веток. SHA-256 совпадает.`),
+    row(save),para('При ошибке база отменит всю транзакцию. Никаких частичных миров.'));
+ }));
+ add(section,fileInput,out,para('Один запрос поддерживает до 5000 сцен / 30 МБ. Большие архивы не теряются и не изменяются.'));
+ root.append(section);
+}
+
 async function openWorld(id){state.screen='world';state.tab='story';state.revision=null;loading();await reloadWorld(id);renderWorld();}
 async function reloadWorld(id){const [world,branches,directives,history]=await Promise.all([getWorld(id),listBranches(id),listDirectives(id),activeHistory(id,{limit:50,offset:0})]);
   const branch=branches.find(b=>b.id===world.active_branch_id);
   state.world={...world,head_scene_id:branch?.head_scene_id||null};state.branches=branches;state.directives=directives;state.scenes=history.slice().reverse();state.hasOlder=history.length===50;state.historyComplete=!state.hasOlder;
 }
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,button('← Все миры',()=>busy(openWorlds),'back'),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
-  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='director')renderDirector();
+  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
@@ -228,13 +256,13 @@ function renderArchive(){const w=state.world;
     output.replaceChildren(para(`Готово: ${data.archive.counts.scenes} сцен, ${data.archive.counts.branches} веток. SHA-256 записана в файле.`),a);
    }finally{btn.disabled=false;}
  }));
- add(box,row(btn),output,para('Этот экспорт предназначен для сохранности истории. Автоматическое восстановление в другую базу пока не поддерживается — не удаляй мир после выгрузки.'));
+ add(box,row(btn),output,para('Этот экспорт предназначен для сохранности истории. Для восстановления открой список миров и выбери «Восстановить мир из архива». Исходный мир не удаляется.'));
  const upload=node('input','field');upload.type='file';upload.accept='.json,application/json';
  const inspection=node('div');upload.addEventListener('change',()=>busy(async()=>{
    const file=upload.files?.[0];if(!file)return;
    if(file.size>100*1024*1024)throw Error('Файл слишком большой для проверки в браузере.');
    const info=await inspectArchive(await file.text());
-   inspection.replaceChildren(para(`Контрольная сумма совпадает: ${info.title} · ${info.scene_count} сцен · ${info.branch_count} веток. Это только проверка; данные не импортировались.`));
+   inspection.replaceChildren(para(`Контрольная сумма совпадает: ${info.title} · ${info.scene_count} сцен · ${info.branch_count} веток. Архив проверен, но ещё не импортирован.`));
  }));
  add(box,title('Проверить сохранённый архив'),para('Проверка содержимого и контрольной суммы без загрузки файла на сервер.'),upload,inspection);
  root.append(box);
@@ -253,7 +281,6 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  if(!state.historyComplete)literary.append(node('div','notice','Литературная проверка охватывает только загруженные сцены.'));
  root.append(literary);
  add(root,panel(title('Автосохранение через MCP'),para('После публикации и подключения OAuth-моста ChatGPT сможет сохранять сцены при включённом разрешении. Эта настройка не запускает модель в фоне.'),row(button(w.auto_save?'Автосохранение включено':'Автосохранение выключено',()=>busy(async()=>{await setAutosave(w.id,!w.auto_save);await reloadWorld(w.id);renderWorld();}),'btn secondary'))));
- renderArchive();
  add(root,panel(title('Удалить мир'),para('Удаление безвозвратное. Старый LIVING WORLD не затрагивается.'),row(button('Удалить этот мир',()=>busy(async()=>{if(!confirm(`Удалить мир «${w.title}» вместе с его ветками?`))return;await deleteWorld(w.id);await openWorlds();toast('Мир удалён.');}),'btn danger'))));
 }
 accountButton.addEventListener('click',()=>busy(async()=>{if(readSession()){await signOut();showAuth();}else showAuth();}));
