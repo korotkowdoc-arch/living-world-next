@@ -59,6 +59,6 @@ test('MCP actor recall refuses mismatched branch or changed ancestry',async()=>{
  try{
   const res=await worker.fetch(call({world_id:wid,actor:'Малфой'}),env);
   assert.equal(res.status,200);
-  assert.equal((await res.json()).result.structuredContent.isError,true);
+  assert.equal((await res.json()).result.isError,true);
  }finally{globalThis.fetch=old;}
 });
