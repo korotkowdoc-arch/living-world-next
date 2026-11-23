@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {makeWorldArchive,sealArchive,inspectArchive} from '../public/core/portable.mjs';
+import {makeWorldArchive,sealArchive,inspectArchive,readVerifiedArchive,validateArchiveGraph} from '../public/core/portable.mjs';
 const world={id:'11111111-1111-4111-8111-111111111111',title:'Тест',active_branch_id:'22222222-2222-4222-8222-222222222222'};
 const branches=[{id:world.active_branch_id,world_id:world.id,head_scene_id:'33333333-3333-4333-8333-333333333333'}];
-const scenes=[{id:'33333333-3333-4333-8333-333333333333',world_id:world.id,branch_id:world.active_branch_id,parent_scene_id:null,body:'Тестовая сцена',events:[]}];
+const scenes=[{id:'33333333-3333-4333-8333-333333333333',world_id:world.id,branch_id:world.active_branch_id,parent_scene_id:null,request_id:'44444444-4444-4444-8444-444444444444',body:'Тестовая сцена',events:[]}];
 const payload={world,branches,scenes,directives:[]};
 test('archive includes all expected divisions and validates SHA-256',async()=>{
  const archive=makeWorldArchive(payload,'2026-11-23T00:00:00Z');
@@ -27,4 +27,35 @@ test('archive does not insert credentials or mutate original inputs',()=>{
  const archive=makeWorldArchive(payload);
  assert.equal(JSON.stringify(payload),before);
  assert.equal(JSON.stringify(archive).includes('access_token'),false);
+});
+
+test('archive restore preparation returns the exact verified object, not an unchecked file',async()=>{
+ const a=makeWorldArchive(payload);
+ const sealed=await sealArchive(a,webcrypto);
+ const verified=await readVerifiedArchive(JSON.stringify(sealed),webcrypto);
+ assert.deepEqual(verified,a);
+});
+test('archive refuses a cyclic scene graph and an orphaned revision',()=>{
+ const first={...scenes[0],parent_scene_id:'55555555-5555-4555-8555-555555555555'};
+ const second={...scenes[0],id:'55555555-5555-4555-8555-555555555555',
+  request_id:'66666666-6666-4666-8666-666666666666',parent_scene_id:first.id};
+ assert.throws(()=>makeWorldArchive({...payload,scenes:[first,second]}),/Цикл/);
+ const badRev={id:'77777777-7777-4777-8777-777777777777',world_id:world.id,
+  request_id:'88888888-8888-4888-8888-888888888888',branch_id:branches[0].id,
+  source_scene_id:scenes[0].id,new_scene_id:'99999999-9999-4999-8999-999999999999',new_events:[]};
+ assert.throws(()=>makeWorldArchive({...payload,revisions:[badRev]}),/Нарушена связь/);
+});
+test('archive rejects forged metadata counts even with a newly computed valid SHA hash',async()=>{
+ const a=makeWorldArchive(payload);
+ a.counts.branches=9;
+ const sealed=await sealArchive(a,webcrypto);
+ await assert.rejects(readVerifiedArchive(sealed,webcrypto),/количество/);
+});
+test('archive rejects duplicate idempotency keys, unknown directive edits and unrelated fork origins',()=>{
+ const second={...scenes[0],id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',parent_scene_id:scenes[0].id};
+ assert.throws(()=>makeWorldArchive({...payload,scenes:[scenes[0],second]}),/Повторный ключ/);
+ const edit={id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',world_id:world.id,
+  directive_id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',action:'edit'};
+ assert.throws(()=>makeWorldArchive({...payload,directiveEdits:[edit]}),/Журнал правил/);
+ assert.throws(()=>makeWorldArchive({...payload,branches:[{...branches[0],fork_scene_id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'}]}),/Ветка ссылается/);
 });
