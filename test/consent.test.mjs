@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {isAuthorizationId,assertAuthorizationId,safeChatGPTCallback,authorizationDetails,decideAuthorization,assertNextAuthorization,NEXT_REDIRECT_URI,trustedOAuthRequest,TRUSTED_OAUTH_CLIENTS,BRIDGE_OAUTH_CLIENT_ID,BRIDGE_REDIRECT_URIS,verifyBridgeOwner} from '../public/lib/oauth-consent.mjs';
+import {isAuthorizationId,assertAuthorizationId,safeChatGPTCallback,authorizationDetails,decideAuthorization,assertNextAuthorization,NEXT_REDIRECT_URI,trustedOAuthRequest,TRUSTED_OAUTH_CLIENTS,BRIDGE_OAUTH_CLIENT_ID,BRIDGE_REDIRECT_URIS,verifyBridgeOwner,revokeNextGrant} from '../public/lib/oauth-consent.mjs';
 const id='exampleauthrequest0123456789abcdef';const base={url:'https://myproject.supabase.co',key:'sb_publishable_test',token:'access',id};
 test('consent accepts Supabase opaque authorization IDs, rejects unsafe path segments',()=>{
  assert.equal(assertAuthorizationId(id),id);
@@ -99,4 +99,22 @@ test('old Bridge consent requires server-confirmed owner, not locally stored use
 test('already processed OAuth ID is recognized without an endless retry button',async()=>{
  const fetchImpl=async()=>Response.json({msg:'authorization request cannot be processed'},{status:400});
  await assert.rejects(authorizationDetails({...base,fetchImpl}),e=>e.code==='OAUTH_ALREADY_PROCESSED');
+});
+
+test('grant recovery is explicitly scoped ONLY to NEXT client, not the old Bridge',async()=>{
+ const log=[];
+ const result=await revokeNextGrant({
+  url:'https://myproject.supabase.co',key:'sb_publishable_test',token:'user-token',
+  fetchImpl:async(url,opts)=>{log.push({url,opts});return new Response(null,{status:204});}
+ });
+ assert.equal(result.revoked_client_id,'9ec1beb6-e638-432b-93fe-405e0bd01e53');
+ assert.equal(log.length,1);
+ assert.equal(log[0].opts.method,'DELETE');
+ assert.equal(log[0].opts.headers.authorization,'Bearer user-token');
+ assert.equal(new URL(log[0].url).pathname,'/auth/v1/user/oauth/grants');
+ assert.equal(new URL(log[0].url).searchParams.get('client_id'),'9ec1beb6-e638-432b-93fe-405e0bd01e53');
+ assert.notEqual(new URL(log[0].url).searchParams.get('client_id'),BRIDGE_OAUTH_CLIENT_ID);
+});
+test('revoking a grant fails closed if there is no authenticated NEXT session',async()=>{
+ await assert.rejects(revokeNextGrant({url:'https://myproject.supabase.co',key:'sb_publishable_test',token:''}),/войти/);
 });

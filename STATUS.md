@@ -100,3 +100,5 @@
 - [x] Повторно выданное разрешение: одноразовый redirect_url ведёт сразу в ChatGPT, а HTTP 400 завершённого authorization_id теперь не предлагает бесконечный повтор.
 - [ ] OAuth Server настроен глобально: Authorization Path объединяется с Site URL. Пока он ведёт на устаревший living-world-a3c.pages.dev, новый код NEXT не получает запросы автоматически. Для общего экрана нужно Site URL=https://living-world-next.pages.dev, Authorization Path=/oauth/consent; адрес старого сайта оставить в Redirect URLs (и проверить старые ссылки сброса пароля). Из доступных инструментов изменить этот параметр нельзя.
 - [ ] Пользовательский E2E: новое подключение ChatGPT → OAuth callback → обмен токена → list_worlds, отдельно проверить старый Bridge.
+
+- [x] v0.7.1: отдельная кнопка восстановить ошибку Supabase already-consented. Только после явного подтверждения пользователя вызывает DELETE /auth/v1/user/oauth/grants?client_id=NEXT по авторизованному токену. Старый Bridge не затрагивает, после этого требуется новый OAuth-запрос ChatGPT.

@@ -1,5 +1,5 @@
 import {readConfig,readSession,saveConfig,signIn,activeToken} from '../lib/session.mjs';
-import {authorizationDetails,decideAuthorization,safeChatGPTCallback,trustedOAuthRequest,verifyBridgeOwner,isAuthorizationId} from '../lib/oauth-consent.mjs';
+import {authorizationDetails,decideAuthorization,safeChatGPTCallback,trustedOAuthRequest,verifyBridgeOwner,revokeNextGrant,isAuthorizationId} from '../lib/oauth-consent.mjs';
 import {authReturnPath} from '../lib/oauth-return.mjs';
 const mount=document.querySelector('#consent');
 const id=new URL(location.href).searchParams.get('authorization_id');
@@ -57,7 +57,15 @@ async function showDetails(){if(!readConfig())return showSetup();if(!readSession
    const link=n('a','btn secondary','Открыть настройки Supabase');
    link.href='https://supabase.com/dashboard/project/bcwzlsljcxubqtvzsucz/auth/url-configuration';link.target='_blank';link.rel='noopener noreferrer';
    mount.append(link);
-  }else if(e.code!=='OAUTH_ALREADY_PROCESSED')mount.append(btn('Повторить',()=>run(showDetails),'btn secondary'));
+  }else if(e.code==='OAUTH_ALREADY_PROCESSED'){
+   mount.append(btn('Отозвать только разрешение NEXT',()=>run(async()=>{
+    if(!confirm('Отозвать только ранее выданное разрешение LIVING WORLD NEXT? Старый Bridge не изменится. После этого начни новое подключение в ChatGPT.'))return;
+    const c=readConfig();
+    await revokeNextGrant({...c,token:await activeToken()});
+    mount.replaceChildren(n('div','notice','Разрешение NEXT отозвано. Открой ChatGPT → Настройки плагинов → LIVING WORLD NEXT и начни подключение заново.'));
+    const back=n('a','text-button','← Вернуться к мирам');back.href='/';mount.append(back);
+   }),'btn secondary'));
+  }else mount.append(btn('Повторить',()=>run(showDetails),'btn secondary'));
   const back=n('a','text-button','← Вернуться к мирам');back.href='/';mount.append(back);
  }
 }
