@@ -28,6 +28,7 @@ test('revise_scene forwards one transaction with unchanged prefix and only new e
   if(p.pathname==='/auth/v1/user')return Response.json({id:u});
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([world]);
   if(p.pathname==='/rest/v1/nw_scenes')return Response.json([{id:s,body:original,world_time:'1991',events:[ev]}]);
+  if(p.pathname==='/rest/v1/nw_revisions')return Response.json([]);
   if(p.pathname==='/rest/v1/nw_directives')return Response.json([]);
   if(p.pathname==='/rest/v1/rpc/nw_revise_scene'){rpcBody=JSON.parse(opt.body);return Response.json({scene_id:r,branch_id:b,reused:false,kept_events:1});}
  });
@@ -45,6 +46,7 @@ test('mismatched revision prefix prevents branch creation altogether',async()=>{
   if(p.pathname==='/auth/v1/user')return Response.json({id:u});
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([world]);
   if(p.pathname==='/rest/v1/nw_scenes')return Response.json([{id:s,body:original,events:[ev]}]);
+  if(p.pathname==='/rest/v1/nw_revisions')return Response.json([]);
   if(p.pathname.includes('/rpc/')){count++;return Response.json('unsafe');}
  });
  try{
