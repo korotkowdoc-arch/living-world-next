@@ -79,6 +79,23 @@ export function explainOAuthError(data,status){
  return Object.assign(new Error('Supabase OAuth: HTTP '+status+(detail?' — '+detail:'')),{code:'OAUTH_RESPONSE_ERROR'});
 }
 
+
+/** User-initiated recovery from Supabase's already-consented authorization bug.
+ * ONLY NEXT's grant may be revoked here: the old Bridge remains untouched.
+ */
+export async function revokeNextGrant({url,key,token,fetchImpl=fetch}){
+ if(typeof token!=='string'||!token)throw Error('Для сброса разрешения сначала войди в NEXT.');
+ const path=new URL(url+'/auth/v1/user/oauth/grants');
+ path.searchParams.set('client_id',PUBLIC_OAUTH_CLIENT_ID);
+ const response=await fetchImpl(path.href,{method:'DELETE',
+  headers:{apikey:key,authorization:'Bearer '+token},cache:'no-store'});
+ if(!response.ok){
+  const data=await response.json().catch(()=>({}));
+  throw explainOAuthError(data,response.status);
+ }
+ return {revoked_client_id:PUBLIC_OAUTH_CLIENT_ID};
+}
+
 export async function authorizationDetails({url,key,token,id,fetchImpl=fetch}){
  assertAuthorizationId(id);
  const r=await fetchImpl(`${url}/auth/v1/oauth/authorizations/${id}`,{headers:{apikey:key,authorization:`Bearer ${token}`},cache:'no-store'});
