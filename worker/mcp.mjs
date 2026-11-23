@@ -13,9 +13,10 @@ const toolsList=[
   {name:'list_worlds',description:'List the authenticated owner’s worlds.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes, and narration guidance. Reports incomplete history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
   {name:'search_story_memories',description:'Search the ENTIRE active branch by exact text substring, including scenes older than 1000. Returns scene IDs and evidence excerpts, never other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},query:{type:'string',minLength:2,maxLength:180},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','query']}},
-  {name:'get_story_scene',description:'Retrieve full exact original text and events of one owner-owned saved scene by ID; source for historical memories.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'}},required:['world_id','scene_id']}},
+  {name:'get_story_scene',description:'Retrieve exact original text of a saved scene by ID, annotated whether it belongs to CURRENT active ancestry. Inactive alternatives are NOT canonical facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'}},required:['world_id','scene_id']}},
   {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_branch_history',description:'Read exact saved scenes of active branch, newest first, in pages, without other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
+  {name:'get_npc_agency',description:'Read evidence-backed independent NPC plans and their statuses across all annotated active-branch scenes. A plan is not a completed action and there is no hidden background simulation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140}},required:['world_id']}},
   {name:'create_world',description:'Create a world from one natural-language premise. No advance NPC forms. Returns new world ID.',inputSchema:{type:'object',properties:{description:{type:'string',minLength:8,maxLength:12000},title:{type:'string'},start_marker:{type:'string'}},required:['description']}},
   {name:'add_world_directive',description:'Save the owner’s plain-language world rule verbatim. Never rewrite it to sound more conciliatory.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},text:{type:'string'}},required:['world_id','text']}},
   {name:'save_scene',description:'Atomically save an already narrated scene on the currently selected branch using expected_head and request_id; requires owner opt-in auto_save. Events must have literal evidence.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},request_id:{type:'string',format:'uuid'},body:{type:'string'},world_time:{type:['string','null']},events:{type:'array',items:{type:'object'}}},required:['world_id','branch_id','expected_head','expected_rules_version','request_id','body']}},
@@ -73,7 +74,7 @@ async function supabase(env,token,path,options={}) {
  const response=await fetch(new URL(path,base).toString(),{
    method:options.method||'GET',
    headers:{apikey:key,authorization:`Bearer ${token}`,'content-type':'application/json',...(options.headers||{})},
-   body:options.body===undefined?undefined:JSON.stringify(options.body)
+   body:options.body===undefined?undefined:JSON.stringify(options.body),redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(12000)
  });
  const data=await response.text();let parsed;
  try{parsed=data?JSON.parse(data):null;}catch{parsed=data;}
@@ -87,17 +88,45 @@ async function ownerWorld(env,token,id){const rows=await rest(env,token,`nw_worl
 async function directives(env,token,id){return rest(env,token,`nw_directives?select=*&world_id=eq.${ep(id)}&order=created_at.asc`);}
 async function branch(env,token,world){const rows=await rest(env,token,`nw_branches?select=*&id=eq.${ep(world.active_branch_id)}&world_id=eq.${ep(world.id)}&limit=1`);if(!rows?.[0])throw Error('Active branch not found');return rows[0];}
 async function readHistory(env,token,id,limit=100,offset=0){return rpc(env,token,'nw_active_history',{p_world_id:id,p_limit:Math.min(200,limit),p_offset:offset});}
-async function getAllHistory(env,token,id,max=1000){const out=[];for(let i=0;i<max;i+=200){const page=await readHistory(env,token,id,200,i);out.push(...page);if(page.length<200)return {scenes:out.reverse(),complete:true};}return {scenes:out.reverse(),complete:false};}
+/** Stream ONLY committed structured events from all active ancestors, with a pinned head.
+ * Full source text remains available through get_branch_history/get_story_scene/search.
+ * Never present a capped projection as complete; a write during pagination aborts the read.
+ */
+async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
+ if(head==null)return {scenes:[],complete:true};
+ const out=[];
+ for(let offset=0;offset<maxScenes;offset+=200){
+  const page=await rpc(env,token,'nw_active_memory_page',{
+   p_world_id:world.id,p_expected_head:head,p_limit:200,p_offset:offset
+  });
+  if(!Array.isArray(page))throw Error('Invalid structured memory page');
+  out.push(...page);
+  if(page.length<200){
+   const current=await ownerWorld(env,token,world.id);
+   if(current.active_branch_id!==world.active_branch_id)throw Error('Active branch changed during memory read');
+   const currentBranch=await branch(env,token,current);
+   if(currentBranch.head_scene_id!==head)throw Error('History changed during memory read; retry');
+   return {scenes:out.reverse(),complete:true};
+  }
+ }
+ return {scenes:out.reverse(),complete:false};
+}
 async function callTool(name,args,env,token){
  switch(name){
   case 'list_worlds':return await rest(env,token,'nw_worlds?select=id,title,seed,start_marker,active_branch_id,auto_save,updated_at&order=updated_at.desc');
   case 'get_world_context':{
    const world=await ownerWorld(env,token,args.world_id);
-   const [rules,active,history]=await Promise.all([directives(env,token,world.id),branch(env,token,world),getAllHistory(env,token,world.id)]);
-   const ctx=buildNextContext({world,directives:rules,scenes:history.scenes});
+   const [rules,active]=await Promise.all([directives(env,token,world.id),branch(env,token,world)]);
+   const [history,lastScenes]=await Promise.all([
+    readStructuredMemory(env,token,world,active.head_scene_id),
+    readHistory(env,token,world.id,3,0)
+   ]);
+   if((lastScenes[0]?.id??null)!==active.head_scene_id)throw Error('Scene head changed while reading recent history; retry');
+   const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    return {...ctx,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
-    narration_guidance:promptForNarrator({world,directives:rules,history:history.scenes.slice(-2),projection:ctx.memory}),
-    warning:history.complete?ctx.memory_warning:'Only latest 1000 scenes were replayed: fetch older pages; DO NOT infer missing facts.'};
+    recent_scenes:lastScenes.slice().reverse().map(({id,world_time,body})=>({id,world_time,body})),
+    narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory}),
+    warning:history.complete?ctx.memory_warning:'Structured memory reached the 50,000-scene safety cap; partial data cannot justify facts about earlier history.'};
   }
   case 'search_story_memories':{
    await ownerWorld(env,token,args.world_id);
@@ -110,7 +139,9 @@ async function callTool(name,args,env,token){
    await ownerWorld(env,token,args.world_id);
    const rows=await rest(env,token,`nw_scenes?select=id,world_id,branch_id,parent_scene_id,body,world_time,events,created_at&world_id=eq.${ep(args.world_id)}&id=eq.${ep(assertUuid(args.scene_id))}&limit=1`);
    if(!rows?.[0])throw Error('Scene not found');
-   return rows[0];
+   const active=await rpc(env,token,'nw_scene_in_active_branch',{p_world_id:args.world_id,p_scene_id:args.scene_id});
+   return {...rows[0],in_active_branch:active===true,
+    memory_policy:active===true?'Confirmed scene in current ancestry':'An alternate/discarded branch: not evidence for CURRENT story'};
   }
   case 'get_actor_history':{
    await ownerWorld(env,token,args.world_id);
@@ -119,6 +150,17 @@ async function callTool(name,args,env,token){
    const limit=Math.max(1,Math.min(100,Number(args.limit)||40));
    const rows=await rpc(env,token,'nw_actor_history',{p_world_id:args.world_id,p_actor:actor,p_limit:limit,p_offset:Math.max(0,Math.floor(Number(args.offset)||0))});
    return {actor,events:rows,more_may_exist:rows.length===limit,source:'confirmed structured events in active ancestry',unannotated_scenes:'not indexed: use search_story_memories or get_branch_history'};
+  }
+  case 'get_npc_agency':{
+   const world=await ownerWorld(env,token,args.world_id);
+   const active=await branch(env,token,world);
+   const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
+   const projection=buildNextContext({world,scenes:memory.scenes,evidencePrevalidated:true,historyComplete:memory.complete}).memory;
+   const actor=String(args.actor||'').trim().toLocaleLowerCase('ru');
+   const plans=projection.plans.filter(p=>!actor||String(p.actor).toLocaleLowerCase('ru')===actor);
+   return {world_id:world.id,actor:actor||null,plans,complete:memory.complete,
+    interpretation:'Plans are intentions, not facts of completion. No offscreen action runs while ChatGPT is idle.',
+    warnings:projection.validation_warnings};
   }
   case 'get_branch_history':{
    await ownerWorld(env,token,args.world_id);
@@ -140,19 +182,24 @@ async function callTool(name,args,env,token){
   }
   case 'save_scene':{
    const world=await ownerWorld(env,token,args.world_id);
-   if(!world.auto_save)throw Error('Owner disabled MCP autosave for this world');
-   if(world.active_branch_id!==args.branch_id)throw Error('Not the active branch');
-   if(world.directive_version!==args.expected_rules_version)throw Error('Rules changed; fetch world context again');
-   assertUuid(args.request_id);const active=await branch(env,token,world);
-   // The SQL function checks expected_head AFTER idempotency replay: retries must work.
-   const rules=await directives(env,token,world.id);
-   const validation=validateScene({body:args.body,events:args.events||[],directives:rules});
-   if(!validation.ok)throw Error(validation.errors.join(' '));
+   assertUuid(args.request_id);assertUuid(args.branch_id);
+   if(args.expected_head!==null)assertUuid(args.expected_head);
+   const receipt=await rpc(env,token,'nw_scene_receipt',{p_world_id:world.id,p_request_id:args.request_id});
+   // Previously accepted data can be retried even if active branch, rules or autosave changed.
+   // NEVER trust a receipt alone: the SQL RPC verifies all original payload fields.
+   if(!receipt?.saved){
+    if(!world.auto_save)throw Error('Owner disabled MCP autosave for this world');
+    if(world.active_branch_id!==args.branch_id)throw Error('Not the active branch');
+    if(world.directive_version!==args.expected_rules_version)throw Error('Rules changed; fetch world context again');
+    const rules=await directives(env,token,world.id);
+    const validation=validateScene({body:args.body,events:args.events||[],directives:rules});
+    if(!validation.ok)throw Error(validation.errors.join(' '));
+   }
    const sceneId=await rpc(env,token,'nw_commit_scene',{
-      p_world_id:world.id,p_branch_id:active.id,p_expected_head:args.expected_head,
+      p_world_id:world.id,p_branch_id:args.branch_id,p_expected_head:args.expected_head,
       p_request_id:args.request_id,p_body:args.body,p_world_time:args.world_time??null,p_events:args.events||[],p_expected_rules_version:args.expected_rules_version
    });
-   return {saved:true,scene_id:sceneId,request_id:args.request_id};
+   return {saved:true,reused:!!receipt?.saved,scene_id:sceneId,request_id:args.request_id};
   }
   case 'fork_before_scene':{
    const world=await ownerWorld(env,token,args.world_id);
@@ -221,7 +268,7 @@ export default {
   let msg;try{const raw=await request.text();if(raw.length>1000000)return response(JSON.stringify({error:'Request too large'}),413);msg=JSON.parse(raw);}catch{return response(JSON.stringify(error(null,-32700,'Parse error')),400);}
   if(!msg||msg.jsonrpc!=='2.0'||typeof msg.method!=='string')return response(JSON.stringify(error(msg?.id??null,-32600,'Invalid JSON-RPC request')),400);
   if(msg.id===undefined||msg.method==='notifications/initialized')return new Response(null,{status:202});
-  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.3.1'}})));
+  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.4.0'}})));
   if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
   if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
   if(msg.method==='server/discover')return response(JSON.stringify(done(msg.id,{resultType:'complete',supportedVersions:['2026-07-28',version],capabilities:{tools:{}},ttlMs:0,cacheScope:'public'})));

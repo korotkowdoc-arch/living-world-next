@@ -30,6 +30,7 @@ test('save retries use request_id, not a stale-head precheck in worker',async()=
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:worldId,seed:'Хогвартс 1991',directive_version:2,auto_save:true,active_branch_id:branchId}]);
   if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:branchId,head_scene_id:sceneId}]);
   if(p.pathname==='/rest/v1/nw_directives')return Response.json([]);
+  if(p.pathname==='/rest/v1/rpc/nw_scene_receipt')return Response.json({saved:false,request_id:requestId});
   if(p.pathname==='/rest/v1/rpc/nw_commit_scene'){invoked.push(JSON.parse(opt.body));return Response.json(sceneId);}
  });
  try{

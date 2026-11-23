@@ -1,4 +1,5 @@
 import {dbRequest} from './session.mjs';
+import {requestIdentity} from '../core/request-identity.mjs';
 import {buildWorldDraft} from '../core/world.mjs';
 import {classifyDirective} from '../core/directives.mjs';
 import {makeWorldArchive,sealArchive} from '../core/portable.mjs';
@@ -26,8 +27,19 @@ export async function setDirectiveActive(worldId,directiveId,active,version){
  return rpc('nw_toggle_directive',{p_world_id:worldId,p_directive_id:directiveId,p_active:!!active,p_expected_version:version});
 }
 export async function directiveHistory(worldId){return dbRequest(`/rest/v1/nw_directive_edits?select=*&world_id=eq.${enc(worldId)}&order=created_at.desc&limit=100`);}
-export async function reviseScene({world,sourceSceneId,prefix,continuation,events=[],requestId=crypto.randomUUID(),worldTime=null}){
- return rpc('nw_revise_scene',{p_world_id:world.id,p_source_scene_id:sourceSceneId,p_prefix:prefix,p_continuation:continuation,p_events:events,p_request_id:requestId,p_world_time:worldTime,p_expected_rules_version:world.directive_version});
+export async function reviseScene({world,sourceSceneId,prefix,continuation,events=[],requestId=null,worldTime=null}){
+ const payload={p_world_id:world.id,p_source_scene_id:sourceSceneId,p_prefix:prefix,p_continuation:continuation,p_events:events,p_world_time:worldTime,p_expected_rules_version:world.directive_version};
+ const id=requestId||await requestIdentity('revision',payload);
+ try{return await rpc('nw_revise_scene',{...payload,p_request_id:id});}
+ catch(error){
+  // The branch may have been committed even if the response was lost.
+  const rows=await dbRequest(`/rest/v1/nw_revisions?select=branch_id,new_scene_id,source_scene_id,kept_prefix,continuation,new_events,requested_world_time&world_id=eq.${enc(world.id)}&request_id=eq.${enc(id)}&limit=1`).catch(()=>[]);
+  const previous=rows?.[0];
+  if(previous?.source_scene_id===sourceSceneId&&previous.kept_prefix===prefix&&previous.continuation===continuation&&
+     JSON.stringify(previous.new_events)===JSON.stringify(events)&&previous.requested_world_time===worldTime)
+   return {scene_id:previous.new_scene_id,branch_id:previous.branch_id,reused:true,recovered_after_error:true};
+  throw Error(`${error.message} Если сеть пропала, проверь ветки: запись не подтверждена (ID ${id}).`);
+ }
 }
 export async function sceneReceipt(worldId,requestId){return rpc('nw_scene_receipt',{p_world_id:worldId,p_request_id:requestId});}
 export async function listBranches(worldId){return dbRequest(`/rest/v1/nw_branches?select=*&world_id=eq.${enc(worldId)}&order=created_at.asc`);}
@@ -43,8 +55,16 @@ export async function allActiveHistory(worldId,{limit=2000}={}){
  }
  return {scenes:newest.reverse(),complete:false};
 }
-export async function saveScene({world,body,worldTime=null,events=[],requestId=crypto.randomUUID()}){
- return rpc('nw_commit_scene', {p_world_id:world.id,p_branch_id:world.active_branch_id,p_expected_head:world.head_scene_id??null,p_request_id:requestId,p_body:body,p_world_time:worldTime,p_events:events,p_expected_rules_version:world.directive_version});
+export async function saveScene({world,body,worldTime=null,events=[],requestId=null}){
+ const payload={p_world_id:world.id,p_branch_id:world.active_branch_id,p_expected_head:world.head_scene_id??null,
+  p_body:body,p_world_time:worldTime,p_events:events,p_expected_rules_version:world.directive_version};
+ const id=requestId||await requestIdentity('scene',payload);
+ try{return await rpc('nw_commit_scene',{...payload,p_request_id:id});}
+ catch(error){
+  const receipt=await sceneReceipt(world.id,id).catch(()=>null);
+  if(receipt?.saved&&receipt.branch_id===payload.p_branch_id)return receipt.scene_id;
+  throw Error(`${error.message} Запись не подтверждена. Не создавай новое продолжение до проверки; ID запроса: ${id}.`);
+ }
 }
 export async function forkBefore(worldId,sceneId,name){return rpc('nw_fork_before',{p_world_id:worldId,p_scene_id:sceneId,p_name:name||'Альтернативная линия'});}
 export async function switchBranch(worldId,branchId){return rpc('nw_switch_branch',{p_world_id:worldId,p_branch_id:branchId});}
@@ -94,4 +114,25 @@ export async function getScene(worldId,sceneId){
  const rows=await dbRequest(`/rest/v1/nw_scenes?select=id,world_id,branch_id,parent_scene_id,body,events,world_time,created_at&world_id=eq.${enc(worldId)}&id=eq.${enc(sceneId)}&limit=1`);
  if(!rows?.length)throw Error('Сцена не найдена или недоступна.');
  return rows[0];
+}
+
+/** On-demand complete structured memory, without downloading every literary scene body.
+ * Pinned to the active head: concurrent story updates invalidate the read.
+ */
+export async function fullStructuredMemory(world,{maxScenes=50000}={}){
+ const expected=world.head_scene_id??null;
+ if(expected===null)return {scenes:[],complete:true};
+ const newest=[];
+ for(let offset=0;offset<maxScenes;offset+=200){
+  const page=await rpc('nw_active_memory_page',{p_world_id:world.id,p_expected_head:expected,p_limit:200,p_offset:offset});
+  if(!Array.isArray(page))throw Error('Получена неверная страница памяти.');
+  newest.push(...page);
+  if(page.length<200){
+   const [after,branches]=await Promise.all([getWorld(world.id),listBranches(world.id)]);
+   if(after.active_branch_id!==world.active_branch_id||branches.find(x=>x.id===after.active_branch_id)?.head_scene_id!==expected)
+    throw Error('История изменилась во время чтения памяти. Обнови мир и повтори.');
+   return {scenes:newest.reverse(),complete:true};
+  }
+ }
+ return {scenes:newest.reverse(),complete:false};
 }

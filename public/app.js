@@ -4,7 +4,7 @@ import {prepareRevision} from './core/revisions.mjs';
 import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
-import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive} from './lib/storage.mjs';
+import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,fullStructuredMemory} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
@@ -190,6 +190,21 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
  if(!projection.relationships.length)ties.append(para('Связи ещё не отмечены в сохранённых событиях.'));
  for(const link of projection.relationships){const item=node('div','rule');add(item,node('strong','',`${link.a} → ${link.b}`),para(`Состояние: ${link.stance||'не указано'}`),para(link.evidence||''));ties.append(item);}
  root.append(ties);
+ const agency=panel(title('Самостоятельные планы NPC'),para('Цели — это намерения, а не уже совершившиеся поступки. Персонажи могут стремиться к разному, ссориться и не искать примирения. Завершение плана требует фактического события и источника.'));
+ const resultsFull=node('div');
+ const inspect=button('Загрузить планы из всей истории',()=>busy(async()=>{
+  resultsFull.replaceChildren(para('Читаю события действующей ветки…'));
+  const memory=await fullStructuredMemory(w);
+  const p=replay(memory.scenes,[],{evidencePrevalidated:true});
+  resultsFull.replaceChildren(para(`Обработано сцен: ${memory.scenes.length}. ${memory.complete?'Цепочка загружена полностью.':'Достигнут лимит чтения: результат неполный.'}`));
+  if(!p.plans.length)resultsFull.append(para('Планы пока не отмечены в сохранённых событиях. Это не означает отсутствия желаний у героев.'));
+  for(const plan of p.plans){
+   const card=node('div','rule');add(card,node('strong','',`${plan.actor} · ${plan.status==='active'?'действует':plan.status==='paused'?'отложен':plan.status==='completed'?'выполнен':'оставлен'}`),para(plan.goal),para(`Последний источник: ${plan.source?.scene_id||'не указан'}`));
+   resultsFull.append(card);
+  }
+  if(p.validation_warnings.length)resultsFull.append(node('div','notice',`Обнаружены противоречивые события: ${p.validation_warnings.length}. Это требует проверки текста.`));
+ }),'btn secondary');
+ add(agency,row(inspect),resultsFull);root.append(agency);
 }
 
 function renderArchive(){const w=state.world;
@@ -220,7 +235,7 @@ function renderArchive(){const w=state.world;
 
 function renderDirector(){const w=state.world;add(root,panel(title('Состояние памяти'),para('Режиссёрская информация отделена от художественного текста.'),node('div','rule',`Загружено сцен: ${state.scenes.length}${state.hasOlder?' (есть ещё)': ''}`),node('div','rule',`Текущая ветка: ${w.active_branch_id}`)));
  const p=replay(state.scenes,state.directives);const stats=panel(title('Подтверждённые события'),para(`Записанных изменений: ${p.events_replayed}. Неотмеченные сцены не означают отсутствия событий.`));
- for(const [name,arr] of [['Персонажи',p.people],['Отношения',p.relationships],['Знания',p.knowledge],['Финансы',p.balances],['Вещи',p.items],['Обязательства',p.obligations],['События вне кадра',p.offscreen]])stats.append(para(`${name}: ${arr.length}`));
+ for(const [name,arr] of [['Персонажи',p.people],['Отношения',p.relationships],['Знания',p.knowledge],['Финансы',p.balances],['Вещи',p.items],['Обязательства',p.obligations],['Планы NPC',p.plans],['События вне кадра',p.offscreen]])stats.append(para(`${name}: ${arr.length}`));
  if(!state.historyComplete)stats.append(node('div','notice','Загружена только часть истории. Проекция не полная. Нельзя делать выводы о старых событиях.'));
  if(p.validation_warnings.length)stats.append(node('div','notice',`Некоторые события отклонены: ${p.validation_warnings.length}.`));root.append(stats);
  const audit=literaryReview(state.scenes);

@@ -52,7 +52,13 @@ export function promptForNarrator({world, directives = [], history = [], project
   if (active.length) blocks.push('УСТАНОВЛЕННЫЕ ИГРОКОМ УСЛОВИЯ (приоритетнее творческой импровизации):\n' + active.map(x=>`• ${x.text}`).join('\n'));
   const locks=extractLocks(active);
   if(locks.length)blocks.push('ЖЁСТКИЕ ОГРАНИЧЕНИЯ ОТНОШЕНИЙ — НЕ ПЕРЕОСМЫСЛЯЙ:\n' + locks.map(x=>`${x.a} ↔ ${x.b}: ${x.forbid_reconciliation?'нет примирения/дружбы; ':''}${x.forbid_respect?'нет взаимного уважения; ':''}совместная опасность/помощь не меняет эту установку`).join('\n'));
-  if (projection) blocks.push('ПОДТВЕРЖДЁННАЯ ПАМЯТЬ (не заменяй догадками):\n' + JSON.stringify(projection));
+  if (projection){
+    blocks.push('ПОДТВЕРЖДЁННАЯ ПАМЯТЬ (не заменяй догадками):\n' + JSON.stringify(projection));
+    const pending=(projection.plans||[]).filter(p=>['active','paused'].includes(p.status));
+    if(pending.length)blocks.push('САМОСТОЯТЕЛЬНЫЕ ПЛАНЫ ПЕРСОНАЖЕЙ (это ЕЩЁ НЕ произошедшие действия):\n'+
+      pending.map(p=>`• ${p.actor}: ${p.goal} [${p.status}]; последний источник: ${p.source?.scene_id||'неизвестен'}`).join('\n')+
+      '\nГерои могут действовать по этим намерениям, менять их или ссориться, если обстоятельства позволяют. Не приписывай им действий без сцены, основания, времени и подтверждения. Не заставляй всех искать примирение.');
+  }
   if (history.length) blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ:\n' + history.map(x=>`[${x.id}; ${x.world_time || 'время не указано'}]\n${x.body}`).join('\n\n'));
   blocks.push('Не вводи новые подтверждённые факты без сцены. Создавай важных новых NPC постепенно, когда того требует история. Не сглаживай заранее установленные антагонизмы. Не требуй выбора после каждого абзаца. Если точных сведений нет, сохраняй неопределённость.');
   return blocks.join('\n\n');
