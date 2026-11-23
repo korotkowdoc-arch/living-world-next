@@ -12,6 +12,9 @@ const version='2025-06-18';
 const toolsList=[
   {name:'list_worlds',description:'List the authenticated owner’s worlds.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes, and narration guidance. Reports incomplete history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
+  {name:'search_story_memories',description:'Search the ENTIRE active branch by exact text substring, including scenes older than 1000. Returns scene IDs and evidence excerpts, never other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},query:{type:'string',minLength:2,maxLength:180},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','query']}},
+  {name:'get_story_scene',description:'Retrieve full exact original text and events of one owner-owned saved scene by ID; source for historical memories.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'}},required:['world_id','scene_id']}},
+  {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_branch_history',description:'Read exact saved scenes of active branch, newest first, in pages, without other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'create_world',description:'Create a world from one natural-language premise. No advance NPC forms. Returns new world ID.',inputSchema:{type:'object',properties:{description:{type:'string',minLength:8,maxLength:12000},title:{type:'string'},start_marker:{type:'string'}},required:['description']}},
   {name:'add_world_directive',description:'Save the owner’s plain-language world rule verbatim. Never rewrite it to sound more conciliatory.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},text:{type:'string'}},required:['world_id','text']}},
@@ -95,6 +98,27 @@ async function callTool(name,args,env,token){
    return {...ctx,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     narration_guidance:promptForNarrator({world,directives:rules,history:history.scenes.slice(-2),projection:ctx.memory}),
     warning:history.complete?ctx.memory_warning:'Only latest 1000 scenes were replayed: fetch older pages; DO NOT infer missing facts.'};
+  }
+  case 'search_story_memories':{
+   await ownerWorld(env,token,args.world_id);
+   const query=String(args.query??'').trim();
+   if(query.length<2||query.length>180)throw Error('Query must be 2-180 characters');
+   const rows=await rpc(env,token,'nw_search_history',{p_world_id:args.world_id,p_query:query,p_limit:Math.max(1,Math.min(40,Number(args.limit)||25)),p_offset:Math.max(0,Math.floor(Number(args.offset)||0))});
+   return {match_type:'literal_substring',world_id:args.world_id,active_branch_only:true,results:rows,more_may_exist:rows.length===Math.max(1,Math.min(40,Number(args.limit)||25))};
+  }
+  case 'get_story_scene':{
+   await ownerWorld(env,token,args.world_id);
+   const rows=await rest(env,token,`nw_scenes?select=id,world_id,branch_id,parent_scene_id,body,world_time,events,created_at&world_id=eq.${ep(args.world_id)}&id=eq.${ep(assertUuid(args.scene_id))}&limit=1`);
+   if(!rows?.[0])throw Error('Scene not found');
+   return rows[0];
+  }
+  case 'get_actor_history':{
+   await ownerWorld(env,token,args.world_id);
+   const actor=String(args.actor??'').trim();
+   if(actor.length<1||actor.length>140)throw Error('Invalid character name');
+   const limit=Math.max(1,Math.min(100,Number(args.limit)||40));
+   const rows=await rpc(env,token,'nw_actor_history',{p_world_id:args.world_id,p_actor:actor,p_limit:limit,p_offset:Math.max(0,Math.floor(Number(args.offset)||0))});
+   return {actor,events:rows,more_may_exist:rows.length===limit,source:'confirmed structured events in active ancestry',unannotated_scenes:'not indexed: use search_story_memories or get_branch_history'};
   }
   case 'get_branch_history':{
    await ownerWorld(env,token,args.world_id);
@@ -195,7 +219,7 @@ export default {
   let msg;try{const raw=await request.text();if(raw.length>1000000)return response(JSON.stringify({error:'Request too large'}),413);msg=JSON.parse(raw);}catch{return response(JSON.stringify(error(null,-32700,'Parse error')),400);}
   if(!msg||msg.jsonrpc!=='2.0'||typeof msg.method!=='string')return response(JSON.stringify(error(msg?.id??null,-32600,'Invalid JSON-RPC request')),400);
   if(msg.id===undefined||msg.method==='notifications/initialized')return new Response(null,{status:202});
-  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.2.0'}})));
+  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.3.0'}})));
   if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
   if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
   if(msg.method==='server/discover')return response(JSON.stringify(done(msg.id,{resultType:'complete',supportedVersions:['2026-07-28',version],capabilities:{tools:{}},ttlMs:0,cacheScope:'public'})));

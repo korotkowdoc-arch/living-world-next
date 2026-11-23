@@ -1,6 +1,7 @@
 import {dbRequest} from './session.mjs';
 import {buildWorldDraft} from '../core/world.mjs';
 import {classifyDirective} from '../core/directives.mjs';
+import {makeWorldArchive,sealArchive} from '../core/portable.mjs';
 const enc=encodeURIComponent;
 export async function rpc(name,payload){return dbRequest(`/rest/v1/rpc/${name}`,{method:'POST',body:payload});}
 export async function listWorlds(){return dbRequest('/rest/v1/nw_worlds?select=*&order=updated_at.desc');}
@@ -50,3 +51,48 @@ export async function forkBefore(worldId,sceneId,name){return rpc('nw_fork_befor
 export async function switchBranch(worldId,branchId){return rpc('nw_switch_branch',{p_world_id:worldId,p_branch_id:branchId});}
 export async function setAutosave(worldId,enabled){return rpc('nw_set_autosave',{p_world_id:worldId,p_enabled:!!enabled});}
 export async function deleteWorld(worldId){await dbRequest(`/rest/v1/nw_worlds?id=eq.${enc(worldId)}`,{method:'DELETE'});}
+
+
+/** Read every saved scene across every branch, not just active ancestry. */
+async function allRows(table,worldId,{pageSize=200,maxRows=50000}={}){
+ const rows=[];
+ for(let offset=0;offset<maxRows;offset+=pageSize){
+  const page=await dbRequest(`/rest/v1/${table}?select=*&world_id=eq.${enc(worldId)}&order=created_at.asc&limit=${pageSize}&offset=${offset}`);
+  if(!Array.isArray(page))throw Error(`Не удалось прочитать раздел ${table}.`);
+  rows.push(...page);
+  if(page.length<pageSize)return rows;
+ }
+ throw Error(`Архив превышает ${maxRows} записей. Нужен постраничный экспорт, сохранение отменено.`);
+}
+
+/** Search actual saved text in the active ancestry, not arbitrary unrelated branches. */
+export async function searchActiveScenes(worldId,query,{limit=30,offset=0}={}){
+ const search=String(query??'').trim();
+ if(search.length<2||search.length>180)throw Error('Для поиска нужно от 2 до 180 символов.');
+ return rpc('nw_search_history',{p_world_id:worldId,p_query:search,p_limit:limit,p_offset:offset});
+}
+
+/** Export is read-only; a second state check detects concurrently changed branch heads. */
+export async function exportWorldArchive(worldId){
+ const [before,branches,directives,directiveEdits,scenes,revisions]=await Promise.all([
+   getWorld(worldId),listBranches(worldId),listDirectives(worldId),
+   allRows('nw_directive_edits',worldId),allRows('nw_scenes',worldId),allRows('nw_revisions',worldId)
+ ]);
+ const [after,branchesAfter]=await Promise.all([getWorld(worldId),listBranches(worldId)]);
+ const signature=(world,list)=>JSON.stringify({head:world.active_branch_id,rules:world.directive_version,updated:world.updated_at,
+   branches:list.map(b=>[b.id,b.head_scene_id]).sort((a,b)=>a[0].localeCompare(b[0]))});
+ if(signature(before,branches)!==signature(after,branchesAfter))throw Error('Мир изменился во время выгрузки. Повтори экспорт, чтобы не получить неполную копию.');
+ const archive=makeWorldArchive({world:after,branches:branchesAfter,directives,directiveEdits,scenes,revisions});
+ return sealArchive(archive);
+}
+
+export async function actorHistory(worldId,name,{limit=40,offset=0}={}){
+ const actor=String(name||'').trim();if(!actor||actor.length>140)throw Error('Выбери персонажа.');
+ return rpc('nw_actor_history',{p_world_id:worldId,p_actor:actor,p_limit:limit,p_offset:offset});
+}
+
+export async function getScene(worldId,sceneId){
+ const rows=await dbRequest(`/rest/v1/nw_scenes?select=id,world_id,branch_id,parent_scene_id,body,events,world_time,created_at&world_id=eq.${enc(worldId)}&id=eq.${enc(sceneId)}&limit=1`);
+ if(!rows?.length)throw Error('Сцена не найдена или недоступна.');
+ return rows[0];
+}
