@@ -126,10 +126,12 @@ async function callTool(name,args,env,token){
   }
   case 'create_world':{
    const {buildWorldDraft}=await import('../public/core/world.mjs');const draft=buildWorldDraft(args.description);
-   const id=await rpc(env,token,'nw_create_world',{p_title:String(args.title||draft.title).slice(0,100),p_seed:draft.seed,p_start_marker:String(args.start_marker||draft.start_marker)});
    const seedRule=draft.seed.length<=5000?classifyDirective(draft.seed):null;
-   if(seedRule?.relationship_locks.length)await rpc(env,token,'nw_add_directive',{p_world_id:id,p_text:seedRule.text,p_category:seedRule.category,p_metadata:{relationship_lock:seedRule.relationship_lock,relationship_locks:seedRule.relationship_locks,tags:seedRule.tags}});
-   return {world_id:id,initial_description:draft.seed};
+   const rule=seedRule?.relationship_locks.length?seedRule:null;
+   const id=await rpc(env,token,'nw_create_world_v2',{p_title:String(args.title||draft.title).slice(0,100),p_seed:draft.seed,p_start_marker:String(args.start_marker||draft.start_marker),
+     p_rule_text:rule?.text??null,p_rule_category:rule?.category??'general',
+     p_rule_metadata:rule?{relationship_lock:rule.relationship_lock,relationship_locks:rule.relationship_locks,tags:rule.tags}:{} });
+   return {world_id:id,initial_description:draft.seed,initial_rule_saved_atomically:!!rule};
   }
   case 'add_world_directive':{
    const world=await ownerWorld(env,token,args.world_id);const directive=classifyDirective(args.text);
@@ -219,7 +221,7 @@ export default {
   let msg;try{const raw=await request.text();if(raw.length>1000000)return response(JSON.stringify({error:'Request too large'}),413);msg=JSON.parse(raw);}catch{return response(JSON.stringify(error(null,-32700,'Parse error')),400);}
   if(!msg||msg.jsonrpc!=='2.0'||typeof msg.method!=='string')return response(JSON.stringify(error(msg?.id??null,-32600,'Invalid JSON-RPC request')),400);
   if(msg.id===undefined||msg.method==='notifications/initialized')return new Response(null,{status:202});
-  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.3.0'}})));
+  if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.3.1'}})));
   if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
   if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
   if(msg.method==='server/discover')return response(JSON.stringify(done(msg.id,{resultType:'complete',supportedVersions:['2026-07-28',version],capabilities:{tools:{}},ttlMs:0,cacheScope:'public'})));

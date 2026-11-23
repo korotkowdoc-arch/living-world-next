@@ -8,12 +8,11 @@ export async function listWorlds(){return dbRequest('/rest/v1/nw_worlds?select=*
 export async function getWorld(id){const rows=await dbRequest(`/rest/v1/nw_worlds?select=*&id=eq.${enc(id)}&limit=1`);if(!rows?.length)throw Error('Мир не найден.');return rows[0];}
 export async function createWorld(text){
  const draft=buildWorldDraft(text);
- const id=await rpc('nw_create_world',{p_title:draft.title,p_seed:draft.seed,p_start_marker:draft.start_marker});
- if(draft.seed.length<=5000){
-  const explicit=classifyDirective(draft.seed);
-  if(explicit.relationship_locks.length)await addDirective(id,draft.seed);
- }
- return id;
+ const explicit=draft.seed.length<=5000?classifyDirective(draft.seed):null;
+ const rule=explicit?.relationship_locks.length?explicit:null;
+ return rpc('nw_create_world_v2',{p_title:draft.title,p_seed:draft.seed,p_start_marker:draft.start_marker,
+  p_rule_text:rule?.text??null,p_rule_category:rule?.category??'general',
+  p_rule_metadata:rule?{tags:rule.tags,relationship_lock:rule.relationship_lock,relationship_locks:rule.relationship_locks}:{} });
 }
 export async function listDirectives(worldId){return dbRequest(`/rest/v1/nw_directives?select=*&world_id=eq.${enc(worldId)}&order=created_at.asc`);}
 export async function addDirective(worldId,text){
