@@ -79,3 +79,11 @@ git pull --ff-only; npm test; npm run check
 Проверить `https://living-world-next.pages.dev/health` и `https://living-world-next.pages.dev/.well-known/oauth-protected-resource`. Затем в Supabase (Authentication > OAuth Server) включить сервер и настроить Authorization Path, отдельного клиента OAuth 2.1 для NEXT, и в Cloudflare Pages Production Variables задать `SUPABASE_OAUTH_CLIENT_ID`. OAuth Redirect URL строго из ChatGPT. Старый LIVING WORLD OAuth клиент не изменять.
 
 Проверить MCP initialize, tools/list, unauthenticated tools/call → HTTP 401. Прохождение этих тестов само по себе не доказывает пользовательский OAuth E2E.
+
+### Важно: Build command для Pages Functions
+
+При первоначальном создании чисто статического Pages-сайта поле Build command было оставлено пустым. После добавления `functions/` в репозиторий Cloudflare рекомендует задать **`exit 0`** в Settings → Builds & deployments → Build command (ветка production `main`, output directory `public`). Это запускает сборочный процесс без преобразования статических HTML/JS и позволяет Pages обнаружить Functions. Если `/health` вместо JSON показывает главную страницу, сначала проверь эту настройку и лог нового деплоя.
+
+Проверка актуального статика: `https://living-world-next.pages.dev/release.json` должен отдать `version: 0.5.1`. Этот файл публичный, не содержит пользовательских данных. Пока он не обновился, невозможно утверждать, что Cloudflare взял последний коммит.
+
+**Осторожно с OAuth:** новый проект использует существующий Supabase Auth, поэтому настройки Authorization Path и Site URL могут быть общими для старого LIVING WORLD и NEXT. Не изменяйте их без проверки старой интеграции. Отдельный OAuth client — новая запись; однако общий экран согласия должен корректно обслуживать оба приложения. При несовместимости предпочтителен отдельный Supabase Auth проект, но это потребует безопасного переноса только `nw_*` схемы и регистрации пользователя.

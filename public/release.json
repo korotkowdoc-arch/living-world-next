@@ -1,0 +1,8 @@
+{
+  "app": "living-world-next",
+  "version": "0.5.1",
+  "mcp": "/mcp",
+  "health": "/health",
+  "deploy_source": "github-main",
+  "note": "Public status marker only; does not prove MCP deployed"
+}

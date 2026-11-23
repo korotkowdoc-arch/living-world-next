@@ -78,3 +78,7 @@ Windows: `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1` зап�
 Публичный Supabase publishable key берётся из `public/lib/public-config.mjs`. **service_role не добавлять**. До установки нового client_id MCP отдаёт discovery и метаданные, но закрывает вызовы, читающие личные истории.
 
 Проверка: `/health` должен вернуть `running:true`; `oauth_metadata_ready` отражает только конфигурацию, не фактический вход. До полноценного теста ChatGPT `oauth_e2e_verified:false` остаётся честным.
+
+### Диагностика публикации Functions
+
+Для Cloudflare Pages с нативными Functions необходимо выставить **Build command: `exit 0`** (output `public`). Пустой Build command использовался при чисто статической первоначальной публикации, но не гарантирует обнаружение Functions. Проверить `/release.json` (версия статики), `/health` (JSON от MCP) и метаданные OAuth по `/.well-known/oauth-protected-resource`. Если `/health` показывает HTML входа в приложение, серверный маршрут **не работает**, несмотря на успешный CI GitHub.

@@ -27,7 +27,7 @@
 
 ## Cloudflare Pages и MCP
 - [x] Статический сайт `https://living-world-next.pages.dev/` развёрнут; вход в аккаунт и экран создания миров видны на предоставленных скриншотах. Реальная запись мира не подтверждена.
-- [x] MCP добавлен через Cloudflare Pages Functions к уже подключённому GitHub: `https://living-world-next.pages.dev/mcp`, также `/health` и OAuth protected resource discovery. Нужна внешняя проверка после автоматического redeploy.
+- [x] MCP добавлен через Cloudflare Pages Functions к уже подключённому GitHub: `https://living-world-next.pages.dev/mcp`, также `/health` и OAuth protected resource discovery. GitHub CI прошёл, но при проверке `https://living-world-next.pages.dev/health` пока возвращается HTML веб-приложения — Pages Functions ещё не активированы. Cloudflare рекомендует включить Build command `exit 0` для статических проектов с Functions; только после этого маршрут будет проверен.
 - [ ] Создать **нового** OAuth клиента для ChatGPT NEXT, задать `SUPABASE_OAUTH_CLIENT_ID` в Cloudflare Pages, проверить действительный code+PKCE+refresh. Старый LIVING WORLD OAuth-клиент не менять.
 - [ ] Энд-ту-энд: написать сцену в ChatGPT, сохранить через MCP, прочитать на iPhone, восстановить квитанцию после сетевого сбоя.
 - [ ] Десятки реальных художественных сцен проверены на инициативность героев, конфликты без примирения, непротиворечивость личной памяти.
@@ -56,6 +56,7 @@
 ## Следующий крупный этап
 
 1. Проверить HTTPS Pages Functions `/health`, `/.well-known/oauth-protected-resource`, `/mcp` после GitHub redeploy. Отдельный Worker не требуется.
-2. В Supabase OAuth Server создать нового клиента NEXT, настроить его в переменной Cloudflare Pages `SUPABASE_OAUTH_CLIENT_ID`, пройти ChatGPT OAuth flow.
-3. Проверить действительное создание мира и авторизованное MCP-сохранение из ChatGPT, затем прочитать сцену на iPhone.
-4. Продолжать автономность NPC, расписания, автоматическую доказательную память и восстановление архива без ручных анкет.
+2. В Cloudflare Pages → Settings → Builds & deployments задать Build command `exit 0`, оставить output `public`, повторить публикацию. Убедиться, что `/health` возвращает JSON.
+3. В Supabase OAuth Server создать нового клиента NEXT и настроить `SUPABASE_OAUTH_CLIENT_ID` в Cloudflare Pages. Не менять общую страницу согласия OAuth прежнего проекта без отдельной проверки, потому что у двух приложений один Supabase Auth.
+4. Проверить действительное создание мира и авторизованное MCP-сохранение из ChatGPT, затем прочитать сцену на iPhone.
+5. Продолжать автономность NPC, расписания, автоматическую доказательную память и восстановление архива без ручных анкет.
