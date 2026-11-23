@@ -4,10 +4,16 @@ import {prepareRevision} from './core/revisions.mjs';
 import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
+import {getReturnId,consentPath} from './lib/oauth-return.mjs';
 import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,fullStructuredMemory} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
+const oauthReturnId=getReturnId(new URL(location.href).searchParams);
+function resumeOAuth(){
+ if(!oauthReturnId)return false;
+ location.replace(consentPath(oauthReturnId));return true;
+}
 const state={screen:'worlds',tab:'story',world:null,worlds:[],directives:[],branches:[],scenes:[],historyComplete:true,hasOlder:false,revision:null,pending:false};
 const node=(tag,cl='',value='')=>{const e=document.createElement(tag);if(cl)e.className=cl;if(value)e.textContent=value;return e;};
 const add=(parent,...children)=>{for(const c of children)if(c!=null)parent.append(c);return parent;};
@@ -33,9 +39,10 @@ function showConnect(){state.screen='connect';clear();add(root,node('div','eyebr
 function showAuth(mode='signin'){if(!readConfig())return showConnect();state.screen='auth';clear();add(root,node('div','eyebrow','Защищённое пространство'),node('h1','hero-title','Твои миры. Твоя история.'),para('Войди в Supabase-аккаунт, чтобы открыть свои сохранения.','subtitle'));
   const form=node('form');const email=node('input','field');email.type='email';email.autocomplete='email';email.placeholder='Email';email.required=true;
   const password=node('input','field');password.type='password';password.autocomplete=mode==='signin'?'current-password':'new-password';password.placeholder='Пароль';password.required=true;
-  const submit=button(mode==='signin'?'Войти':'Зарегистрироваться',()=>busy(async()=>{if(!email.value||!password.value)return toast('Заполни email и пароль.',true);if(mode==='signin'){await signIn(email.value,password.value);await openWorlds();}else{await signUp(email.value,password.value);toast('Проверь почту, если Supabase требует подтверждение.');showAuth();}}));
+  const submit=button(mode==='signin'?'Войти':'Зарегистрироваться',()=>busy(async()=>{if(!email.value||!password.value)return toast('Заполни email и пароль.',true);if(mode==='signin'){await signIn(email.value,password.value);password.value='';if(!resumeOAuth())await openWorlds();}else{await signUp(email.value,password.value);toast('Проверь почту, если Supabase требует подтверждение.');showAuth();}}));
   add(form,node('label','input-label','Email'),email,node('label','input-label','Пароль'),password,row(submit,button(mode==='signin'?'Создать аккаунт':'У меня уже есть аккаунт',()=>showAuth(mode==='signin'?'signup':'signin'),'btn ghost')));
   add(root,panel(form),button('Изменить подключение Supabase',showConnect,'text-button'));
+  if(oauthReturnId){const back=node('a','btn secondary','К мирам без ChatGPT');back.href='/';add(root,panel(para('После входа вернёмся к авторизации ChatGPT. Нужен пароль аккаунта NEXT, а не панели Supabase.'),back));}
 }
 async function openWorlds(){if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
 function renderWorlds(){state.screen='worlds';clear();add(root,node('div','eyebrow','Интерактивные вселенные'),add(node('h1','hero-title'),document.createTextNode('Придумай мир. '),node('em','','Он оживёт.')),para('Никаких анкет и обязательных биографий. Опиши идею своими словами — детали мира сформируются по мере истории.','subtitle'));
@@ -252,6 +259,6 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
 accountButton.addEventListener('click',()=>busy(async()=>{if(readSession()){await signOut();showAuth();}else showAuth();}));
 document.querySelector('#homeLink').addEventListener('click',e=>{e.preventDefault();busy(openWorlds);});
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Ошибка подключения. Попробуй обновить страницу.',true);});
-openWorlds();
+if(!(readSession()&&resumeOAuth()))openWorlds();
 
 if('serviceWorker' in navigator && window.isSecureContext)navigator.serviceWorker.register('/sw.js').catch(()=>{});

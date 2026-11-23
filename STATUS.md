@@ -90,3 +90,7 @@
 
 - [x] **v0.6.4:** причины отказа OAuth больше не маскируются сообщением об истечении запроса. Supabase auth logs подтвердили `400 unauthorized request origin` при обращении с `https://living-world-next.pages.dev`. Новый экран отображает точный способ исправления и ссылку на URL Configuration, не меняет старый OAuth.
 - [ ] В Supabase → Authentication → URL Configuration → Additional Redirect URLs добавить **точный origin** `https://living-world-next.pages.dev` (дополнительно к старым значениям). Общий Site URL и Authorization Path оставить без изменений. Из подключённых инструментов текущей сессии нет метода обновления Auth URL Configuration, требуется действие в панели Supabase.
+
+- [x] v0.6.5: OAuth-screen has exit to worlds, retry after incorrect password, return from NEXT login to OAuth using same-origin paths, reuses existing NEXT session; Supabase Dashboard sessions are separate.
+- [x] Service worker cannot cache OAuth URLs with query parameters. Cache version v7.
+- [ ] Full ChatGPT token exchange not confirmed.

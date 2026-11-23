@@ -1,5 +1,6 @@
 import {readConfig,readSession,saveConfig,signIn,activeToken} from '../lib/session.mjs';
 import {authorizationDetails,decideAuthorization,safeChatGPTCallback,assertNextAuthorization,isAuthorizationId} from '../lib/oauth-consent.mjs';
+import {authReturnPath} from '../lib/oauth-return.mjs';
 const mount=document.querySelector('#consent');
 const id=new URL(location.href).searchParams.get('authorization_id');
 const n=(tag,cls='',text='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;return e;};
@@ -8,17 +9,29 @@ const entry=(type,placeholder,value='')=>{const input=n('input','field');input.t
 const btn=(text,action,cls='btn')=>{const b=n('button',cls,text);b.type='button';b.addEventListener('click',action);return b;};
 const form=()=>n('section','panel');
 let busy=false;
-const run=async(fn)=>{if(busy)return;busy=true;try{await fn();}catch(e){mount.prepend(n('div','notice',e.message||'Ошибка авторизации.'));}finally{busy=false;}};
+const run=async(fn)=>{if(busy)return;busy=true;try{await fn();}catch(e){mount.querySelector('[data-auth-error]')?.remove();const msg=n('div','notice',e.message||'Ошибка авторизации.');msg.dataset.authError='1';msg.setAttribute('role','alert');mount.prepend(msg);}finally{busy=false;}};
 const redirect=link=>{location.assign(safeChatGPTCallback(link));};
 function showSetup(){mount.replaceChildren();const c=readConfig();const url=entry('url','https://project.supabase.co',c?.url||'');const key=entry('password','Публичный anon/publishable key',c?.key||'');
  add(mount,n('div','eyebrow','Соединение с ChatGPT'),n('h1','hero-title','Подключить мир к ChatGPT'),add(form(),
   n('h2','','Настройки Supabase'),n('p','small','Этот экран нужен один раз. Не вводи service_role или секретные ключи.'),url,key,
   add(n('div','btn-row'),btn('Продолжить',()=>run(async()=>{saveConfig({url:url.value,key:key.value});showLogin();})))));
 }
-function showLogin(){mount.replaceChildren();const email=entry('email','Email');const password=entry('password','Пароль');
- add(mount,n('div','eyebrow','Подтверждение владельца'),n('h1','hero-title','Разрешить доступ к мирам?'),add(form(),
-  n('p','small','Сначала войди в тот же Supabase-аккаунт, где созданы твои истории.'),email,password,
-  add(n('div','btn-row'),btn('Войти и продолжить',()=>run(async()=>{await signIn(email.value,password.value);await showDetails();})))));
+function showLogin(){
+ mount.replaceChildren();
+ const email=entry('email','Email');email.autocomplete='email';
+ const password=entry('password','Пароль');password.autocomplete='current-password';
+ const box=form();
+ add(box,n('p','small','Для входа нужен пароль владельца миров NEXT, не пароль панели Supabase.com.'),
+  email,password,add(n('div','btn-row'),btn('Войти и продолжить',()=>run(async()=>{
+   try{await signIn(email.value,password.value);password.value='';await showDetails();}
+   catch(e){password.value='';throw e;}
+  }))));
+ if(isAuthorizationId(id)){
+  const link=n('a','btn secondary','Войти через главную страницу NEXT');link.href=authReturnPath(id);
+  add(box,n('p','small','Если уже вошёл в NEXT в этом браузере, повторный пароль не потребуется.'),link);
+ }
+ const back=n('a','text-button','← Вернуться к мирам');back.href='/';
+ add(mount,n('div','eyebrow','Подтверждение владельца'),n('h1','hero-title','Разрешить доступ к мирам?'),box,back);
 }
 async function showDetails(){if(!readConfig())return showSetup();if(!readSession())return showLogin();mount.replaceChildren(n('div','loading','Проверяю запрос подключения…'));
  try{
@@ -40,6 +53,7 @@ async function showDetails(){if(!readConfig())return showSetup();if(!readSession
    link.href='https://supabase.com/dashboard/project/bcwzlsljcxubqtvzsucz/auth/url-configuration';link.target='_blank';link.rel='noopener noreferrer';
    mount.append(link);
   }else mount.append(btn('Повторить',()=>run(showDetails),'btn secondary'));
+  const back=n('a','text-button','← Вернуться к мирам');back.href='/';mount.append(back);
  }
 }
 if(!isAuthorizationId(id))mount.replaceChildren(n('div','notice','Отсутствует корректный идентификатор запроса Supabase OAuth. Начни подключение заново в ChatGPT.'));
