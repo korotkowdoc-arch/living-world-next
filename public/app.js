@@ -111,7 +111,7 @@ function renderRestoreArchive(){
   out.replaceChildren(para(`Проверено: «${info.title}», ${info.scene_count} сцен, ${info.branch_count} веток. SHA-256 совпадает.`),
     row(save),progress,para('Большой архив загружается частями. При обрыве выбери тот же файл и повтори: принятые пакеты сохраняются. Мир появляется только после атомарной финальной операции.'),button('Отменить незавершённую загрузку',()=>busy(async()=>{if(confirm('Удалить только временные пакеты этого импорта? Существующие миры останутся.')){await cancelArchiveImport(raw);progress.hidden=true;toast('Незавершённая загрузка отменена.');}}),'text-button'));
  }));
- add(section,fileInput,out,para('До 5000 сцен / 30 МБ — прежний импорт; крупнее — пакетный режим (до 50 000 записей в разделе и 100 МБ) после установки миграции 008. Реальная производительность большого импорта пока требует проверки.'));
+ add(section,fileInput,out,para('До 5000 сцен / 30 МБ — прежний импорт; крупнее — пакетный режим (до 50 000 записей в разделе и 100 МБ) при наличии миграции 008 (установлена в NEXT). Реальная производительность большого импорта пока требует проверки.'));
  root.append(section);
 }
 
@@ -539,7 +539,7 @@ function renderSocialWorld(){
   if(!append&&!rows.length)notesOut.append(para('Предложений пока нет.'));};
  const more=button('Ещё предложения',()=>busy(()=>getNotes(true)),'btn secondary');more.hidden=true;
  root.append(panel(title('Общество и личные знания'),para('Состав групп, личные убеждения и чужие сюжетные линии остаются раздельными. Не каждая запись известна всем героям.'),actor,group,row(button('Найти',()=>{offset=0;show();}),refresh),out),
-  panel(title('Восстановленная память'),para('Отдельные предложения рассказчика по старым сценам. Не меняют канон. Требуется миграция 009.'),button('Читать предложения',()=>busy(()=>getNotes(false)),'btn secondary'),notesOut,more));
+  panel(title('Восстановленная память'),para('Отдельные предложения рассказчика по старым сценам. Не меняют канон. Хранилище заметок подключено в NEXT.'),button('Читать предложения',()=>busy(()=>getNotes(false)),'btn secondary'),notesOut,more));
  show();
 }
 function renderGrowth(){
