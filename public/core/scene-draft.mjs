@@ -1,9 +1,11 @@
 import {replay,validateScene,needsStatePreflight} from './continuity.mjs';
+import {draftEvidenceCoverage} from './annotation-passages.mjs';
 import {parseStoryDate} from './world-time.mjs';
 export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time=null}={}){
  const checked=validateScene({body,events,directives});
  const result={ok:checked.ok,errors:[...checked.errors],warnings:[],changes:[],omitted_changes:0,saved:false,canonical:false};
  if(!checked.ok)return result;
+ result.evidence_coverage=draftEvidenceCoverage(body,events);
  if(!memory?.complete&&needsStatePreflight(events)){result.ok=false;result.errors.push('Для проверки переходов нужна полная память.');return result;}
  const scenes=memory?.scenes||[],id='__draft_preview__';
  const before=replay(scenes,[],{evidencePrevalidated:true});
