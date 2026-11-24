@@ -2,6 +2,7 @@ import {extractLocks,pairKey} from './directives.mjs';
 import {storyDrivers} from './story-drivers.mjs';
 import {recordedWorldAgenda} from './world-time.mjs';
 import {economyShapeError,applyMoney,applyItem} from './economy.mjs';
+import {characterStateError,applyCharacter} from './character-state.mjs';
 
 const TYPES=new Set(['character','relationship','knowledge','money','item','commitment','world','offscreen','plan']);
 const PLAN_ACTIONS=new Set(['start','advance','pause','resume','complete','abandon']);
@@ -23,6 +24,9 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(!asText(event.id)||ids.has(event.id))errors.push(`${prefix}: требуется уникальный ID.`);
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
+    if(event.type==='character'){
+      const error=characterStateError(event);if(error)errors.push(prefix+': '+error);
+    }
     if(event.type==='relationship'){
       if(!asText(event.a)||!asText(event.b))errors.push(`${prefix}: нужны оба участника.`);
       const lock=locks.get(pairKey(event.a,event.b));
@@ -62,7 +66,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
       const from={scene_id:scene.id,event_id:event.id,world_time:scene.world_time??null};
       const value={...event,source:from};
       switch(event.type){
-        case 'character': if(asText(event.name))people.set(event.name,value);break;
+        case 'character': if(asText(event.name)){const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));}break;
         case 'relationship': relationships.set(`${event.a}→${event.b}`,value);break;
         case 'knowledge':{
           const key=`${event.actor}::${event.fact}`;

@@ -6,6 +6,7 @@ import {literaryReview} from './core/literary-review.mjs';
 import {storyDrivers} from './core/story-drivers.mjs';
 import {recordedWorldAgenda} from './core/world-time.mjs';
 import {economyView} from './core/economy.mjs';
+import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
@@ -273,9 +274,14 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
  for(const person of people){const card=node('div','rule');add(card,node('strong','',person),para(projection.people.find(p=>p.name===person)?.description||'Состояние из подтверждённых событий'));box.append(card);}
  const fieldName=node('input','field');fieldName.placeholder='Имя персонажа';fieldName.type='search';fieldName.maxLength=140;
  const choices=node('div','btn-row');for(const name of people.slice(0,12))choices.append(button(name,()=>{fieldName.value=name;busy(()=>load());},'btn secondary'));
+ const profile=node('div');
  const results=node('div');let offset=0,lastActor='';const more=button('Ещё события',()=>busy(()=>load(true)),'btn secondary');more.hidden=true;
  const load=async(append=false)=>{
-   if(!append){offset=0;lastActor=fieldName.value.trim();results.replaceChildren();}
+   if(!append){
+    offset=0;lastActor=fieldName.value.trim();results.replaceChildren();
+    if(!lastActor)return;
+    showProfile(projection,state.historyComplete);
+   }
    const rows=await actorHistory(w.id,lastActor,{limit:40,offset});offset+=rows.length;
    if(!rows.length&&!append)results.append(para('Структурированных событий о персонаже пока нет. Это не доказывает, что его не было в тексте.'));
    for(const r of rows){const block=node('div','rule');
@@ -310,9 +316,33 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
   }
   moreMentions.hidden=hits.length<20;
  };
+ const showProfile=(p,complete)=>{
+  profile.replaceChildren();
+  const current=characterStateView(p,lastActor,{complete});
+  profile.append(title('Последнее известное состояние'));
+  if(current.ambiguous_names.length)profile.append(para('Есть разные записанные имена: '+current.ambiguous_names.join(', ')+'. Уточни имя.'));
+  if(!current.character?.state_fields.length)profile.append(para('Отдельные свойства ещё не записаны. Это не означает отсутствия места, травм или привычек.'));
+  for(const field of current.character?.state_fields||[]){
+   const card=node('div','rule');
+   add(card,node('strong','',field.label),para(field.value??'Не установлено'));
+   if(field.source?.world_time)card.append(para('Когда записано: '+field.source.world_time));
+   if(field.source?.scene_id)card.append(button('Показать источник',()=>busy(async()=>{
+    const source=await getScene(w.id,field.source.scene_id);
+    card.append(node('div','scene-body',source.body));
+   }),'text-button'));
+   profile.append(card);
+  }
+  profile.append(para(complete?'Сведения отражают последнее записанное состояние, а не автоматически текущее.':'Показаны данные только загруженной части истории.'));
+ };
+ const fullProfile=button('Состояние по всей ветке',()=>busy(async()=>{
+  if(!fieldName.value.trim())throw Error('Укажи имя персонажа.');
+  lastActor=fieldName.value.trim();fullProfile.disabled=true;
+  try{const memory=await fullStructuredMemory(w);showProfile(replay(memory.scenes,[],{evidencePrevalidated:true}),memory.complete);}
+  finally{fullProfile.disabled=false;}
+ }),'btn secondary');
  const form=node('form');form.addEventListener('submit',e=>{e.preventDefault();busy(()=>load());});
  const submit=node('button','btn','Найти историю героя');submit.type='submit';
- add(form,fieldName,row(submit));add(box,choices,form,title('Подтверждённые события'),results,row(more),title('Упоминания в исходных сценах'),para('Находим упоминания имени даже без ручной разметки. Цитата — подсказка: чтобы установить факт, открой сцену и проверь контекст.'),mentions,row(moreMentions));
+ add(form,fieldName,row(submit));add(box,choices,form,row(fullProfile),profile,title('Подтверждённые события'),results,row(more),title('Упоминания в исходных сценах'),para('Находим упоминания имени даже без ручной разметки. Цитата — подсказка: чтобы установить факт, открой сцену и проверь контекст.'),mentions,row(moreMentions));
  root.append(box);
  const ties=panel(title('Подтверждённые связи'),para('Направленные отношения: отношение А к Б не означает того же чувства у Б к А.'));
  if(!projection.relationships.length)ties.append(para('Связи ещё не отмечены в сохранённых событиях.'));

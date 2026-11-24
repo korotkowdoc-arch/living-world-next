@@ -3,7 +3,7 @@
  * this file only limits what is copied into one story-generation prompt.
  */
 const PRIORITY=['plans','obligations','relationships','knowledge','balances','people','worldFacts','items','offscreen'];
-const META=new Set(['source','world_time','event_id','scene_id','id','status','actor','a','b','stance','goal','known']);
+const META=new Set(['source','world_time','event_id','scene_id','id','status','actor','a','b','stance','goal','known','state_fields','name']);
 function compactValue(value,depth=0){
  if(value===null||typeof value==='boolean'||typeof value==='number')return value;
  if(typeof value==='string'){
@@ -18,6 +18,14 @@ function compactValue(value,depth=0){
   const out={};let n=0;
   const ordered=Object.keys(value).sort((a,b)=>Number(META.has(b))-Number(META.has(a)));
   for(const k of ordered){
+   if(k==='state_fields'&&Array.isArray(value[k])){
+    // Preserve per-field source links rather than generic nested-data placeholders.
+    const fields=value[k].slice(-8);
+    out.state_fields=fields.map(field=>({field:field.field,value:typeof field.value==='string'?field.value.slice(0,240):field.value,
+     state:field.state,source:field.source}));
+    if(value[k].length>fields.length)out.state_fields_omitted=value[k].length-fields.length;
+    continue;
+   }
    if(k==='history'&&Array.isArray(value[k])){
     out.history_events=value[k].length;
     out.latest_history=value[k].slice(-3).map(v=>compactValue(v,depth+1));

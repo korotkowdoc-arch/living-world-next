@@ -58,3 +58,8 @@
 
 - [x] v0.11.1: sighting ≠ custody, `take` explicitly represents a forced taking from a named holder (no artificial consent requirement). Prepared migration 007 with atomic guard called by nw_commit_scene (and thereby nw_revise_scene) inside the existing expected-head lock. Helper functions not exposed to clients. Added rollback SQL test and static contract tests.
 - [ ] Migration 007 not applied to production, SQL integration test against a separate DB and branch-fork/rollback race tests pending. Archive import intentionally preserves prior history; it does not run the new append guard. JS replay and SQL fold need parity verification for malformed historical events.
+
+## v0.12.0 — долговременное состояние персонажей
+- [x] Каждое поле характера/места/травмы/привычек/доступности имеет независимую последнюю запись и доказательство, новые события не заменяют всю карточку. Явное неизвестное состояние не путается с отсутствием записей; разные имена не объединяются автоматически.
+- [x] MCP get_character_state, экран персонажей с источниками по каждому полю и полным чтением действующей ветки, контекст рассказчика сохраняет источники и ограничивает длинный список планов.
+- [ ] Смысловое извлечение из уже сыгранных неразмеченных сцен, миграция SQL-валидации новых полей и реальный OAuth/iPhone E2E остаются впереди. Миграция 007 экономики не применена в production.

@@ -2,7 +2,7 @@
 
 Новый проект интерактивных миров для iPhone. Старый `korotkowdoc-arch/living-world` остаётся нетронутым.
 
-**Актуальная версия исходников: v0.11.1.**
+**Актуальная версия исходников: v0.12.0.**
 
 **Идея:** создание мира за одно описание, настройка условиями на обычном языке, истории в ChatGPT, независимые персонажи, реальная причинность, отношения без автоматического примирения и сохранение по действующей ветке.
 
@@ -114,3 +114,6 @@ MCP теперь возвращает challenge `401 Unauthorized` при поп
 Уникальные предметы и деньги проецируются по записанным событиям действующей ветки. Для денежного перевода используется одно событие money с operation=transfer, actor, counterparty, currency и отрицательным delta. Для предмета: custody_version=1, item_id, actor, action и counterparty при передаче. MCP get_world_economy и экран «Имущество» показывают источники. Старые произвольные действия предметов не устанавливают владельца. Предварительная проверка save_scene работает в MCP, но полноценные SQL-инварианты для всех путей записи ещё предстоит реализовать.
 
 Migration 007 adds the database-side append guard for both ordinary and revised scenes. Not yet applied to the live database. Before applying, run the pure fold tests in `supabase/test_economy_rollback.sql` and exercise a test world including revisions. Existing archives preserve historical annotations. `observe` does not establish custody; `take` records forced taking with a named prior holder, rather than forcing every character to agree.
+
+## v0.12 — состояние персонажей
+Необязательные события character со state_patch обновляют независимые свойства героя; остальные поля сохраняют свои источники. Структурированная память не угадывает состояние по отсутствию записей. MCP get_character_state и экран персонажей показывают поля, цитаты и источники по активной ветке. Не требует создания анкет при старте мира.
