@@ -8,6 +8,7 @@ import {buildNextContext,validateScene,replay,validateEconomyAppend} from '../pu
 import {recordedWorldAgenda} from '../public/core/world-time.mjs';
 import {economyView} from '../public/core/economy.mjs';
 import {characterStateView} from '../public/core/character-state.mjs';
+import {sceneFocusInput,focusedSceneContext,literalFocusHits} from '../public/core/scene-context.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
 import {limitedNarratorMemory,boundedMcpScene} from '../public/core/narration-budget.mjs';
 import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
@@ -19,6 +20,7 @@ const toolsList=[
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes, and narration guidance. Reports incomplete history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
   {name:'search_story_memories',description:'Search the ENTIRE active branch by exact text substring, including scenes older than 1000. Returns scene IDs and evidence excerpts, never other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},query:{type:'string',minLength:2,maxLength:180},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','query']}},
   {name:'get_story_scene',description:'Retrieve exact original text of a saved scene by ID, annotated whether it belongs to CURRENT active ancestry. Inactive alternatives are NOT canonical facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'}},required:['world_id','scene_id']}},
+  {name:'get_scene_context',description:'Retrieve a focused sample for the next scene: selected characters, directed relationships, their knowledge, goals, commitments, property and relevant literal source hits. Search terms are clues, not facts. Use before important callbacks in long stories.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actors:{type:'array',maxItems:8,items:{type:'string',minLength:1,maxLength:140}},queries:{type:'array',maxItems:4,items:{type:'string',minLength:2,maxLength:140}}},required:['world_id'],additionalProperties:false}},
   {name:'get_character_state',description:'Read last explicit character field observations with per-field source scenes, directed relationships, known facts, plans and commitments. Does not infer unrecorded traits, consent, emotions or current whereabouts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_actor_memory',description:'Recall a character from the entire played active branch WITHOUT manual annotation: separately return proven structured events and raw literal mentions with exact source scene IDs. Text mentions are clues, not confirmed facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:2,maxLength:140},limit:{type:'integer',minimum:1,maximum:40},event_offset:{type:'integer',minimum:0},mention_offset:{type:'integer',minimum:0}},required:['world_id','actor']}},
   {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
@@ -134,7 +136,7 @@ async function callTool(name,args,env,token){
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
    return {...ctx,memory:compactMemory,memory_is_sample:true,
-    memory_retrieval_tools:['get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy'],
+    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy'],
     head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
@@ -154,6 +156,22 @@ async function callTool(name,args,env,token){
    const active=await rpc(env,token,'nw_scene_in_active_branch',{p_world_id:args.world_id,p_scene_id:args.scene_id});
    return {...rows[0],in_active_branch:active===true,
     memory_policy:active===true?'Confirmed scene in current ancestry':'An alternate/discarded branch: not evidence for CURRENT story'};
+  }
+  case 'get_scene_context':{
+   const focus=sceneFocusInput(args);
+   const world=await ownerWorld(env,token,args.world_id);
+   const active=await branch(env,token,world);
+   const [memory,hits]=await Promise.all([
+    readStructuredMemory(env,token,world,active.head_scene_id),
+    Promise.all(focus.queries.map(query=>rpc(env,token,'nw_search_history',{p_world_id:world.id,p_query:query,p_limit:8,p_offset:0})))
+   ]);
+   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
+    throw Error('Story changed while building focused scene context; retry.');
+   return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
+    ...focusedSceneContext(projection,focus,{complete:memory.complete,maxChars:18000}),
+    literal_hits:focus.queries.map((query,i)=>literalFocusHits(query,hits[i]))};
   }
   case 'get_character_state':{
    const actor=String(args.actor??'').trim();

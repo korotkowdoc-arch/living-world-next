@@ -2,7 +2,7 @@
 
 Новый проект интерактивных миров для iPhone. Старый `korotkowdoc-arch/living-world` остаётся нетронутым.
 
-**Актуальная версия исходников: v0.12.0.**
+**Актуальная версия исходников: v0.12.1.**
 
 **Идея:** создание мира за одно описание, настройка условиями на обычном языке, истории в ChatGPT, независимые персонажи, реальная причинность, отношения без автоматического примирения и сохранение по действующей ветке.
 
@@ -117,3 +117,5 @@ Migration 007 adds the database-side append guard for both ordinary and revised 
 
 ## v0.12 — состояние персонажей
 Необязательные события character со state_patch обновляют независимые свойства героя; остальные поля сохраняют свои источники. Структурированная память не угадывает состояние по отсутствию записей. MCP get_character_state и экран персонажей показывают поля, цитаты и источники по активной ветке. Не требует создания анкет при старте мира.
+
+MCP `get_scene_context` retrieves targeted evidence for up to eight recorded actors and four literal queries in the active branch. The response separates structured events and source snippets, reports incomplete memory, and does not authorize fictional knowledge transfer or automatic plot actions.
