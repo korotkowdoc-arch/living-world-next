@@ -8,6 +8,7 @@ import {socialRecordError,socialTransitionError,socialWorldView} from './social-
 import {knowledgeRecordError,knowledgeKey} from './knowledge.mjs';
 import {relationshipError,relationshipKey,applyRelationship,interactionError} from './relationship-memory.mjs';
 import {activityError,activityTransitionError,activityView} from './activities.mjs';
+import {consequenceError,consequenceTransitionError,consequenceView} from './consequences.mjs';
 
 const TYPES=new Set(['character','relationship','knowledge','money','item','commitment','world','offscreen','plan']);
 const PLAN_ACTIONS=new Set(['start','advance','pause','resume','complete','abandon']);
@@ -50,7 +51,9 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
       const error=knowledgeRecordError(event);if(error)errors.push(prefix+': '+error);
     }
     if(event.type==='world'){
-      const error=lifeRecordError(event)||socialRecordError(event)||interactionError(event)||activityError(event);if(error)errors.push(prefix+': '+error);
+      const error=lifeRecordError(event)||socialRecordError(event)||interactionError(event)||activityError(event)||consequenceError(event);
+      if(typeof event.key==='string'&&event.key.startsWith('consequence:')&&event.consequence_version!==1)errors.push(prefix+': ключ последствия требует версионированной записи.');
+      if(typeof event.key==='string'&&event.key.startsWith('activity:')&&event.activity_version!==1)errors.push(prefix+': ключ занятия требует версионированной записи.');if(error)errors.push(prefix+': '+error);
     }
     if(event.type==='plan'){
       if(!asText(event.actor)||!asText(event.plan_id)||!PLAN_ACTIONS.has(event.action))errors.push(`${prefix}: для плана нужны герой, ID и действие.`);
@@ -99,7 +102,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event);
+          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
           else worldFacts.set(event.key,value);
         }break;
@@ -160,6 +163,7 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     living_world:livingWorldView(scenes,projection,{complete:historyComplete,limit:8}),
     social_world:socialWorldView(projection,{complete:historyComplete,limit:8}),
     recorded_activities:activityView(projection,{complete:historyComplete,limit:8}),
+    recorded_consequences:consequenceView(projection,{complete:historyComplete,limit:8}),
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,
     memory_warning:(historyComplete?'':'История загружена не полностью. Результаты памяти НЕ полны. ')+'События проецируются только из размеченных фактов. Неразмеченные сцены необходимо читать, а не считать, будто событий в них не было.'};
@@ -175,4 +179,17 @@ export function validateEconomyAppend(scenes,events,body){
  const projection=replay([...scenes,{id:draftId,body,events}],[],{evidencePrevalidated:true});
  const warnings=projection.validation_warnings.filter(w=>w.scene_id===draftId);
  return {ok:warnings.length===0,errors:warnings.flatMap(w=>w.errors)};
+}
+
+/** Validate new state transitions before an MCP append, not merely after replay.
+ * SQL still protects expected head; direct RPC and revision integration are separate.
+ */
+export function needsStatePreflight(events=[]){
+ return events.some(e=>e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.social_record_version===1||e.activity_version===1||e.consequence_version===1)));
+}
+export function validateStateAppend(scenes,events,body){
+ const draftId='__pending_state_scene__';
+ const p=replay([...scenes,{id:draftId,body,events}],[],{evidencePrevalidated:true});
+ const errors=p.validation_warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors);
+ return {ok:errors.length===0,errors};
 }

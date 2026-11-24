@@ -51,6 +51,9 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
  for(const activity of (projection.worldFacts||[]).filter(x=>x.activity_version===1&&x.activity_kind==='activity'&&['planned','in_progress'].includes(x.status)).slice(-3).reverse()){
   push({kind:'shared_activity',title:activity.name,actors:activity.actors,status:activity.status,source:activity.source,certainty:'recorded_activity_status',guidance:'Участие и итог показывать в сцене; не выводить дружбу из совместной деятельности.'});
  }
+ for(const consequence of (projection.worldFacts||[]).filter(x=>x.consequence_version===1&&x.status!=='resolved').slice(-4).reverse()){
+  push({kind:'lasting_consequence',actor:consequence.actor,description:consequence.description,status:consequence.status,source:consequence.source,certainty:'recorded_consequence',guidance:'Не отменяй последствие без события. Оспаривание не доказывает вину, разрешение не означает прощения.'});
+ }
  for(const relationship of (Array.isArray(projection.relationships)?projection.relationships:[])){
   if(!text(relationship?.a)||!text(relationship?.b))continue;
   const remembered=(relationship.relationship_fields||[]).filter(x=>['hatred','resentful','distrusted','disrespected'].includes(x.value));
@@ -72,6 +75,7 @@ export function storyDriverPrompt(drivers=[]){
    return '• '+d.actor+' намерен: '+d.goal+' ('+d.status+'), источник '+(d.source?.scene_id||'не указан')+'. '+(d.next_step?'Возможный шаг: '+d.next_step+'. ':'')+(d.obstacle?'Препятствие: '+d.obstacle+'. ':'')+'Это ещё НЕ действие.';
   if(d.kind==='independent_thread')return '• Независимая линия: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'; '+d.visibility+'. Не раскрывай без причины, не завершай автоматически.';
   if(d.kind==='shared_activity')return '• Совместное занятие: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'. Не считать выполненным заранее.';
+  if(d.kind==='lasting_consequence')return '• Последствие для '+d.actor+': '+d.description+' ('+d.status+'). Не стирай без записанного изменения.';
   if(d.kind==='recorded_commitment')
    return '• Обязательство '+d.commitment_id+'; состояние '+d.status+'; источник '+(d.source?.scene_id||'не указан')+'. Уточни перед признанием исполненным.';
   return '• Направленный конфликт: '+d.actors.join(' → ')+', '+d.stance+'. Не переосмысливай без событий.';

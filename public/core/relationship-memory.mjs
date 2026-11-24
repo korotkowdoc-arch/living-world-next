@@ -44,7 +44,7 @@ export function interactionError(e){
  if(e.outcome!=null&&!valid(e.outcome,600))return 'Некорректный итог встречи.';
  return null;
 }
-export function relationshipHistory(scenes,projection,{actor='',other='',offset=0,limit=20,complete=true,evidencePrevalidated=false}={}){
+export function relationshipHistory(scenes,projection,{actor='',other='',offset=0,limit=20,complete=true}={}){
  actor=text(actor);other=text(other);
  if(!actor||actor.length>140||other.length>140||actor===other)throw Error('Укажи одного героя или двух разных героев.');
  const matchPair=e=>(e.a===actor&&(!other||e.b===other))||(e.b===actor&&(!other||e.a===other));
@@ -55,7 +55,7 @@ export function relationshipHistory(scenes,projection,{actor='',other='',offset=
   for(const e of s.events||[]){
    if(!accepted.has(JSON.stringify([s.id,e.id])))continue;
    if((e.type==='relationship'&&matchPair(e))||(e.type==='world'&&e.interaction_version===1&&matchEpisode(e))){
-    const {relationship_patch,...rest}=e;
+    const {relationship_patch}=e;
     entries.push({type:e.type==='relationship'?'relationship_change':'interaction',a:e.a,b:e.b,actors:e.actors,stance:e.stance,
       fields:relationship_patch,kind:e.interaction_kind,description:e.description,outcome:e.outcome,place:e.place,
       evidence:String(e.evidence||'').slice(0,1200),source:{scene_id:s.id,event_id:e.id,world_time:s.world_time??null}});

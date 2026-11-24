@@ -11,6 +11,7 @@ import {socialWorldView} from './core/social-world.mjs';
 import {knowledgeView} from './core/knowledge.mjs';
 import {relationshipHistory} from './core/relationship-memory.mjs';
 import {activityView} from './core/activities.mjs';
+import {consequenceView} from './core/consequences.mjs';
 import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
@@ -362,6 +363,7 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
   const p=replay(memory.scenes,[],{evidencePrevalidated:true});
   const r=relationshipHistory(memory.scenes,p,{actor:selectedActor,other:selectedOther,offset:offsetRel,complete:memory.complete});
   const a=activityView(p,{actor:selectedActor,offset:offsetRel,complete:memory.complete});
+  const consequences=consequenceView(p,{actor:selectedActor,offset:offsetRel,complete:memory.complete});
   detail.replaceChildren(para(memory.complete?'Вся действующая ветка.':'Память загружена частично.'));
   const source=(card,s)=>{if(!s?.scene_id)return;const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,s.scene_id)).body;body.hidden=false;}),'text-button'),body);};
   detail.append(title('Текущие записанные отношения'));
@@ -371,9 +373,11 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
   for(const x of r.history){const card=add(node('div','rule'),node('strong','',x.type==='interaction'?x.kind+' · '+x.actors.join(', '):x.a+' → '+x.b),para(x.description||x.stance||''),para(x.outcome||''),para(x.evidence));source(card,x.source);detail.append(card);}
   detail.append(title('Привычки и занятия'));
   for(const x of [...a.habits,...a.activities]){const card=add(node('div','rule'),node('strong','',x.name+' · '+x.status),para(x.description),para(x.frequency||x.actors?.join(', ')||''));source(card,x.source);detail.append(card);}
-  if(!r.total_history&&!r.total_relationships&&!a.counts.habits&&!a.counts.activities)detail.append(para('Нет записей по этому имени. Это не доказывает отсутствие отношений или занятий.'));
+  detail.append(title('Долговременные последствия'));
+  for(const x of [...consequences.current,...consequences.resolved]){const card=add(node('div','rule'),node('strong','',x.actor+' · '+x.kind+' · '+x.status),para(x.description),para(x.cause||''),para(x.outcome||''));source(card,x.source);detail.append(card);}
+  if(!r.total_history&&!r.total_relationships&&!a.counts.habits&&!a.counts.activities&&!consequences.counts.current&&!consequences.counts.resolved)detail.append(para('Нет записей по этому имени. Это не доказывает отсутствие отношений или занятий.'));
   if(offsetRel)detail.append(button('Назад',()=>{offsetRel=Math.max(0,offsetRel-20);show();},'btn secondary'));
-  if(r.next_offset!==null||a.next_offset!==null)detail.append(button('Ещё',()=>{offsetRel+=20;show();},'btn secondary'));
+  if(r.next_offset!==null||a.next_offset!==null||consequences.next_offset!==null)detail.append(button('Ещё',()=>{offsetRel+=20;show();},'btn secondary'));
  };
  add(personal,first,second,button('Читать по всей ветке',()=>busy(async()=>{
   selectedActor=first.value.trim();selectedOther=second.value.trim();if(!selectedActor)throw Error('Укажи имя героя.');
@@ -594,6 +598,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
    d.kind==='recorded_commitment'?'Обязательство '+d.commitment_id+' ('+d.status+')':
    d.kind==='independent_thread'?'Сюжетная линия: '+d.title+' ('+d.status+')':
    d.kind==='shared_activity'?'Совместное занятие: '+d.title+' ('+d.status+')':
+   d.kind==='lasting_consequence'?'Последствие: '+d.actor+' · '+d.description:
    d.kind==='established_antagonism'?d.actors.join(' → ')+' · '+d.stance:
    d.actors.join(' ↔ ')+' · авторский запрет';
   pressure.append(add(node('div','rule'),node('strong','',label),para(d.guidance+source)));

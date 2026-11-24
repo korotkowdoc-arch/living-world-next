@@ -4,7 +4,7 @@
  * protected resource metadata and validates OAuth client-bound user tokens.
  * Client registration, consent URLs and end-to-end ChatGPT setup require deployment.
  */
-import {buildNextContext,validateScene,replay,validateEconomyAppend} from '../public/core/continuity.mjs';
+import {buildNextContext,validateScene,replay,needsStatePreflight,validateStateAppend} from '../public/core/continuity.mjs';
 import {recordedWorldAgenda} from '../public/core/world-time.mjs';
 import {livingWorldView} from '../public/core/living-world.mjs';
 import {annotationPassages} from '../public/core/annotation-passages.mjs';
@@ -12,6 +12,7 @@ import {socialWorldView} from '../public/core/social-world.mjs';
 import {knowledgeView} from '../public/core/knowledge.mjs';
 import {relationshipHistory} from '../public/core/relationship-memory.mjs';
 import {activityView} from '../public/core/activities.mjs';
+import {consequenceView} from '../public/core/consequences.mjs';
 import {validateMemoryNotes,MEMORY_NOTE_POLICY} from '../public/core/memory-notes.mjs';
 import {economyView} from '../public/core/economy.mjs';
 import {characterStateView} from '../public/core/character-state.mjs';
@@ -35,6 +36,7 @@ const toolsList=[
   {name:'get_world_economy',description:'Read recorded balances and unique item custody in the current branch, optionally by actor. Unknown balances and ownership remain unknown. Paginated evidence with scene IDs.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'get_living_world',description:'Read recorded places, access/status, NPC routine windows, last known locations and recorded offscreen events in the active branch. Schedule is not actual presence.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},place:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
   {name:'get_annotation_passages',description:'Read exact paged passages of a canonical saved scene for narrator-assisted memory extraction. Returns literal source offsets and existing event IDs, NOT extracted facts; no writes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:8}},required:['world_id','scene_id']}},
+  {name:'get_world_consequences',description:'Read ongoing, disputed and resolved consequences by actor or kind, based on active-branch evidence. No inferred guilt or forgiveness.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},kind:{type:'string',enum:['social','institutional','physical','material','access','reputation','other']},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
   {name:'get_relationship_history',description:'Read independent directed emotional fields and paged relationship changes/shared episodes from the active branch. No automatic trust, friendship, affection or consent.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},other:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','actor']}},
   {name:'get_character_activities',description:'Read durable named habits and recorded shared activity states. Planned activity is not performance.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
   {name:'get_social_world',description:'Read recorded groups, individual membership, and independent narrative threads from active ancestry. Membership is not loyalty or knowledge.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},group:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
@@ -151,7 +153,7 @@ async function callTool(name,args,env,token){
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
    return {...ctx,memory:compactMemory,memory_is_sample:true,
-    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities'],
+    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences'],
     head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
@@ -264,6 +266,7 @@ async function callTool(name,args,env,token){
     throw Error('Story changed while reading source passages; retry.');
    return {world_id:world.id,head_scene_id:active.head_scene_id,...annotationPassages(rows[0],{offset:args.offset,limit:args.limit})};
   }
+  case 'get_world_consequences':
   case 'get_relationship_history':
   case 'get_character_activities':
   case 'get_social_world':
@@ -274,7 +277,7 @@ async function callTool(name,args,env,token){
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)throw Error('Story changed; retry.');
    const options={...args,complete:memory.complete};
-   return {world_id:world.id,head_scene_id:active.head_scene_id,...(name==='get_social_world'?socialWorldView(p,options):name==='get_relationship_history'?relationshipHistory(memory.scenes,p,options):name==='get_character_activities'?activityView(p,options):knowledgeView(p,options))};
+   return {world_id:world.id,head_scene_id:active.head_scene_id,...(name==='get_social_world'?socialWorldView(p,options):name==='get_relationship_history'?relationshipHistory(memory.scenes,p,options):name==='get_character_activities'?activityView(p,options):name==='get_world_consequences'?consequenceView(p,options):knowledgeView(p,options))};
   }
   case 'save_memory_notes':{
    const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
@@ -352,12 +355,12 @@ async function callTool(name,args,env,token){
     const rules=await directives(env,token,world.id);
     const validation=validateScene({body:args.body,events:args.events||[],directives:rules});
     if(!validation.ok)throw Error(validation.errors.join(' '));
-    if((args.events||[]).some(e=>e.type==='money'||e.type==='item')){
+    if(needsStatePreflight(args.events||[])){
      const active=await branch(env,token,world);
      if(active.head_scene_id!==args.expected_head)throw Error('Head changed: refresh story before committing');
      const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
-     if(!memory.complete)throw Error('Economy preflight requires complete structured history; retrieve and verify sources before saving.');
-     const checked=validateEconomyAppend(memory.scenes,args.events,args.body);
+     if(!memory.complete)throw Error('State preflight requires complete structured history; retrieve and verify sources before saving.');
+     const checked=validateStateAppend(memory.scenes,args.events,args.body);
      if(!checked.ok)throw Error(checked.errors.join(' '));
     }
    }
