@@ -50,7 +50,8 @@ export function characterStateView(projection,actor,{complete=true,offset=0,limi
  const commitments=(projection.obligations||[]).filter(x=>identity(x.actor)).map(x=>({kind:'commitment',...x}));
  const activities=(projection.worldFacts||[]).filter(x=>x.activity_version===1&&(identity(x.actor)||x.actors?.some(identity))).map(x=>({kind:x.activity_kind,...x}));
  const growth=(projection.worldFacts||[]).filter(x=>x.growth_version===1&&(identity(x.actor)||identity(x.sender)||identity(x.recipient)||identity(x.teacher))).map(x=>({kind:x.growth_kind,...x}));
- const rows=[...relations,...plans,...knowledge,...commitments,...activities,...growth];
+ const dynamics=(projection.worldFacts||[]).filter(x=>x.dynamics_version===1&&(identity(x.actor)||identity(x.counterparty)||x.actors?.some(identity))).map(x=>({kind:x.dynamics_kind,...x}));
+ const rows=[...relations,...plans,...knowledge,...commitments,...activities,...growth,...dynamics];
  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
  return {actor:subject,character:character?{name:character.name,description:character.description??null,
   state_fields:character.state_fields||[],latest_event_source:character.source}:null,

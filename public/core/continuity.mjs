@@ -10,6 +10,8 @@ import {relationshipError,relationshipKey,applyRelationship,interactionError} fr
 import {activityError,activityTransitionError,activityView} from './activities.mjs';
 import {consequenceError,consequenceTransitionError,consequenceView} from './consequences.mjs';
 import {growthRecordError,growthTransitionError,growthView} from './growth.mjs';
+import {dynamicsRecordError,dynamicsTransitionError,dynamicsView} from './world-dynamics.mjs';
+import {prepareStoryTurn} from './story-turn.mjs';
 
 const TYPES=new Set(['character','relationship','knowledge','money','item','commitment','world','offscreen','plan']);
 const PLAN_ACTIONS=new Set(['start','advance','pause','resume','complete','abandon']);
@@ -52,7 +54,11 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
       const error=knowledgeRecordError(event);if(error)errors.push(prefix+': '+error);
     }
     if(event.type==='world'){
-      const error=lifeRecordError(event)||socialRecordError(event)||interactionError(event)||activityError(event)||consequenceError(event)||growthRecordError(event);
+      const error=lifeRecordError(event)||socialRecordError(event)||interactionError(event)||activityError(event)||consequenceError(event)||growthRecordError(event)||dynamicsRecordError(event);
+      const versions=['world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version'].filter(k=>event[k]!==undefined);
+      if(versions.length>1)errors.push(prefix+': запись не может одновременно принадлежать нескольким системам.');
+      if(typeof event.key==='string'&&/^(place|routine):/.test(event.key)&&event.world_record_version!==1)errors.push(prefix+': ключ места или распорядка требует версию.');
+      if(typeof event.key==='string'&&event.key.startsWith('social:')&&event.social_record_version!==1)errors.push(prefix+': социальный ключ требует версию.');
       if(typeof event.key==='string'&&event.key.startsWith('consequence:')&&event.consequence_version!==1)errors.push(prefix+': ключ последствия требует версионированной записи.');
       if(typeof event.key==='string'&&event.key.startsWith('activity:')&&event.activity_version!==1)errors.push(prefix+': ключ занятия требует версионированной записи.');if(error)errors.push(prefix+': '+error);
     }
@@ -103,7 +109,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event);
+          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
           else worldFacts.set(event.key,value);
         }break;
@@ -166,6 +172,8 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     recorded_activities:activityView(projection,{complete:historyComplete,limit:8}),
     recorded_consequences:consequenceView(projection,{complete:historyComplete,limit:8}),
     recorded_growth:growthView(projection,{complete:historyComplete,limit:6}),
+    world_dynamics:dynamicsView(projection,{complete:historyComplete,limit:6}),
+    next_turn:prepareStoryTurn(scenes,projection,directives,{complete:historyComplete,limit:12}),
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,
     memory_warning:(historyComplete?'':'История загружена не полностью. Результаты памяти НЕ полны. ')+'События проецируются только из размеченных фактов. Неразмеченные сцены необходимо читать, а не считать, будто событий в них не было.'};
@@ -187,7 +195,7 @@ export function validateEconomyAppend(scenes,events,body){
  * SQL still protects expected head; direct RPC and revision integration are separate.
  */
 export function needsStatePreflight(events=[]){
- return events.some(e=>e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1)));
+ return events.some(e=>e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1)));
 }
 export function validateStateAppend(scenes,events,body){
  const draftId='__pending_state_scene__';

@@ -13,6 +13,8 @@ import {relationshipHistory} from './core/relationship-memory.mjs';
 import {activityView} from './core/activities.mjs';
 import {consequenceView} from './core/consequences.mjs';
 import {growthView} from './core/growth.mjs';
+import {dynamicsView} from './core/world-dynamics.mjs';
+import {prepareStoryTurn} from './core/story-turn.mjs';
 import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
@@ -611,6 +613,38 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  for(const [name,arr] of [['Персонажи',p.people],['Отношения',p.relationships],['Знания',p.knowledge],['Финансы',p.balances],['Вещи',p.items],['Обязательства',p.obligations],['Планы NPC',p.plans],['События вне кадра',p.offscreen]])stats.append(para(`${name}: ${arr.length}`));
  if(!state.historyComplete)stats.append(node('div','notice','Загружена только часть истории. Проекция не полная. Нельзя делать выводы о старых событиях.'));
  if(p.validation_warnings.length)stats.append(node('div','notice',`Некоторые события отклонены: ${p.validation_warnings.length}.`));root.append(stats);
+ const turnPanel=panel(title('Следующий эпизод'),para('Общий обзор дел, конфликтов, распорядка, сроков и изменений мира. Просмотр не запускает события.'));
+ const target=node('input','field'),focus=node('input','field'),place=node('input','field'),turnOut=node('div');
+ target.placeholder='Целевая игровая дата (необязательно)';focus.placeholder='Имена через запятую (до 8)';place.placeholder='Место';
+ let turnScenes=state.scenes,turnComplete=state.historyComplete,turnVerified=false;
+ const showTurn=()=>{
+  const projection=replay(turnScenes,[],{evidencePrevalidated:turnVerified});
+  const v=prepareStoryTurn(turnScenes,projection,state.directives,{actors:focus.value.split(',').map(x=>x.trim()).filter(Boolean),place:place.value,target_time:target.value.trim()||null,complete:turnComplete,limit:20});
+  turnOut.replaceChildren(para('Игровое время: '+(v.clock||'не установлено')+(v.target_time?' → '+v.target_time:'')+(v.elapsed_story_minutes!==null?' · '+v.elapsed_story_minutes+' мин.':''));
+  for(const warning of v.warnings)turnOut.append(node('div','notice',warning));
+  const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь'};
+  for(const r of v.candidates){
+   const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource].filter(Boolean).join(' · ')));
+   if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}turnOut.append(card);
+  }
+  if(v.omitted_candidates)turnOut.append(para('Других кандидатов: '+v.omitted_candidates+'. Их можно уточнить через MCP.'));
+  if(!v.candidates.length)turnOut.append(para('Пока нет записанных кандидатов. Это не означает, что персонажи не могут действовать.'));
+ };
+ add(turnPanel,target,focus,place,row(button('Подготовить эпизод',()=>busy(async()=>showTurn())),button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);turnScenes=m.scenes;turnComplete=m.complete;turnVerified=true;showTurn();}),'btn secondary')),turnOut);root.append(turnPanel);showTurn();
+ const dynamics=panel(title('Жизнь общества и мира'),para('Текущие связи, учреждения, конкурирующие интересы и изменения. Источник каждого состояния сохраняется.'));
+ const dOut=node('div');let dOffset=0;
+ const showDynamics=()=>{
+  const v=dynamicsView(replay(turnScenes,[],{evidencePrevalidated:turnVerified}),{actor:focus.value.includes(',')?'':focus.value.trim(),place:place.value,complete:turnComplete,offset:dOffset,limit:15});
+  dOut.replaceChildren();
+  for(const [heading,rows] of [['Связи',v.bonds],['Учреждения',v.institutions],['Конкуренция',v.contests],['Изменения',v.developments]]){
+   dOut.append(title(heading));if(!rows.length)dOut.append(para('Нет записей в выборке.'));
+   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.title||r.name||[r.actor,r.counterparty].join(' — ')),para([r.bond_type,r.status,r.resource,r.place].filter(Boolean).join(' · ')),para(r.description),para(r.outcome||r.terms||''));
+    if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}dOut.append(card);}
+  }
+  if(dOffset)dOut.append(button('Назад',()=>{dOffset=Math.max(0,dOffset-15);showDynamics();},'btn secondary'));
+  if(v.next_offset!==null)dOut.append(button('Ещё',()=>{dOffset=v.next_offset;showDynamics();},'btn secondary'));
+ };
+ add(dynamics,button('Обновить обзор',()=>busy(async()=>{const m=await fullStructuredMemory(w);turnScenes=m.scenes;turnComplete=m.complete;turnVerified=true;dOffset=0;showDynamics();}),'btn secondary'),dOut);root.append(dynamics);showDynamics();
  const drivers=storyDrivers(p,state.directives);
  const pressure=panel(title('Что движет персонажами'),para('Настоящие желания, обещания и конфликты из подтверждённых источников. Это подсказки для повествования, не произошедшие автоматически события.'));
  if(!drivers.length)pressure.append(para('Структурных мотивов пока нет. Это не значит, что герои лишены собственных целей: точные первоисточники доступны через поиск.'));

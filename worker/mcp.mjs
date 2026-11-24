@@ -15,6 +15,8 @@ import {relationshipHistory} from '../public/core/relationship-memory.mjs';
 import {activityView} from '../public/core/activities.mjs';
 import {consequenceView} from '../public/core/consequences.mjs';
 import {growthView} from '../public/core/growth.mjs';
+import {dynamicsView} from '../public/core/world-dynamics.mjs';
+import {prepareStoryTurn} from '../public/core/story-turn.mjs';
 import {validateMemoryNotes,MEMORY_NOTE_POLICY} from '../public/core/memory-notes.mjs';
 import {economyView} from '../public/core/economy.mjs';
 import {characterStateView} from '../public/core/character-state.mjs';
@@ -38,6 +40,8 @@ const toolsList=[
   {name:'get_world_economy',description:'Read recorded balances and unique item custody in the current branch, optionally by actor. Unknown balances and ownership remain unknown. Paginated evidence with scene IDs.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'get_living_world',description:'Read recorded places, access/status, NPC routine windows, last known locations and recorded offscreen events in the active branch. Schedule is not actual presence.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},place:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
   {name:'get_annotation_passages',description:'Read exact paged passages of a canonical saved scene for narrator-assisted memory extraction. Returns literal source offsets and existing event IDs, NOT extracted facts; no writes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:8}},required:['world_id','scene_id']}},
+  {name:'prepare_story_turn',description:'Read a pinned, read-only next-turn plan combining time, NPC routines, commitments, projects, conflicts, institutions and places. Candidates are NOT events. Use before a scene/time jump; write and save actual events separately.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actors:{type:'array',maxItems:8,items:{type:'string',maxLength:140}},place:{type:'string',maxLength:140},target_time:{type:'string',maxLength:16},limit:{type:'integer',minimum:1,maximum:30}},required:['world_id']}},
+  {name:'get_world_dynamics',description:'Read social bonds, institutions, competing claims and developments from active ancestry. Does not simulate or transfer property.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},place:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
   {name:'get_character_growth',description:'Read recorded skill development, personal projects, explicit rumor transmission and causal links from active ancestry; rumor transmission does not create belief or truth.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},topic:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
   {name:'get_world_consequences',description:'Read ongoing, disputed and resolved consequences by actor or kind, based on active-branch evidence. No inferred guilt or forgiveness.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},kind:{type:'string',enum:['social','institutional','physical','material','access','reputation','other']},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
   {name:'get_relationship_history',description:'Read independent directed emotional fields and paged relationship changes/shared episodes from the active branch. No automatic trust, friendship, affection or consent.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},other:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','actor']}},
@@ -156,7 +160,7 @@ async function callTool(name,args,env,token){
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
    return {...ctx,memory:compactMemory,memory_is_sample:true,
-    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth'],
+    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn'],
     head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
@@ -269,6 +273,8 @@ async function callTool(name,args,env,token){
     throw Error('Story changed while reading source passages; retry.');
    return {world_id:world.id,head_scene_id:active.head_scene_id,...annotationPassages(rows[0],{offset:args.offset,limit:args.limit})};
   }
+  case 'prepare_story_turn':
+  case 'get_world_dynamics':
   case 'get_character_growth':
   case 'get_world_consequences':
   case 'get_relationship_history':
@@ -281,6 +287,13 @@ async function callTool(name,args,env,token){
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)throw Error('Story changed; retry.');
    const options={...args,complete:memory.complete};
+   if(name==='prepare_story_turn'){
+    const rules=await directives(env,token,world.id);
+    const latest=await ownerWorld(env,token,world.id),latestBranch=await branch(env,token,latest);
+    if(latest.active_branch_id!==world.active_branch_id||latestBranch.head_scene_id!==active.head_scene_id||latest.directive_version!==world.directive_version)throw Error('Story or rules changed; retry.');
+    return {world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:world.auto_save,...prepareStoryTurn(memory.scenes,p,rules,options)};
+   }
+   if(name==='get_world_dynamics')return {world_id:world.id,head_scene_id:active.head_scene_id,...dynamicsView(p,options)};
    return {world_id:world.id,head_scene_id:active.head_scene_id,...(name==='get_social_world'?socialWorldView(p,options):name==='get_relationship_history'?relationshipHistory(memory.scenes,p,options):name==='get_character_activities'?activityView(p,options):name==='get_world_consequences'?consequenceView(p,options):name==='get_character_growth'?growthView(p,options):knowledgeView(p,options))};
   }
   case 'save_memory_notes':{

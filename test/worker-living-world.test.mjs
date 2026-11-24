@@ -87,3 +87,25 @@ test('MCP growth reads recorded skill from pinned ancestry without writing',asyn
  try{const r=await (await worker.fetch(call('get_character_growth',{actor:'А'}),env)).json();assert.equal(r.result.structuredContent.skills[0].status,'learning');assert.equal(r.result.structuredContent.rumors.length,0);}
  finally{globalThis.fetch=old;}
 });
+
+test('MCP integrated turn is read-only, pinned and includes recorded contest',async()=>{
+ const old=globalThis.fetch;
+ globalThis.fetch=async url=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,directive_version:2,auto_save:true}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/nw_directives')return Response.json([]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,world_time:'1991-09-02 09:00',events:[{id:'c',type:'world',dynamics_version:1,dynamics_kind:'contest',record_id:'c',key:'dynamics:contest:c',title:'Спор',resource:'Книга',actors:['А','Б'],status:'open',description:'Спорят',evidence:'Спорят'}]}]);
+  throw Error('Unexpected write or read '+p.pathname);
+ };
+ try{
+  const result=(await (await worker.fetch(call('prepare_story_turn',{target_time:'1991-09-02 10:00',actors:['А']}),env)).json()).result;
+  assert.equal(result.isError,false);assert.equal(result.structuredContent.expected_head,head);
+  assert.equal(result.structuredContent.expected_rules_version,2);
+  assert.equal(result.structuredContent.elapsed_story_minutes,60);
+  assert.equal(result.structuredContent.candidates[0].kind,'contest');
+  const view=(await (await worker.fetch(call('get_world_dynamics',{}),env)).json()).result;
+  assert.equal(view.structuredContent.contests.length,1);
+ }finally{globalThis.fetch=old;}
+});

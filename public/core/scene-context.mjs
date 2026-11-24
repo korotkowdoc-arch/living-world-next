@@ -38,8 +38,8 @@ export function focusedSceneContext(projection,focus,{complete=true,maxChars=180
    if(key==='relationships')return match(entry.a)||match(entry.b)||includesText(entry.evidence,queries)||(entry.relationship_fields||[]).some(x=>includesText(x.value,queries)||includesText(x.evidence,queries));
    if(key==='items')return match(entry.holder)||match(entry.actor)||match(entry.counterparty)||
     includesText(entry.item_id,queries)||includesText(entry.name,queries)||includesText(entry.evidence,queries);
-   return match(entry.actor)||match(entry.sender)||match(entry.recipient)||match(entry.teacher)||match(entry.responsible)||match(entry.a)||match(entry.b)||(Array.isArray(entry.actors)&&entry.actors.some(match))||
-    includesText(entry.claim,queries)||includesText(entry.milestone,queries)||includesText(entry.from_key,queries)||includesText(entry.to_key,queries)||includesText(entry.fact,queries)||includesText(entry.topic_id,queries)||includesText(entry.title,queries)||includesText(entry.purpose,queries)||includesText(entry.group_id,queries)||includesText(entry.goal,queries)||includesText(entry.key,queries)||
+   return match(entry.actor)||match(entry.counterparty)||match(entry.sender)||match(entry.recipient)||match(entry.teacher)||match(entry.responsible)||match(entry.a)||match(entry.b)||(Array.isArray(entry.actors)&&entry.actors.some(match))||
+    includesText(entry.resource,queries)||includesText(entry.function,queries)||includesText(entry.terms,queries)||includesText(entry.claim,queries)||includesText(entry.milestone,queries)||includesText(entry.from_key,queries)||includesText(entry.to_key,queries)||includesText(entry.fact,queries)||includesText(entry.topic_id,queries)||includesText(entry.title,queries)||includesText(entry.purpose,queries)||includesText(entry.group_id,queries)||includesText(entry.goal,queries)||includesText(entry.key,queries)||
     includesText(entry.description,queries)||includesText(entry.name,queries)||includesText(entry.place,queries)||includesText(entry.activity,queries)||includesText(entry.evidence,queries);
   });
  }
