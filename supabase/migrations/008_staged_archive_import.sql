@@ -17,7 +17,7 @@ create table if not exists public.nw_import_chunks(
 create table if not exists public.nw_import_rows(
  owner_id uuid not null, job_id uuid not null, section text not null,
  old_id uuid not null, mapped_id uuid not null default gen_random_uuid(),
- parent_id uuid, row_data jsonb not null,
+ parent_id uuid, scene_depth integer, row_data jsonb not null,
  primary key(owner_id,job_id,section,old_id),
  foreign key(owner_id,job_id) references public.nw_import_jobs(owner_id,id) on delete cascade,
  check(section in ('branches','directives','directive_edits','scenes','revisions'))
@@ -101,8 +101,10 @@ begin
   rid:=(r->>'id')::uuid;
   if jsonb_typeof(r) is distinct from 'object' or rid is null or (r->>'world_id')::uuid is distinct from original_id then raise exception 'Invalid or foreign archive row'; end if;
   if sec='scenes' and (char_length(coalesce(r->>'body','')) not between 10 and 200000 or jsonb_typeof(r->'events') is distinct from 'array') then raise exception 'Invalid scene'; end if;
-  insert into public.nw_import_rows(owner_id,job_id,section,old_id,parent_id,row_data)
-    values(u,p_import_id,sec,rid,case when sec='scenes' then (r->>'parent_scene_id')::uuid end,r);
+  if sec='scenes' and coalesce((r->>'import_depth')::integer,-1) not between 0 and 49999 then raise exception 'Invalid scene depth'; end if;
+  insert into public.nw_import_rows(owner_id,job_id,section,old_id,parent_id,scene_depth,row_data)
+    values(u,p_import_id,sec,rid,case when sec='scenes' then (r->>'parent_scene_id')::uuid end,
+     case when sec='scenes' then (r->>'import_depth')::integer end,r-'import_depth');
  end loop;
  insert into public.nw_import_chunks(owner_id,job_id,chunk_index,sha256) values(u,p_import_id,p_index,actual_sha);
  update public.nw_import_jobs set touched_at=now() where owner_id=u and id=p_import_id;
@@ -113,7 +115,7 @@ create or replace function public.nw_import_finalize(p_import_id uuid)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare
  u uuid:=auth.uid(); j public.nw_import_jobs%rowtype; w jsonb; wid uuid:=gen_random_uuid();
- active_id uuid; count_scenes bigint; reached bigint; receipt jsonb; section_name text; n bigint;
+ active_id uuid; receipt jsonb; section_name text; n bigint;
 begin
  if u is null then raise exception 'Authentication required'; end if;
  select * into j from public.nw_import_jobs where owner_id=u and id=p_import_id for update;
@@ -125,19 +127,18 @@ begin
   if n<>(j.manifest->'counts'->>section_name)::bigint then raise exception 'Incomplete import section: %',section_name; end if;
  end loop;
  w:=j.manifest->'world';
- count_scenes:=(j.manifest->'counts'->>'scenes')::bigint;
  select mapped_id into active_id from public.nw_import_rows where owner_id=u and job_id=p_import_id and section='branches' and old_id=(w->>'active_branch_id')::uuid;
  if active_id is null then raise exception 'Missing active branch'; end if;
- -- Each scene has one parent. Every valid acyclic component has a root.
- -- Traverse from roots; a cycle or orphan cannot be reached. Index on parent_id.
- with recursive reachable(old_id) as (
-  select old_id from public.nw_import_rows where owner_id=u and job_id=p_import_id and section='scenes' and parent_id is null
-  union all
-  select child.old_id from public.nw_import_rows child join reachable p on child.parent_id=p.old_id
-   where child.owner_id=u and child.job_id=p_import_id and child.section='scenes'
- )
- select count(*) into reached from reachable;
- if reached<>count_scenes then raise exception 'Cyclic or missing parent scene'; end if;
+ -- Every parent must have exactly one smaller depth and every root depth 0.
+ -- Strict decrease proves acyclicity and reachability in a finite graph,
+ -- without a recursive query that may scan a 50k-row chain 50k times.
+ if exists(
+  select 1 from public.nw_import_rows s
+  left join public.nw_import_rows p on p.owner_id=u and p.job_id=p_import_id and p.section='scenes' and p.old_id=s.parent_id
+  where s.owner_id=u and s.job_id=p_import_id and s.section='scenes' and
+   (s.scene_depth is null or (s.parent_id is null and s.scene_depth<>0)
+    or (s.parent_id is not null and (p.old_id is null or p.scene_depth is null or s.scene_depth<>p.scene_depth+1)))
+ ) then raise exception 'Cyclic or missing parent scene'; end if;
  if exists(
   select 1 from public.nw_import_rows s
   left join public.nw_import_rows b on b.owner_id=u and b.job_id=p_import_id and b.section='branches' and b.old_id=(s.row_data->>'branch_id')::uuid

@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {prepareStagedArchive,uploadStagedArchive} from '../public/core/staged-import.mjs';
+import {prepareStagedArchive,uploadStagedArchive,archiveSceneDepths} from '../public/core/staged-import.mjs';
 const archive={world:{id:'old'},branches:[{id:'b'}],directives:[],directive_edits:[],revisions:[],
  scenes:Array.from({length:7},(_,i)=>({id:i,body:'Сцена '+i+' 🌙 '+ 'а'.repeat(300)}))};
 const sha='a'.repeat(64);
@@ -9,7 +9,7 @@ test('deterministic chunks have exact UTF8 size, hashes and manifest counts',asy
  const a=await prepareStagedArchive(archive,sha,{crypto:webcrypto,chunkRows:2,chunkBytes:4096});
  const b=await prepareStagedArchive(archive,sha,{crypto:webcrypto,chunkRows:2,chunkBytes:4096});
  assert.deepEqual(a,b);assert.equal(a.manifest.counts.scenes,7);
- assert.deepEqual(a.chunks.filter(c=>c.section==='scenes').flatMap(c=>JSON.parse(c.payload)),archive.scenes);
+ assert.deepEqual(a.chunks.filter(c=>c.section==='scenes').flatMap(c=>JSON.parse(c.payload)).map(({import_depth,...row})=>row),archive.scenes);
  for(const c of a.chunks){assert.equal(c.bytes,new TextEncoder().encode(c.payload).length);assert.equal(c.sha256.length,64);}
 });
 test('resume uploads only missing chunks and finalizes once',async()=>{
@@ -29,9 +29,16 @@ test('migration isolates private staging and uses atomic new-world finalize',()=
  const sql=readFileSync(new URL('../supabase/migrations/008_staged_archive_import.sql',import.meta.url),'utf8');
  assert.match(sql,/primary key\(owner_id,id\)/);
  assert.match(sql,/sha256\(convert_to\(p_payload,'UTF8'\)\)/);
- assert.match(sql,/with recursive reachable/);
+ assert.match(sql,/s\.scene_depth<>p\.scene_depth\+1/);
  assert.match(sql,/if j.result is not null then return j.result/);
  assert.match(sql,/insert into public.nw_worlds\(id,owner_id/);
  assert.doesNotMatch(sql,/delete from public.nw_worlds/i);
  assert.match(sql,/revoke all on public.nw_import_jobs,public.nw_import_chunks,public.nw_import_rows from public,anon,authenticated/);
+});
+
+test('50k-scene reverse-ordered chain calculates depth without recursion or quadratic rewalking',()=>{
+ const rows=Array.from({length:50000},(_,i)=>({id:String(i),parent_scene_id:i===0?null:String(i-1)})).reverse();
+ const d=archiveSceneDepths(rows);assert.equal(d.size,50000);assert.equal(d.get('49999'),49999);assert.equal(d.get('0'),0);
+ assert.throws(()=>archiveSceneDepths([{id:'a',parent_scene_id:'b'},{id:'b',parent_scene_id:'a'}]),/Цикл/);
+ assert.throws(()=>archiveSceneDepths([{id:'a',parent_scene_id:'missing'}]),/родитель/);
 });

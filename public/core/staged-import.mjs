@@ -9,11 +9,35 @@ async function hash(s,crypto){
  if(!crypto?.subtle)throw Error('Для проверки пакетов нужен HTTPS.');
  return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes(s)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
+/** Linear-time depth calculation; never recurse through tens of thousands of
+ * JS stack frames. Server independently verifies the parent/depth invariant.
+ */
+export function archiveSceneDepths(scenes){
+ const index=new Map(),depths=new Map();
+ for(const s of scenes){
+  if(s?.id==null||index.has(s.id))throw Error('Повтор сцены при импорте.');
+  index.set(s.id,s);
+ }
+ for(const s of scenes){
+  let cur=s,chain=[],visiting=new Set();
+  while(cur&&!depths.has(cur.id)){
+   if(visiting.has(cur.id))throw Error('Цикл в архиве.');
+   visiting.add(cur.id);chain.push(cur);
+   if(cur.parent_scene_id==null){cur=null;break;}
+   cur=index.get(cur.parent_scene_id);
+   if(!cur)throw Error('Не найден родитель сцены.');
+  }
+  let d=cur?depths.get(cur.id):-1;
+  for(let i=chain.length-1;i>=0;i--)depths.set(chain[i].id,++d);
+ }
+ return depths;
+}
 export async function prepareStagedArchive(archive,archiveSha,{crypto=globalThis.crypto,chunkBytes=512*1024,chunkRows=200}={}){
  if(!/^[a-f0-9]{64}$/.test(archiveSha||''))throw Error('Нет проверенной контрольной суммы архива.');
  if(!Number.isInteger(chunkBytes)||chunkBytes<4096||chunkBytes>2*1024*1024||
     !Number.isInteger(chunkRows)||chunkRows<1||chunkRows>400)throw Error('Неверный размер пакета.');
  const chunks=[],counts={};
+ const depths=archiveSceneDepths(archive.scenes||[]);
  let totalBytes=0;
  for(const section of IMPORT_SECTIONS){
   const rows=archive[section];
@@ -31,7 +55,7 @@ export async function prepareStagedArchive(archive,archiveSha,{crypto=globalThis
    batch=[];size=2;
   };
   for(const row of rows){
-   const raw=JSON.stringify(row),length=bytes(raw).length;
+   const raw=JSON.stringify(section==='scenes'?{...row,import_depth:depths.get(row.id)}:row),length=bytes(raw).length;
    if(length+2>2*1024*1024)throw Error('Одна запись архива превышает 2 МБ.');
    if(batch.length&&(size+length+1>chunkBytes||batch.length>=chunkRows))await flush();
    size+=length+(batch.length?1:0);batch.push(raw);
