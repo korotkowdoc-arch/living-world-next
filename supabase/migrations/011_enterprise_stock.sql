@@ -6,6 +6,8 @@ begin
  if jsonb_typeof(lines) is distinct from 'array' then raise exception 'Invalid stock lines'; end if;
  if jsonb_array_length(lines) not between 1 and 20 then raise exception 'Invalid stock line count'; end if;
  for l in select value from jsonb_array_elements(lines) loop
+  if jsonb_typeof(l) is distinct from 'object' then raise exception 'Invalid stock line object'; end if;
+  if (select count(*) from jsonb_object_keys(l))<>3 then raise exception 'Unexpected stock line fields'; end if;
   if jsonb_typeof(l->'product_id') is distinct from 'string' or coalesce(l->>'product_id','') !~ '^[A-Za-z0-9_-]{1,80}$' or not public.nw_story_text_valid(l->'unit',40) or l->>'unit'<>btrim(l->>'unit') or jsonb_typeof(l->'quantity') is distinct from 'number' or coalesce(l->>'quantity','') !~ '^-?[0-9]{1,16}$' then raise exception 'Invalid stock line'; end if;
   q:=(l->>'quantity')::numeric;k:=jsonb_build_array(l->>'product_id',l->>'unit')::text;
   if k=any(seen) or abs(q)>9007199254740991 then raise exception 'Duplicate or unsafe stock line'; end if;seen:=array_append(seen,k);
