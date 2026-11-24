@@ -40,7 +40,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   all.push(candidate);if(!byKind.has(kind))byKind.set(kind,[]);byKind.get(kind).push(candidate);
  }
  const timing=row=>{
-  const due=parseStoryDate(row.due_at||row.deadline||row.due);
+  const due=parseStoryDate(row.due_at||row.deadline||row.due||row.scheduled_on);
   if(!due||!anchor)return 'unknown';
   if(due.precision!==anchor.precision&&due.day===anchor.day)return 'same_day_uncertain';
   return due.order<=anchor.order?'reached_requires_story':'future';
