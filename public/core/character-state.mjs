@@ -2,6 +2,7 @@
 const text=v=>typeof v==='string'?v.trim():'';
 export const CHARACTER_FIELDS=Object.freeze({
  location:'Последнее известное место',occupation:'Занятие',condition:'Физическое состояние',
+ pregnancy:'Последнее установленное состояние беременности',family_goal:'Семейные намерения',residence:'Место проживания',
  injury:'Травма или ограничение',appearance:'Внешность',mood:'Последнее выраженное настроение',
  habit:'Привычка',preference:'Предпочтение',aversion:'Неприязнь',affiliation:'Принадлежность',
  role:'Роль',availability:'Доступность',personal_goal:'Личная цель',
