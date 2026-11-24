@@ -61,4 +61,17 @@ begin
  bad:=false; begin perform public.nw_story_transition_step(st,e||'{"record_id":"wrong","key":"dynamics:family_event:wrong","scheduled_on":"2026-01-04"}'::jsonb); exception when raise_exception then bad:=true; end;
  if not bad then raise exception 'Off-grid family occurrence accepted'; end if;
 end $family$;
+do $commercial$
+declare st jsonb:='{"plans":{},"records":{}}'; e jsonb; bad boolean;
+begin
+ e:='{"type":"world","dynamics_version":1,"dynamics_kind":"economic_agreement","record_id":"debt","key":"dynamics:economic_agreement:debt","actor":"B","counterparty":"A","title":"Debt","description":"Debt","status":"active","agreement_kind":"debt","amount":20,"currency":"coin"}';
+ st:=public.nw_story_transition_step(st,e);
+ bad:=false;begin perform public.nw_story_transition_step(st,e||'{"amount":21}'::jsonb);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Debt changed identity';end if;
+ bad:=false;begin perform public.nw_story_transition_step(st,e||'{"status":"settled"}'::jsonb);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Debt settled without outcome';end if;
+ st:=public.nw_story_transition_step(st,e||'{"status":"settled","outcome":"Waived"}'::jsonb);
+ bad:=false;begin perform public.nw_story_transition_step(st,e);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Settled agreement reopened';end if;
+end $commercial$;
 rollback;
