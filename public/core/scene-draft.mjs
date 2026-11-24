@@ -22,5 +22,13 @@ export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time
     actor:record.actor||record.name||record.a||null,status:record.status||record.stance||null,source_event_id:record.source.event_id,certainty:'draft_only_not_committed'});
   }
  }
+ // Keyless interactions are intentionally absent from worldFacts but still
+ // accepted history. Preview them separately without changing canon.
+ const acceptedInteractions=new Set(after.relationship_history.filter(x=>x.source.scene_id===id).map(x=>x.source.event_id));
+ for(const e of events){
+  if(e.type!=='world'||e.interaction_version!==1||!acceptedInteractions.has(e.id))continue;
+  if(changes.some(x=>x.source_event_id===e.id))continue;
+  changes.push({category:'interaction',key:e.id,actors:e.actors,kind:e.interaction_kind,source_event_id:e.id,certainty:'draft_only_not_committed'});
+ }
  result.changes=changes.slice(0,40);result.omitted_changes=Math.max(0,changes.length-40);result.events_accepted=after.events_replayed-before.events_replayed;return result;
 }
