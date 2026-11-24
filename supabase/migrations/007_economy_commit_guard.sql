@@ -192,6 +192,8 @@ begin
      or coalesce(e->>'transition_kind','') not in ('education','employment','relocation','retirement','health','other')) then raise exception 'Invalid life transition'; end if;
    if k in ('family_event','family_duty') and (not public.nw_story_text_valid(e->'title',140) or not public.nw_story_actors_valid(e->'actors',1)
     or coalesce(e->>'family_kind','') not in ('birth','care','education','birthday','household','other')) then raise exception 'Invalid family record'; end if;
+   if k='family_event' and (e->>'duty_id' is not null or e->>'scheduled_on' is not null) and
+    (jsonb_typeof(e->'duty_id') is distinct from 'string' or coalesce(e->>'duty_id','') !~ '^[A-Za-z0-9_-]{1,80}$' or not public.nw_story_date_valid(e->'scheduled_on',true)) then raise exception 'Invalid family occurrence'; end if;
    if k='family_duty' then
     if coalesce(e->>'family_kind','') not in ('care','education','household','other') or not public.nw_story_date_valid(e->'starts_on',true)
      or jsonb_typeof(e->'every_days') is distinct from 'number' or coalesce(e->>'every_days','') !~ '^[0-9]{1,3}$' then raise exception 'Invalid family schedule'; end if;
@@ -242,7 +244,7 @@ begin
     or (kind='institution' and old->'group_id' is distinct from e->'group_id')
     or (kind='contest' and old->'resource' is distinct from e->'resource')
     or (kind='life_transition' and (old->'actor' is distinct from e->'actor' or old->'transition_kind' is distinct from e->'transition_kind'))
-    or (kind='family_event' and old->'family_kind' is distinct from e->'family_kind')
+    or (kind='family_event' and (old->'family_kind' is distinct from e->'family_kind' or old->>'duty_id' is distinct from e->>'duty_id' or old->>'scheduled_on' is distinct from e->>'scheduled_on'))
     or (kind='family_duty' and (old->'family_kind' is distinct from e->'family_kind' or old->'starts_on' is distinct from e->'starts_on' or old->'every_days' is distinct from e->'every_days' or not coalesce((old->'actors') @> (e->'actors') and (e->'actors') @> (old->'actors'),false)))
     then raise exception 'Changed dynamics identity'; end if;
    if old->'status' is distinct from e->'status' and
@@ -250,6 +252,14 @@ begin
      (kind in ('development','family_event','life_transition') and old->>'status' in ('completed','cancelled')) or
      (kind='contest' and old->>'status' in ('decided','abandoned')))
     then raise exception 'Terminal dynamics requires new ID'; end if;
+  end if;
+  if kind='family_event' and e->>'duty_id' is not null then
+   parent:=st->'records'->('dynamics:family_duty:'||(e->>'duty_id'));
+   if parent is null or parent->'family_kind' is distinct from e->'family_kind'
+    or not coalesce((parent->'actors') @> (e->'actors') and (e->'actors') @> (parent->'actors'),false)
+    or (e->>'scheduled_on')<(parent->>'starts_on') or (parent->>'ends_on' is not null and (e->>'scheduled_on')>(parent->>'ends_on'))
+    or mod((e->>'scheduled_on')::date-(parent->>'starts_on')::date,(parent->>'every_days')::integer)<>0 then raise exception 'Family occurrence does not match schedule'; end if;
+   if exists(select 1 from jsonb_each(st->'records') r where r.key<>k and r.value->>'dynamics_kind'='family_event' and r.value->>'duty_id'=e->>'duty_id' and r.value->>'scheduled_on'=e->>'scheduled_on') then raise exception 'Duplicate family occurrence'; end if;
   end if;
   if kind='institution' and not ((st->'records') ? ('social:group:'||(e->>'group_id'))) then raise exception 'Institution requires existing group'; end if;
  elsif e->'social_record_version'='1'::jsonb and old is not null then
