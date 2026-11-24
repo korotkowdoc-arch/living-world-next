@@ -2,7 +2,7 @@
  * The authoritative full world projection remains available through MCP;
  * this file only limits what is copied into one story-generation prompt.
  */
-const PRIORITY=['plans','obligations','relationships','knowledge','balances','people','worldFacts','items','offscreen'];
+const PRIORITY=['plans','obligations','relationships','knowledge','balances','stock','people','worldFacts','items','offscreen'];
 const META=new Set(['source','world_time','event_id','scene_id','id','status','actor','a','b','stance','goal','known','state_fields','relationship_fields','stance_source','name','topic_id','channel','fact','social_kind','actors','group_id','visibility','growth_kind','dynamics_kind','resource','counterparty','bond_type','sender','recipient','claim','from_key','to_key']);
 function compactValue(value,depth=0){
  if(value===null||typeof value==='boolean'||typeof value==='number')return value;
