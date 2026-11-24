@@ -1,10 +1,11 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-24. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## Текущее состояние — v0.20.0 подготовка релиза
+## Текущее состояние — v0.20.0 опубликована, v0.21 в разработке
 - [x] Предыдущий пакет коммерции и объединённого контекста: Node #132, PostgreSQL #31 зелёные.
 - [x] Периодические платежи: календарные даты, отдельные paid/waived, уникальный точный перевод, тесты shape/transition и реальной транзакции с rollback. Node #134 зелёный; итоговый SQL CI ожидается.
-- [ ] Установить 010 только после подтверждения итоговых тестов, объединить PR #2 и проверить публичный deployment marker.
+- [x] 010 установлена, PR #2 merged, публичный deployment marker 0.20.0 подтверждён. Реальный облачный rollback прошёл; существующий мир не изменился.
+- [ ] PR #3: предприятия, запасы, производственные заказы; 011 ещё не применена, CI ожидается.
 - [ ] Реальное испытание ChatGPT→MCP→Supabase→Safari. Следующее направление: производственные цепочки и развитие предприятий, масштабирование длинных историй.
 
 ## История v0.19.0
@@ -170,3 +171,5 @@
 - [x] Node #132/SQL #31 зелёные. Расширена ещё не установленная 010: периодическая оплата (wage/rent/debt/service/other) с календарной сеткой 1–366 дней, отдельные закрытые даты paid/waived; paid требует точный уникальный перевод этой сцены в JS и SQL. Незакрытые даты — кандидаты, не начисленный долг; частичные платежи/календарные месяцы пока отдельно. UI и тесты. CI ожидается.
 
 - [x] v0.20.0 PR #2 merged 39c2ae7 after Node #138 and SQL #37; migration 010 installed and full live SQL rollback passed; existing counts unchanged. First public check still 0.19.0 (deployment pending). New branch feat/enterprise-and-production: enterprise and production order lifecycle, bulk stock count/receipt/consumption/transfer/production, atomic input/output, known stock checks, unique batches, integration with MCP, economy UI and scene context. Migration 011 prepared, CI and production deployment not confirmed.
+
+- [x] Дополнены тесты атомарной передачи запасов, неизвестного остатка, совпадения состава заказа независимо от порядка ключей JSON, реального SQL commit производства и отказа при нехватке сырья. Публичная 0.20.0 подтверждена; PR #3 не объединён.
