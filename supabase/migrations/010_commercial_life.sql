@@ -3,7 +3,7 @@ create or replace function public.nw_assert_story_event_shape(e jsonb)
 returns void language plpgsql immutable security invoker set search_path='' as $story$
 declare typ text:=e->>'type'; k text; p jsonb; v jsonb; key_name text; n integer;
  fields constant jsonb:='{"trust":["trusted","distrusted","conditional","unknown"],"respect":["respected","disrespected","unknown"],"affection":["affectionate","indifferent","dislike","hatred","unknown"],"fear":["fearful","unafraid","unknown"],"resentment":["resentful","released","unknown"],"cooperation":["cooperating","refuses","conditional","unknown"],"attraction":["attracted","not_attracted","ambivalent","unknown"],"jealousy":["jealous","not_jealous","unknown"],"commitment":["committed","uncertain","withdrawn","unknown"],"boundary":["open","distance","no_contact","unknown"]}';
- statuses constant jsonb:='{"bond":["active","strained","estranged","ended","unknown"],"institution":["operating","restricted","suspended","closed","unknown"],"contest":["open","negotiating","decided","abandoned","unknown"],"development":["scheduled","ongoing","completed","cancelled","unknown"],"family_event":["planned","ongoing","completed","cancelled","unknown"],"family_duty":["active","paused","ended","unknown"],"life_transition":["planned","ongoing","completed","cancelled","unknown"],"employment":["offered","active","suspended","ended","declined","unknown"],"market_offer":["available","reserved","withdrawn","sold","unknown"],"economic_agreement":["proposed","active","disputed","settled","cancelled","unknown"]}';
+ statuses constant jsonb:='{"bond":["active","strained","estranged","ended","unknown"],"institution":["operating","restricted","suspended","closed","unknown"],"contest":["open","negotiating","decided","abandoned","unknown"],"development":["scheduled","ongoing","completed","cancelled","unknown"],"family_event":["planned","ongoing","completed","cancelled","unknown"],"family_duty":["active","paused","ended","unknown"],"life_transition":["planned","ongoing","completed","cancelled","unknown"],"employment":["offered","active","suspended","ended","declined","unknown"],"market_offer":["available","reserved","withdrawn","sold","unknown"],"economic_agreement":["proposed","active","disputed","settled","cancelled","unknown"],"payment_schedule":["active","paused","ended"],"payment_occurrence":["paid","waived"]}';
 begin
  if typ='character' and e?'state_patch' then
   p:=e->'state_patch';
@@ -55,6 +55,18 @@ begin
     or jsonb_typeof(e->'group_id') is distinct from 'string' or coalesce(e->>'group_id','') !~ '^[A-Za-z0-9_-]{1,80}$') then raise exception 'Invalid institution'; end if;
    if k='contest' and (not public.nw_story_text_valid(e->'resource',300) or not public.nw_story_actors_valid(e->'actors',2) or not public.nw_story_text_valid(e->'title',140)) then raise exception 'Invalid contest'; end if;
    if k='development' and (not public.nw_story_text_valid(e->'title',140) or not public.nw_story_text_valid(e->'place',140) or not public.nw_story_actors_valid(e->'actors',0)) then raise exception 'Invalid development'; end if;
+   if k in ('payment_schedule','payment_occurrence') then
+    if not public.nw_story_text_valid(e->'actor',140) or not public.nw_story_text_valid(e->'counterparty',140) or e->>'actor'=e->>'counterparty' or not public.nw_story_text_valid(e->'title',140)
+     or jsonb_typeof(e->'amount') is distinct from 'number' or coalesce(e->>'amount','') !~ '^[0-9]{1,16}$' or not public.nw_story_text_valid(e->'currency',80) then raise exception 'Invalid payment terms'; end if;
+    if (e->>'amount')::numeric not between 1 and 9007199254740991 then raise exception 'Invalid payment amount'; end if;
+    if k='payment_schedule' then
+     if coalesce(e->>'payment_kind','') not in ('wage','rent','debt','service','other') or not public.nw_story_date_valid(e->'starts_on',true) or jsonb_typeof(e->'every_days') is distinct from 'number' or coalesce(e->>'every_days','') !~ '^[0-9]{1,3}$' then raise exception 'Invalid payment schedule'; end if;
+     if (e->>'every_days')::integer not between 1 and 366 or (e->>'ends_on' is not null and (not public.nw_story_date_valid(e->'ends_on',true) or (e->>'ends_on')<(e->>'starts_on'))) then raise exception 'Invalid payment period'; end if;
+    else
+     if jsonb_typeof(e->'schedule_id') is distinct from 'string' or coalesce(e->>'schedule_id','') !~ '^[A-Za-z0-9_-]{1,80}$' or not public.nw_story_date_valid(e->'scheduled_on',true) or not public.nw_story_text_valid(e->'outcome',600)
+       or (e->>'status'='paid' and not public.nw_story_text_valid(e->'transfer_event_id',180)) or (e->>'status'='waived' and e->>'transfer_event_id' is not null) then raise exception 'Invalid payment occurrence'; end if;
+    end if;
+   end if;
    if k in ('employment','market_offer','economic_agreement') then
     if not public.nw_story_text_valid(e->'actor',140) or not public.nw_story_text_valid(e->'title',140)
      or (k<>'market_offer' and (not public.nw_story_text_valid(e->'counterparty',140) or e->>'actor'=e->>'counterparty'))
@@ -122,6 +134,12 @@ begin
    foreach field in array array['dynamics_version','dynamics_kind','record_id'] loop
     if old->field is distinct from e->field then raise exception 'Changed dynamics identity'; end if;
    end loop;
+   if kind='payment_occurrence' then raise exception 'Payment occurrence already closed'; end if;
+   if kind='payment_schedule' then
+    foreach field in array array['actor','counterparty','amount','currency','payment_kind','starts_on','every_days'] loop
+     if old->field is distinct from e->field then raise exception 'Payment schedule identity changed'; end if;
+    end loop;
+   end if;
    if (kind='bond' and (old->'actor' is distinct from e->'actor' or old->'counterparty' is distinct from e->'counterparty' or old->'bond_type' is distinct from e->'bond_type'))
     or (kind='institution' and old->'group_id' is distinct from e->'group_id')
     or (kind='contest' and old->'resource' is distinct from e->'resource')
@@ -135,10 +153,19 @@ begin
     then raise exception 'Changed dynamics identity'; end if;
    if kind='market_offer' and old->>'status'='reserved' and e->>'status'='sold' and old->>'counterparty' is distinct from e->>'counterparty' then raise exception 'Reserved offer buyer changed'; end if;
    if old->'status' is distinct from e->'status' and
-    ((kind in ('bond','family_duty') and old->>'status'='ended') or
+    ((kind in ('bond','family_duty','payment_schedule') and old->>'status'='ended') or
      (kind in ('development','family_event','life_transition') and old->>'status' in ('completed','cancelled')) or
      (kind='contest' and old->>'status' in ('decided','abandoned')) or (kind='employment' and old->>'status' in ('ended','declined')) or (kind='market_offer' and old->>'status' in ('withdrawn','sold')) or (kind='economic_agreement' and old->>'status' in ('settled','cancelled')))
     then raise exception 'Terminal dynamics requires new ID'; end if;
+  end if;
+  if kind='payment_occurrence' then
+   parent:=st->'records'->('dynamics:payment_schedule:'||(e->>'schedule_id'));
+   if parent is null then raise exception 'Missing payment schedule'; end if;
+   foreach field in array array['actor','counterparty','amount','currency'] loop
+    if parent->field is distinct from e->field then raise exception 'Payment terms differ'; end if;
+   end loop;
+   if (e->>'scheduled_on')<(parent->>'starts_on') or (parent->>'ends_on' is not null and (e->>'scheduled_on')>(parent->>'ends_on')) or mod((e->>'scheduled_on')::date-(parent->>'starts_on')::date,(parent->>'every_days')::integer)<>0 then raise exception 'Payment date off schedule'; end if;
+   if exists(select 1 from jsonb_each(st->'records') r where r.value->>'dynamics_kind'='payment_occurrence' and r.value->>'schedule_id'=e->>'schedule_id' and r.value->>'scheduled_on'=e->>'scheduled_on') then raise exception 'Duplicate payment date'; end if;
   end if;
   if kind='family_event' and e->>'duty_id' is not null then
    parent:=st->'records'->('dynamics:family_duty:'||(e->>'duty_id'));
@@ -187,4 +214,32 @@ begin
  return jsonb_set(st,array['records',k],e,true);
 end $transition$;
 revoke all on function public.nw_story_transition_step(jsonb,jsonb) from public,anon,authenticated;
+
+
+create or replace function public.nw_assert_story_transitions(p_world uuid,p_head uuid,p_events jsonb)
+returns void language plpgsql security invoker set search_path='' as $transition$
+declare u uuid:=auth.uid(); st jsonb:='{"plans":{},"records":{}}'; rec record; e jsonb; seen integer:=0;
+begin
+ if not exists(select 1 from jsonb_array_elements(p_events) x where x->>'type'='plan' or (x->>'type'='world' and (x?'dynamics_version' or x?'social_record_version' or x?'activity_version' or x?'consequence_version' or x?'growth_version'))) then return; end if;
+ if u is null or not exists(select 1 from public.nw_worlds where id=p_world and owner_id=u) then raise exception 'World not found'; end if;
+ for rec in with recursive chain as (
+  select s.id,s.parent_scene_id,s.events,1 as depth from public.nw_scenes s where s.id=p_head and s.world_id=p_world and s.owner_id=u
+  union all select s.id,s.parent_scene_id,s.events,c.depth+1 from chain c join public.nw_scenes s on s.id=c.parent_scene_id where s.world_id=p_world and s.owner_id=u and c.depth<50001
+ ) select * from chain order by depth desc loop
+  seen:=seen+1;
+  if (seen=1 and rec.parent_scene_id is not null) or seen>50000 then raise exception 'Incomplete story transition ancestry'; end if;
+  for e in select value from jsonb_array_elements(rec.events) loop
+   begin st:=public.nw_story_transition_step(st,e); exception when raise_exception then null; end;
+  end loop;
+ end loop;
+ if p_head is not null and seen=0 then raise exception 'Missing story transition ancestry'; end if;
+ -- Paid dates are tied to a distinct actual transfer in this same append.
+ if exists(select 1 from jsonb_array_elements(p_events) x where x->>'dynamics_kind'='payment_occurrence' and x->>'status'='paid' and not exists(
+  select 1 from jsonb_array_elements(p_events) m where m->>'id'=x->>'transfer_event_id' and m->>'type'='money' and m->>'operation'='transfer'
+   and m->'actor'=x->'actor' and m->'counterparty'=x->'counterparty' and m->'currency'=x->'currency' and (m->>'delta')::numeric=-(x->>'amount')::numeric
+ )) or exists(select 1 from jsonb_array_elements(p_events) x where x->>'dynamics_kind'='payment_occurrence' and x->>'status'='paid' group by x->>'transfer_event_id' having count(*)>1)
+ then raise exception 'Payment requires distinct matching scene transfer'; end if;
+ for e in select value from jsonb_array_elements(p_events) loop st:=public.nw_story_transition_step(st,e); end loop;
+end $transition$;
+revoke all on function public.nw_assert_story_transitions(uuid,uuid,jsonb) from public,anon,authenticated;
 
