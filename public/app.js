@@ -620,7 +620,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  const showTurn=()=>{
   const projection=replay(turnScenes,[],{evidencePrevalidated:turnVerified});
   const v=prepareStoryTurn(turnScenes,projection,state.directives,{actors:focus.value.split(',').map(x=>x.trim()).filter(Boolean),place:place.value,target_time:target.value.trim()||null,complete:turnComplete,limit:20});
-  turnOut.replaceChildren(para('Игровое время: '+(v.clock||'не установлено')+(v.target_time?' → '+v.target_time:'')+(v.elapsed_story_minutes!==null?' · '+v.elapsed_story_minutes+' мин.':''));
+  turnOut.replaceChildren(para('Игровое время: '+(v.clock||'не установлено')+(v.target_time?' → '+v.target_time:'')+(v.elapsed_story_minutes!==null?' · '+v.elapsed_story_minutes+' мин.':'')));
   for(const warning of v.warnings)turnOut.append(node('div','notice',warning));
   const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь'};
   for(const r of v.candidates){
