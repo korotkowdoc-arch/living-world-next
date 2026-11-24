@@ -109,3 +109,21 @@ test('MCP integrated turn is read-only, pinned and includes recorded contest',as
   assert.equal(view.structuredContent.contests.length,1);
  }finally{globalThis.fetch=old;}
 });
+
+test('MCP memory review is pinned, paged and read-only',async()=>{
+ const old=globalThis.fetch;let changed=false;
+ globalThis.fetch=async(url,opt={})=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,auto_save:true}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:changed?null:head}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page'){assert.equal(JSON.parse(opt.body).p_expected_head,head);return Response.json([{id:head,parent_scene_id:null,events:[]}]);}
+  throw Error('Unexpected '+p.pathname);
+ };
+ try{
+  const r=(await (await worker.fetch(call('get_memory_review_queue',{expected_head:head}),env)).json()).result;
+  assert.equal(r.isError,false);assert.equal(r.structuredContent.items[0].scene_id,head);
+  assert.equal(r.structuredContent.next_offset,null);changed=true;
+  assert.equal((await (await worker.fetch(call('get_memory_review_queue',{expected_head:head}),env)).json()).result.isError,true);
+ }finally{globalThis.fetch=old;}
+});
