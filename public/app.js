@@ -180,7 +180,7 @@ async function checkCloudChanges(){
 }
 
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['draft','Мастерская'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['social','Общество'],['growth','Развитие'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['draft','Мастерская'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['social','Общество'],['growth','Развитие'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{if(state.pending)return;state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
   if(state.tab==='story')renderStory();if(state.tab==='draft')renderFictionDraft();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='social')renderSocialWorld();if(state.tab==='growth')renderGrowth();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
 }
@@ -200,10 +200,11 @@ function renderFictionDraft(){
   if(!free.checked||!share.checked)throw Error('Подтверди тариф и передачу описания.');
   if(outline.value.trim().length<10)throw Error('Введи описание.');
   const apiKey=key.value.trim();if(!apiKey)throw Error('Введи ключ.');
+  const selectedModel=model.value,selectedOutline=outline.value;
   key.value='';run.disabled=true;status.textContent='Запрос к модели…';result.hidden=true;result.textContent='';
   try{
    const token=await activeToken();
-   const response=await fetch('/api/fiction-draft',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({model:model.value,key:apiKey,outline:outline.value,freeProject:true,shareConsent:true})});
+   const response=await fetch('/api/fiction-draft',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({model:selectedModel,key:apiKey,outline:selectedOutline,freeProject:true,shareConsent:true})});
    const data=await response.json();if(!response.ok||typeof data.draft!=='string')throw Error(data.error||'Черновик не получен.');
    result.textContent=data.draft;result.hidden=false;status.textContent='Черновик получен. История мира не изменена.';updateSceneTypography();
   }catch(e){status.textContent='Запрос завершился ошибкой; повтор не выполняется.';throw e;}finally{run.disabled=false;}
