@@ -222,7 +222,7 @@ begin
  delete from public.nw_import_rows where owner_id=u and job_id=p_import_id;
  delete from public.nw_import_chunks where owner_id=u and job_id=p_import_id;
  return receipt;
-end $;
+end $$;
 
 create or replace function public.nw_import_cancel(p_import_id uuid)
 returns boolean language plpgsql security definer set search_path='' as $$
