@@ -15,7 +15,7 @@ test('MCP source review requires active ancestry and reads exact source only',as
   if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
   if(p.pathname==='/rest/v1/rpc/nw_scene_in_active_branch')return Response.json(canonical);
   if(p.pathname==='/rest/v1/nw_scenes')return Response.json([{id:head,body:'Точный текст старой сцены.',events:[]}]);
-  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,world_time:'1991-09-02 22:00',events:[]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,world_time:'1991-09-02 22:00',events:[]}]);
   return Response.json({error:'unexpected '+p.pathname},{status:404});
  };
  try{
@@ -63,7 +63,7 @@ test('MCP reads relationship histories and habits from pinned active ancestry',a
   if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid}]);
   if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
-  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,events:[{id:'r',type:'relationship',a:'А',b:'Б',stance:'enemies',evidence:'Вражда'}]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,events:[{id:'r',type:'relationship',a:'А',b:'Б',stance:'enemies',evidence:'Вражда'}]}]);
   throw Error('Unexpected '+p.pathname);
  };
  try{
@@ -81,7 +81,7 @@ test('MCP growth reads recorded skill from pinned ancestry without writing',asyn
   if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid}]);
   if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
-  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,events:[{id:'s',type:'world',growth_version:1,growth_kind:'skill',record_id:'s',key:'growth:skill:s',actor:'А',name:'Учёба',description:'Практика',status:'learning',evidence:'Учился'}]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,events:[{id:'s',type:'world',growth_version:1,growth_kind:'skill',record_id:'s',key:'growth:skill:s',actor:'А',name:'Учёба',description:'Практика',status:'learning',evidence:'Учился'}]}]);
   throw Error('Unexpected '+p.pathname);
  };
  try{const r=await (await worker.fetch(call('get_character_growth',{actor:'А'}),env)).json();assert.equal(r.result.structuredContent.skills[0].status,'learning');assert.equal(r.result.structuredContent.rumors.length,0);}
