@@ -52,6 +52,13 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(event.type==='plan'){
       if(!asText(event.actor)||!asText(event.plan_id)||!PLAN_ACTIONS.has(event.action))errors.push(`${prefix}: для плана нужны герой, ID и действие.`);
       if(event.action==='start'&&!asText(event.goal))errors.push(`${prefix}: начальный план требует собственную цель героя.`);
+      if(event.plan_patch!==undefined){
+        const patch=event.plan_patch;
+        if(!['advance','resume','pause'].includes(event.action)||!patch||typeof patch!=='object'||Array.isArray(patch)||!Object.keys(patch).length||
+         Object.entries(patch).some(([k,v])=>!['goal','due_at','next_step','obstacle'].includes(k)||
+          (v===null?k==='goal':typeof v!=='string'||!v.trim()||v.length>600)))
+          errors.push(prefix+': неверное изменение цели, срока, следующего шага или препятствия.');
+      }
       if(event.action==='complete'){
         const actual=Array.isArray(events)&&events.find(x=>x?.id===event.performed_event_id&&x!==event&&['world','offscreen'].includes(x.type));
         if(!actual)errors.push(`${prefix}: завершённый план требует ID доказанного действия world/offscreen из этой сцены.`);
@@ -99,14 +106,21 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
           const old=plans.get(key);
           if(event.action==='start'){
             if(old){failures.push({scene_id:scene.id,event_id:event.id,errors:['Повторное создание одного плана.']});accepted=false;break;}
-            plans.set(key,{...value,goal:event.goal,status:'active',actor:event.actor,plan_id:event.plan_id,history:[from]});
+            plans.set(key,{...value,goal:event.goal,goal_source:from,status:'active',actor:event.actor,plan_id:event.plan_id,history:[from],field_sources:Object.fromEntries(['goal','due_at','next_step','obstacle'].filter(k=>Object.hasOwn(event,k)).map(k=>[k,from]))});
           }else{
             const valid=!!old&&old.status!=='completed'&&old.status!=='abandoned'&&
               (event.action==='resume'?old.status==='paused':event.action==='pause'?old.status==='active':true);
             if(!valid){failures.push({scene_id:scene.id,event_id:event.id,errors:['Изменение несуществующего или завершённого плана.']});accepted=false;break;}
             const statuses={advance:'active',pause:'paused',resume:'active',complete:'completed',abandon:'abandoned'};
-            plans.set(key,{...old,status:statuses[event.action],source:from,history:[...old.history,from],last_action:event.action,
-              performed_event_id:event.performed_event_id||old.performed_event_id});
+            const updated={...old,field_sources:{...old.field_sources}};
+            for(const [field,value] of Object.entries(event.plan_patch||{})){
+              if(field==='due_at'){delete updated.due;delete updated.deadline;}
+              updated[field]=value;
+              updated.field_sources[field]=from;
+              if(field==='goal')updated.goal_source=from;
+            }
+            plans.set(key,{...updated,status:statuses[event.action],source:from,history:[...old.history,from],last_action:event.action,
+              evidence:event.evidence,performed_event_id:event.performed_event_id||old.performed_event_id});
           }
           break;
         }

@@ -45,3 +45,12 @@ test('structured SQL memory can be replayed without literary bodies only when fl
  assert.equal(replay(history).plans.length,0);
  assert.equal(replay(history,[],{evidencePrevalidated:true}).plans.length,1);
 });
+
+test('a changed NPC goal and deadline keep separate sources, with old deadline explicitly removed',()=>{
+ const first=scene('a',null,'Драко решил выиграть конкурс.',[ev('p','plan','решил выиграть',{actor:'Драко',plan_id:'c',action:'start',goal:'Выиграть',due_at:'1991-10-01'})]);
+ const second=scene('b','a','Драко решил искать союзника.',[ev('p2','plan','решил искать союзника',{actor:'Драко',plan_id:'c',action:'advance',plan_patch:{goal:'Искать союзника',due_at:null,obstacle:'Нет доступа'}})]);
+ const result=replay([first,second]);const plan=result.plans[0];
+ assert.equal(plan.goal,'Искать союзника');assert.equal(plan.due_at,null);assert.equal(plan.obstacle,'Нет доступа');
+ assert.equal(plan.field_sources.goal.scene_id,'b');assert.equal(plan.status,'active');assert.equal(plan.history.length,2);
+ assert.equal(validateScene({body:second.body,events:[{...second.events[0],plan_patch:{goal:null}}]}).ok,false);
+});

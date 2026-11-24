@@ -28,3 +28,30 @@ test('MCP source review requires active ancestry and reads exact source only',as
   assert.equal(denied.result.isError,true);
  }finally{globalThis.fetch=old;}
 });
+
+test('MCP derived notes require autosave and exact canonical source; no scene write',async()=>{
+ const old=globalThis.fetch;let allowed=true,canonical=true,writes=0;
+ const note={key:'n1',kind:'claim',summary:'Герой высказался',quote:'Точный текст',actors:['Герой']};
+ globalThis.fetch=async(url,opt={})=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,auto_save:allowed}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/rpc/nw_scene_in_active_branch')return Response.json(canonical);
+  if(p.pathname==='/rest/v1/nw_scenes')return Response.json([{id:head,body:'Точный текст старой сцены.'}]);
+  if(p.pathname==='/rest/v1/rpc/nw_save_memory_notes'){writes++;assert.equal(JSON.parse(opt.body).p_expected_head,head);return Response.json({saved:true,canonical:false});}
+  if(p.pathname==='/rest/v1/rpc/nw_read_memory_notes')return Response.json([{scene_id:head,note}]);
+  throw Error('Unexpected request '+p.pathname);
+ };
+ try{
+  const invoke=async(args={})=>(await (await worker.fetch(call('save_memory_notes',{scene_id:head,expected_head:head,notes:[note],...args}),env)).json()).result;
+  assert.equal((await invoke()).structuredContent.canonical,false);
+  assert.equal((await invoke({notes:[{...note,quote:'несуществующее'}]})).isError,true);
+  allowed=false;assert.equal((await invoke()).isError,true);
+  allowed=true;canonical=false;assert.equal((await invoke()).isError,true);
+  assert.equal(writes,1);
+  const r=await (await worker.fetch(call('get_memory_notes',{actor:'Герой'}),env)).json();
+  assert.equal(r.result.structuredContent.canonical,false);
+  assert.equal(r.result.structuredContent.notes[0].note.quote,'Точный текст');
+ }finally{globalThis.fetch=old;}
+});

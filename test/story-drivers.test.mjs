@@ -46,3 +46,12 @@ test('the narrator receives story drivers only from actual active branch replay'
  const empty=buildNextContext({world,scenes:[],directives:[]});
  assert.equal(empty.active_story_drivers.length,0);
 });
+
+test('independent open threads are available to narrator without revealing them to actors',()=>{
+ const worldFacts=[{social_record_version:1,social_kind:'thread',status:'open',title:'Тайное расследование',actors:['Снейп','Люпин'],visibility:'private',source:{scene_id:'s'}},
+ {social_record_version:1,social_kind:'thread',status:'resolved',title:'Завершённая линия',actors:['Снейп']}];
+ const d=storyDrivers({worldFacts});
+ assert.equal(d.length,1);assert.equal(d[0].kind,'independent_thread');
+ assert.match(storyDriverPrompt(d),/Тайное расследование/);
+ assert.match(storyDriverPrompt(d),/Не раскрывай/);
+});

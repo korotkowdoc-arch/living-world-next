@@ -9,10 +9,12 @@ const MARKERS=[
 ];
 
 export function literaryReview(scenes=[],{maxSamples=20}={}){
- const samples=[];const counts=Object.fromEntries(MARKERS.map(m=>[m.id,0]));
+ const samples=[];const endings=new Map();const counts=Object.fromEntries(MARKERS.map(m=>[m.id,0]));
  for(const scene of scenes){
   const body=typeof scene?.body==='string'?scene.body:'';
   if(!body)continue;
+  const tail=body.trim().split(/\n+/).at(-1)?.trim().replace(/\s+/g,' ')||'';
+  if(tail.length>=20&&tail.length<=500){const key=tail.toLocaleLowerCase('ru');const list=endings.get(key)||[];list.push({scene_id:scene.id||null,excerpt:tail});endings.set(key,list);}
   for(const marker of MARKERS){
    marker.pattern.lastIndex=0;
    for(const hit of body.matchAll(marker.pattern)){
@@ -26,6 +28,7 @@ export function literaryReview(scenes=[],{maxSamples=20}={}){
   }
  }
  const repeated=Object.entries(counts).filter(([,n])=>n>=3).map(([kind,n])=>({kind,count:n}));
- return {scanned_scenes:scenes.length,counts,repeated,samples,
+ const repeated_endings=[...endings.values()].filter(x=>x.length>=2).slice(0,10).map(x=>({count:x.length,excerpt:x[0].excerpt,scene_ids:x.slice(0,10).map(y=>y.scene_id)}));
+ return {scanned_scenes:scenes.length,counts,repeated,samples,repeated_endings,
   note:'Словесные совпадения могут быть уместны в конкретной сцене. Это сигнал для литературной проверки, а не цензура и не автоматическая оценка психологии.'};
 }

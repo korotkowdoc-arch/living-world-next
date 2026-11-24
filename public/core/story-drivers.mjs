@@ -23,11 +23,19 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
  }
  for(const plan of (Array.isArray(projection.plans)?projection.plans:[])){
   if(!['active','paused'].includes(plan?.status)||!text(plan.actor)||!text(plan.goal))continue;
-  push({kind:'npc_intention',actor:plan.actor,goal:plan.goal,status:plan.status,
+  push({kind:'npc_intention',actor:plan.actor,goal:plan.goal,status:plan.status,next_step:plan.next_step||null,obstacle:plan.obstacle||null,
     source:plan.source||null,certainty:'recorded_intention_not_performed',
     guidance:plan.status==='paused'
      ?'План отложен: не возобновлять и не завершать без причины и сцены.'
      :'Цель может побудить героя говорить или действовать самостоятельно. Реальный поступок требуется показать и сохранить в сцене.'});
+ }
+ // Interleave one independent plot thread between plans and obligations where
+ // possible; all remaining threads are retrieved by the dedicated MCP.
+ for(const thread of (projection.worldFacts||[]).filter(x=>x.social_record_version===1&&x.social_kind==='thread'&&['open','paused'].includes(x.status)).slice(-4).reverse()){
+  push({kind:'independent_thread',title:thread.title,actors:thread.actors,description:thread.description,status:thread.status,
+   visibility:thread.visibility||'unknown',source:thread.source||null,
+   certainty:'recorded_unresolved_situation',
+   guidance:'Проверить время, обстоятельства и знания участников. Не завершать автоматически; не раскрывать приватную линию герою без канала знания.'});
  }
  for(const obligation of (Array.isArray(projection.obligations)?projection.obligations:[])){
   const status=text(obligation?.status).toLowerCase();
@@ -57,7 +65,8 @@ export function storyDriverPrompt(drivers=[]){
   if(d.kind==='author_relationship_boundary')
    return '• Запрет игрока: '+d.actors.join(' ↔ ')+'; без примирения: '+d.forbid_reconciliation+'; без уважения: '+d.forbid_respect+'.';
   if(d.kind==='npc_intention')
-   return '• '+d.actor+' намерен: '+d.goal+' ('+d.status+'), источник '+(d.source?.scene_id||'не указан')+'. Это ещё НЕ действие.';
+   return '• '+d.actor+' намерен: '+d.goal+' ('+d.status+'), источник '+(d.source?.scene_id||'не указан')+'. '+(d.next_step?'Возможный шаг: '+d.next_step+'. ':'')+(d.obstacle?'Препятствие: '+d.obstacle+'. ':'')+'Это ещё НЕ действие.';
+  if(d.kind==='independent_thread')return '• Независимая линия: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'; '+d.visibility+'. Не раскрывай без причины, не завершай автоматически.';
   if(d.kind==='recorded_commitment')
    return '• Обязательство '+d.commitment_id+'; состояние '+d.status+'; источник '+(d.source?.scene_id||'не указан')+'. Уточни перед признанием исполненным.';
   return '• Направленный конфликт: '+d.actors.join(' → ')+', '+d.stance+'. Не переосмысливай без событий.';

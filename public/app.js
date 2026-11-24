@@ -497,9 +497,9 @@ function renderSocialWorld(){
   if(!complete)out.append(node('div','notice','Память загружена частично.'));
  };
  const refresh=button('Прочитать всю память',()=>busy(async()=>{const m=await fullStructuredMemory(w);scenes=m.scenes;complete=m.complete;verified=true;offset=0;show();}),'btn secondary');
- const notesOut=node('div');let notesOffset=0;
- const getNotes=async(append=false)=>{if(!append){notesOffset=0;notesOut.replaceChildren();}
-  const rows=await readMemoryNotes(w,{actor:actor.value.trim()||null,offset:notesOffset});
+ const notesOut=node('div');let notesOffset=0,notesActor=null;
+ const getNotes=async(append=false)=>{if(!append){notesOffset=0;notesActor=actor.value.trim()||null;notesOut.replaceChildren();}
+  const rows=await readMemoryNotes(w,{actor:notesActor,offset:notesOffset});
   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.note.summary),para('Предложение памяти · '+r.note.kind),para(r.note.quote));source(card,{source:{scene_id:r.scene_id}});notesOut.append(card);}
   notesOffset+=rows.length;more.hidden=rows.length<20;
   if(!append&&!rows.length)notesOut.append(para('Предложений пока нет.'));};
@@ -566,6 +566,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
   const source=d.source?.scene_id?' · источник: '+d.source.scene_id:'';
   const label=d.kind==='npc_intention'?d.actor+' — '+d.goal+' ('+d.status+')':
    d.kind==='recorded_commitment'?'Обязательство '+d.commitment_id+' ('+d.status+')':
+   d.kind==='independent_thread'?'Сюжетная линия: '+d.title+' ('+d.status+')':
    d.kind==='established_antagonism'?d.actors.join(' → ')+' · '+d.stance:
    d.actors.join(' ↔ ')+' · авторский запрет';
   pressure.append(add(node('div','rule'),node('strong','',label),para(d.guidance+source)));
@@ -576,6 +577,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  const literary=panel(title('Литературные повторения'),para('Диагностика нежелательных клише: «разрешите мне всё», примирение вопреки характеру и универсальная дипломатичность. Совпадение — повод проверить сцену, не автоматический запрет.'));
  if(!audit.samples.length)literary.append(para('В загруженных сценах характерных повторений не найдено. Это не доказывает идеальность текста.'));
  for(const [id,name] of [['permission-loop','Ожидание разрешения'],['forced-reconciliation','Примирение'],['generic-compromise','Универсальные компромиссы']])literary.append(para(`${name}: ${audit.counts[id]}`));
+ for(const ending of audit.repeated_endings||[])literary.append(add(node('div','rule'),node('strong','','Повтор одинакового окончания: '+ending.count),para(ending.excerpt)));
  for(const s of audit.samples.slice(0,10)){const item=node('div','rule');add(item,node('strong','',s.label),para(s.excerpt));literary.append(item);}
  if(!state.historyComplete)literary.append(node('div','notice','Литературная проверка охватывает только загруженные сцены.'));
  root.append(literary);

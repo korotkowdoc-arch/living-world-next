@@ -18,8 +18,8 @@ declare u uuid:=auth.uid(); h uuid; b text; n jsonb; k text; old jsonb; actor js
 begin
  if u is null then raise exception 'Authentication required'; end if;
  -- Same world lock as scene append/branch change. No scene or world is rewritten.
- perform 1 from public.nw_worlds where id=p_world_id and owner_id=u for update;
- if not found then raise exception 'World not found'; end if;
+ perform 1 from public.nw_worlds where id=p_world_id and owner_id=u and auto_save is true for update;
+ if not found then raise exception 'World not found or autosave disabled'; end if;
  select br.head_scene_id into h from public.nw_worlds w join public.nw_branches br on br.id=w.active_branch_id
  where w.id=p_world_id and w.owner_id=u and br.owner_id=u and br.world_id=p_world_id;
  if not found or h is distinct from p_expected_head then raise exception 'History changed'; end if;
@@ -39,6 +39,7 @@ begin
   for actor in select value from jsonb_array_elements(n->'actors') loop
    if jsonb_typeof(actor) is distinct from 'string' or char_length(btrim(actor#>>'{}')) not between 1 and 140 then raise exception 'Invalid actor'; end if;
   end loop;
+  if exists(select 1 from jsonb_array_elements(n->'actors') a group by a.value having count(*)>1) then raise exception 'Duplicate actor'; end if;
   n:=jsonb_build_object('key',k,'kind',n->'kind','summary',n->'summary','quote',n->'quote','actors',n->'actors');
   select note into old from public.nw_memory_notes where owner_id=u and world_id=p_world_id and scene_id=p_scene_id and note_key=k;
   if found then
