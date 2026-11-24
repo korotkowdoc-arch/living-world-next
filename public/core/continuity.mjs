@@ -1,7 +1,7 @@
 import {extractLocks,pairKey} from './directives.mjs';
 import {storyDrivers} from './story-drivers.mjs';
 import {recordedWorldAgenda} from './world-time.mjs';
-import {economyShapeError,applyMoney,applyItem} from './economy.mjs';
+import {economyShapeError,applyMoney,applyItem,applyStock} from './economy.mjs';
 import {characterStateError,applyCharacter} from './character-state.mjs';
 import {lifeRecordError,livingWorldView} from './living-world.mjs';
 import {socialRecordError,socialTransitionError,socialWorldView} from './social-world.mjs';
@@ -88,7 +88,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
 
 /** Replay only the actual ancestry of one branch, oldest first. No other branch can leak in. */
 export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) {
-  const people=new Map(), relationships=new Map(), knowledge=new Map(), balances=new Map(), items=new Map(), obligations=new Map(), worldFacts=new Map(), plans=new Map(), offscreen=[];
+  const people=new Map(), relationships=new Map(), knowledge=new Map(), balances=new Map(), items=new Map(), stock=new Map(), obligations=new Map(), worldFacts=new Map(), plans=new Map(), offscreen=[];
   const evidence=[]; const failures=[]; const relationshipHistory=[];
   for(const scene of scenes){
     const events=Array.isArray(scene.events)?scene.events:[];
@@ -114,7 +114,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event);
+          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
           else worldFacts.set(event.key,value);
         }break;
@@ -147,7 +147,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
     }
   }
   const list=m=>[...m.values()];
-  return {people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:evidence.length,validation_warnings:failures};
+  return {people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),stock:list(stock),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:evidence.length,validation_warnings:failures};
 }
 
 export function branchAncestry(allScenes,headId) {
