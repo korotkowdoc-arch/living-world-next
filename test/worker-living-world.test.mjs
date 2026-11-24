@@ -150,3 +150,24 @@ test('focused MCP memory retrieves separate historical hints and tolerates unava
   available=false;r=await read();assert.equal(r.isError,false);assert.equal(r.structuredContent.historical_hints.status,'unavailable');
  }finally{globalThis.fetch=old;}
 });
+
+test('MCP next-turn pagination pins both revisions and keeps notes noncanonical',async()=>{
+ const old=globalThis.fetch;let rules=2,notes=0;
+ globalThis.fetch=async(url,opt={})=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,directive_version:rules,auto_save:true}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/nw_directives')return Response.json([]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,world_time:'2026-11-24',events:[]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_read_memory_notes'){notes++;assert.equal(JSON.parse(opt.body).p_expected_head,head);return Response.json([{scene_id:head,note_key:'n1',note:{key:'n1',kind:'claim',summary:'Реплика',quote:'Точный текст',actors:['Анна']}}]);}
+  throw Error('Unexpected '+p.pathname);
+ };
+ try{
+  const invoke=async(args)=>(await (await worker.fetch(call('prepare_story_turn',{actors:['Анна'],...args}),env)).json()).result;
+  const first=await invoke({});assert.equal(first.isError,false);assert.equal(first.structuredContent.expected_rules_version,2);assert.equal(first.structuredContent.historical_hints.canonical,false);assert.equal(notes,1);
+  assert.equal((await invoke({offset:1})).isError,true);
+  assert.equal((await invoke({offset:1,expected_head:head,expected_rules_version:2})).isError,false);
+  rules=3;assert.equal((await invoke({offset:1,expected_head:head,expected_rules_version:2})).isError,true);
+ }finally{globalThis.fetch=old;}
+});
