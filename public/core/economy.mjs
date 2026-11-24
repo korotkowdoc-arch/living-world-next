@@ -89,7 +89,7 @@ export function stockLinesError(lines,action){
  if(!Array.isArray(lines)||lines.length<1||lines.length>20)return 'Нужно от 1 до 20 строк запасов.';
  const ids=new Set();let input=false,output=false;
  for(const l of lines){
-  if(!l||typeof l.product_id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(l.product_id)||typeof l.unit!=='string'||!l.unit.trim()||l.unit!==l.unit.trim()||l.unit.length>40||!Number.isSafeInteger(l.quantity))return 'Некорректная строка запасов.';
+  if(!l||typeof l!=='object'||Array.isArray(l)||Object.keys(l).length!==3||typeof l.product_id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(l.product_id)||typeof l.unit!=='string'||!l.unit.trim()||l.unit!==l.unit.trim()||l.unit.length>40||!Number.isSafeInteger(l.quantity))return 'Некорректная строка запасов.';
   const k=JSON.stringify([l.product_id,l.unit]);if(ids.has(k))return 'Повтор товара и единицы в одной операции.';ids.add(k);
   if(action==='count'?l.quantity<0:action==='receive'||action==='transfer'?l.quantity<=0:action==='consume'?l.quantity>=0:l.quantity===0)return 'Некорректный знак количества.';
   input||=l.quantity<0;output||=l.quantity>0;
