@@ -627,6 +627,9 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
   for(const person of v.life_context||[])if(person.target_age?.status==='calendar_derived')turnOut.append(para(person.actor+' · возраст '+person.target_age.years+' на '+person.target_age.as_of));
    for(const r of v.candidates){
    const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource,r.occurrences?('Не закрыто: '+(r.pending_occurrences??r.occurrences)+' из '+r.occurrences+' · '+r.first_due_on+' — '+r.last_due_on):null,r.age_years!=null?('Возраст: '+r.age_years):null].filter(Boolean).join(' · ')));
+   const checkLabels={paused_intention:'Отложено — нужна причина возобновления',recorded_obstacle:'Препятствие',ambiguous_place:'Несколько записей места',place_access_unknown:'Доступ неизвестен',recorded_place_constraint:'Ограничение места',travel_requires_story:'Нужно показать перемещение',competing_schedule:'Возможный конфликт расписания',clock_unknown:'Время не установлено'};
+   for(const ch of r.checks||[])card.append(para([checkLabels[ch.kind]||ch.kind,ch.actor,ch.description,ch.from&&ch.to?ch.from+' → '+ch.to:ch.place,ch.status,ch.access,ch.other_places?.join(', ')].filter(Boolean).join(' · ')));
+   if(r.checks_omitted)card.append(para('Других условий: '+r.checks_omitted));
    if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}turnOut.append(card);
   }
   for(const actor of v.actor_context||[]){
@@ -635,6 +638,9 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
     for(const f of actor.state_fields)card.append(para(f.field+': '+(f.value??'не установлено')));
     for(const k of actor.knowledge)card.append(para('Знание '+k.holder+' · '+k.status+': '+k.fact));
     for(const e of actor.recent_offscreen)card.append(para('За кадром: '+e.description));
+    for(const r of actor.resources||[])card.append(para(r.kind==='balance'?'Средства · '+r.currency+': '+(r.known?r.balance:'неизвестно'):'Держит: '+(r.name||r.item_id)));
+    for(const e of actor.experience||[])card.append(para([e.kind==='skill'?'Навык':'Привычка',e.name,e.status,e.frequency].filter(Boolean).join(' · ')));
+    for(const r of actor.responsibilities||[])card.append(para(['Ответственность',r.title||r.description||r.bond_type||r.role||r.group_id,r.status,r.deadline].filter(Boolean).join(' · ')));
     if(Object.keys(actor.omitted).length)card.append(para('Есть дополнительные записи; смотри карточку персонажа.'));
     turnOut.append(card);
    }
