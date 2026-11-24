@@ -1,0 +1,202 @@
+-- v0.11.1: economy precondition within the existing expected-head transaction.
+-- No table rewrite; historical contradictory annotations remain readable.
+-- Apply after 006_restore_archive.sql. Review/run rollback tests before production.
+create or replace function public.nw_economy_step(p_state jsonb,p_event jsonb)
+returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+ st jsonb:=p_state; e jsonb:=p_event; typ text:=e->>'type';
+ actor text:=btrim(coalesce(e->>'actor','')); cp text:=btrim(coalesce(e->>'counterparty',''));
+ curr text:=btrim(coalesce(e->>'currency','')); op text:=e->>'operation';
+ k text; k2 text; old jsonb; other jsonb; d numeric; n numeric; net numeric; n2 numeric; net2 numeric;
+ known boolean; known2 boolean; action text:=e->>'action'; iid text:=e->>'item_id';
+ status text; holder text; next_status text;
+ maxsafe constant numeric:=9007199254740991;
+begin
+ if typ='money' then
+  if actor='' or curr='' or jsonb_typeof(e->'delta') is distinct from 'number'
+     or coalesce(e->>'delta','') !~ '^-?[0-9]+$' then raise exception 'Invalid money event'; end if;
+  d:=(e->>'delta')::numeric;
+  if abs(d)>maxsafe then raise exception 'Money delta outside safe integer range'; end if;
+  k:=jsonb_build_array(actor,curr)::text;
+  old:=coalesce(st->'balances'->k,'{"known":false,"balance":null,"delta":0}'::jsonb);
+  if op='reconcile' then
+   if d<>0 or jsonb_typeof(e->'balance') is distinct from 'number'
+      or coalesce(e->>'balance','') !~ '^[0-9]+$' then raise exception 'Invalid balance reconciliation'; end if;
+   n:=(e->>'balance')::numeric;
+   if n>maxsafe then raise exception 'Balance outside safe integer range'; end if;
+   return jsonb_set(st,array['balances',k],jsonb_build_object('known',true,'balance',n,'delta',0),true);
+  end if;
+  known:=(old->>'known')::boolean;
+  net:=(old->>'delta')::numeric+d;
+  n:=case when known then (old->>'balance')::numeric+d else null end;
+  if abs(net)>maxsafe or (known and (n<0 or n>maxsafe)) then raise exception 'Insufficient or overflowing recorded balance'; end if;
+  if op='transfer' then
+   if cp='' or cp=actor or d>=0 then raise exception 'Invalid money transfer'; end if;
+   k2:=jsonb_build_array(cp,curr)::text;
+   other:=coalesce(st->'balances'->k2,'{"known":false,"balance":null,"delta":0}'::jsonb);
+   known2:=(other->>'known')::boolean;
+   net2:=(other->>'delta')::numeric-d;
+   n2:=case when known2 then (other->>'balance')::numeric-d else null end;
+   if abs(net2)>maxsafe or (known2 and (n2<0 or n2>maxsafe)) then raise exception 'Recipient balance overflow'; end if;
+   st:=jsonb_set(st,array['balances',k2],jsonb_build_object('known',known2,'balance',n2,'delta',net2),true);
+  end if;
+  return jsonb_set(st,array['balances',k],jsonb_build_object('known',known,'balance',n,'delta',net),true);
+ elsif typ='item' then
+  if nullif(btrim(coalesce(iid,'')),'') is null or nullif(btrim(coalesce(action,'')),'') is null then raise exception 'Invalid item event'; end if;
+  old:=coalesce(st->'items'->iid,'{"custody_status":"unknown","holder":null}'::jsonb);
+  if e->'custody_version' is distinct from '1'::jsonb then
+   return jsonb_set(st,array['items',iid],'{"custody_status":"unknown","holder":null}'::jsonb,true);
+  end if;
+  if actor='' or action not in ('acquire','transfer','take','drop','destroy','recover','observe') then raise exception 'Invalid custody action'; end if;
+  if action in ('transfer','take') and (cp='' or actor=cp) then raise exception 'Invalid custody counterparty'; end if;
+  status:=old->>'custody_status'; holder:=old->>'holder';
+  if action='observe' then return jsonb_set(st,array['items',iid],old,true); end if;
+  if status='destroyed' then raise exception 'Item already destroyed'; end if;
+  if action='take' then
+   if status='lost' or (status='held' and holder is distinct from cp) then raise exception 'Item not held by the named prior holder'; end if;
+  elsif status='held' and holder is distinct from actor then raise exception 'Item held by a different actor';
+  end if;
+  if action='acquire' and status in ('held','lost') then raise exception 'Item must be transferred or recovered, not acquired again'; end if;
+  if action='recover' and status='held' then raise exception 'Item is not lost'; end if;
+  if action in ('transfer','drop') and status='lost' then raise exception 'Item must be recovered first'; end if;
+  next_status:=case action when 'destroy' then 'destroyed' when 'drop' then 'lost' else 'held' end;
+  return jsonb_set(st,array['items',iid],jsonb_build_object('custody_status',next_status,
+   'holder',case when next_status='held' then case when action='transfer' then cp else actor end else null end),true);
+ end if;
+ return st;
+end $$;
+revoke all on function public.nw_economy_step(jsonb,jsonb) from public,anon,authenticated;
+
+-- Called only after nw_commit_scene locks and verifies world, branch and head.
+-- Replay actual parent ancestry oldest-first. Invalid HISTORICAL economy events
+-- are skipped (as warnings in JS), but every NEW event must pass.
+create or replace function public.nw_assert_economy_append(p_world uuid,p_head uuid,p_events jsonb)
+returns void language plpgsql security invoker set search_path = '' as $$
+declare
+ u uuid:=auth.uid(); state jsonb:='{"balances":{},"items":{}}'::jsonb;
+ rec record; ev jsonb; last_parent uuid; seen integer:=0;
+begin
+ if not exists(select 1 from jsonb_array_elements(p_events) x(value) where x.value->>'type' in ('money','item')) then return; end if;
+ if u is null or not exists(select 1 from public.nw_worlds where id=p_world and owner_id=u) then raise exception 'World not found'; end if;
+ -- 50,000 is the same explicit safety cap as the MCP memory reader.
+ -- The final ancestor must have no parent; missing/cyclic histories fail closed.
+ for rec in
+  with recursive chain as (
+   select s.id,s.parent_scene_id,s.events,1 as depth from public.nw_scenes s where s.id=p_head and s.world_id=p_world and s.owner_id=u
+   union all
+   select s.id,s.parent_scene_id,s.events,c.depth+1 from chain c join public.nw_scenes s on s.id=c.parent_scene_id
+    where s.world_id=p_world and s.owner_id=u and c.depth<50001
+  ) select * from chain order by depth desc
+ loop
+  seen:=seen+1;
+  if seen=1 and rec.parent_scene_id is not null then raise exception 'Incomplete or cyclic economy ancestry'; end if;
+  if seen>50000 then raise exception 'Economy ancestry exceeds safety cap'; end if;
+  for ev in select value from jsonb_array_elements(rec.events) loop
+   if ev->>'type' in ('money','item') then
+    begin state:=public.nw_economy_step(state,ev);
+    exception when raise_exception then null; end;
+   end if;
+  end loop;
+ end loop;
+ if p_head is not null and seen=0 then raise exception 'Missing economy ancestry'; end if;
+ for ev in select value from jsonb_array_elements(p_events) loop
+  if ev->>'type' in ('money','item') then state:=public.nw_economy_step(state,ev); end if;
+ end loop;
+end $$;
+revoke all on function public.nw_assert_economy_append(uuid,uuid,jsonb) from public,anon,authenticated;
+
+create or replace function public.nw_commit_scene(
+ p_world_id uuid,p_branch_id uuid,p_expected_head uuid,p_request_id uuid,p_body text,
+ p_world_time text default null,p_events jsonb default '[]'::jsonb,p_expected_rules_version integer default null
+) returns uuid language plpgsql security definer set search_path = '' as $$
+declare u uuid := auth.uid(); current_head uuid; world_branch uuid; actual_rules_version integer;
+ existing public.nw_scenes%rowtype; new_id uuid := gen_random_uuid(); e jsonb; seen_ids text[] := array[]::text[];
+begin
+ if u is null then raise exception 'Authentication required'; end if;
+ if p_request_id is null then raise exception 'Missing idempotency key'; end if;
+ select * into existing from public.nw_scenes where world_id=p_world_id and request_id=p_request_id and owner_id=u;
+ if found then
+  if existing.branch_id=p_branch_id and existing.parent_scene_id is not distinct from p_expected_head
+     and existing.body=p_body and existing.events=coalesce(p_events,'[]'::jsonb)
+     and existing.world_time is not distinct from nullif(trim(p_world_time),'')
+     and (existing.rules_version_at_commit is null or existing.rules_version_at_commit=p_expected_rules_version)
+   then return existing.id;
+  end if;
+  raise exception 'Idempotency key reused for different content';
+ end if;
+ select active_branch_id,directive_version into world_branch,actual_rules_version from public.nw_worlds where id=p_world_id and owner_id=u for update;
+ if not found or world_branch is distinct from p_branch_id then raise exception 'Not the active branch'; end if;
+ select head_scene_id into current_head from public.nw_branches
+ where id=p_branch_id and world_id=p_world_id and owner_id=u for update;
+ if not found then raise exception 'Branch not found'; end if;
+ -- Concurrent retry of the same request may have committed while we waited for row locks.
+ select * into existing from public.nw_scenes where world_id=p_world_id and request_id=p_request_id and owner_id=u;
+ if found then
+  if existing.branch_id=p_branch_id and existing.parent_scene_id is not distinct from p_expected_head
+     and existing.body=p_body and existing.events=coalesce(p_events,'[]'::jsonb)
+     and existing.world_time is not distinct from nullif(trim(p_world_time),'')
+     and (existing.rules_version_at_commit is null or existing.rules_version_at_commit=p_expected_rules_version) then return existing.id; end if;
+  raise exception 'Idempotency key reused for different content';
+ end if;
+ if p_expected_rules_version is null or p_expected_rules_version<>actual_rules_version then raise exception 'World rules changed: fetch context before committing'; end if;
+ if current_head is distinct from p_expected_head then raise exception 'Head changed: refresh story before committing'; end if;
+ if char_length(trim(coalesce(p_body,''))) not between 10 and 200000 then raise exception 'Invalid scene text'; end if;
+ if jsonb_typeof(coalesce(p_events,'[]'::jsonb)) <> 'array' or jsonb_array_length(coalesce(p_events,'[]'::jsonb)) > 100 then raise exception 'Invalid scene events'; end if;
+ for e in select value from jsonb_array_elements(coalesce(p_events,'[]'::jsonb)) loop
+  if jsonb_typeof(e)<>'object' or nullif(trim(e->>'id'),'') is null or nullif(trim(e->>'type'),'') is null
+     or nullif(trim(e->>'evidence'),'') is null or position(e->>'evidence' in p_body)=0 then
+   raise exception 'Event without exact evidence in scene';
+  end if;
+  if not (e->>'type' in ('character','relationship','knowledge','money','item','commitment','world','offscreen','plan')) then
+   raise exception 'Unknown event type';
+  end if;
+  if (e->>'id')=any(seen_ids) then raise exception 'Duplicate scene event id'; end if;
+  seen_ids := array_append(seen_ids,e->>'id');
+  if e->>'type'='plan' then
+    if nullif(trim(e->>'actor'),'') is null or nullif(trim(e->>'plan_id'),'') is null or
+       coalesce(e->>'action','') not in ('start','advance','pause','resume','complete','abandon')
+       then raise exception 'Invalid actor plan'; end if;
+    if e->>'action'='start' and nullif(trim(e->>'goal'),'') is null
+       then raise exception 'New plan requires a character goal'; end if;
+    if e->>'action'='complete' and not exists(
+      select 1 from jsonb_array_elements(p_events) a(value)
+      where a.value->>'id'=e->>'performed_event_id' and a.value->>'type' in ('world','offscreen')
+    ) then raise exception 'Plan completion requires a performed world/offscreen event'; end if;
+  end if;
+  if e->>'type'='money' and (
+    nullif(trim(e->>'actor'),'') is null or nullif(trim(e->>'currency'),'') is null or
+    jsonb_typeof(e->'delta')<>'number' or (e->>'delta') !~ '^-?[0-9]+$'
+  ) then raise exception 'Money change requires exact integer and actor/currency'; end if;
+  if e->>'type'='knowledge' and (
+    nullif(trim(e->>'actor'),'') is null or nullif(trim(e->>'fact'),'') is null or nullif(trim(e->>'channel'),'') is null
+  ) then raise exception 'Knowledge requires actor, fact and channel'; end if;
+  -- Each active user-authored lock can independently forbid reconciliation or respect.
+  if e->>'type'='relationship' and exists (
+    select 1 from public.nw_directives d
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(d.metadata->'relationship_locks')='array'
+        then d.metadata->'relationship_locks'
+        when jsonb_typeof(d.metadata->'relationship_lock')='object'
+        then jsonb_build_array(d.metadata->'relationship_lock')
+        else '[]'::jsonb end
+    ) as locks(item)
+    where d.world_id=p_world_id and d.owner_id=u and d.active=true
+    and (
+      (lower(btrim(locks.item->>'a'))=lower(btrim(e->>'a')) and lower(btrim(locks.item->>'b'))=lower(btrim(e->>'b'))) or
+      (lower(btrim(locks.item->>'a'))=lower(btrim(e->>'b')) and lower(btrim(locks.item->>'b'))=lower(btrim(e->>'a')))
+    )
+    and (
+      (locks.item->>'forbid_reconciliation'='true' and e->>'stance' in ('friends','reconciled','peace','close_friends','romantic_partners')) or
+      (locks.item->>'forbid_respect'='true' and (e->>'stance' in ('respect','admiration') or e->>'respect'='true'))
+    )
+  ) then raise exception 'Explicit relationship lock violated'; end if;
+ end loop;
+ perform public.nw_assert_economy_append(p_world_id,current_head,coalesce(p_events,'[]'::jsonb));
+ insert into public.nw_scenes(id,owner_id,world_id,branch_id,parent_scene_id,request_id,body,world_time,events,rules_version_at_commit)
+ values(new_id,u,p_world_id,p_branch_id,current_head,p_request_id,p_body,nullif(trim(p_world_time),''),coalesce(p_events,'[]'::jsonb),actual_rules_version);
+ update public.nw_branches set head_scene_id=new_id where id=p_branch_id;
+ update public.nw_worlds set updated_at=now() where id=p_world_id;
+ return new_id;
+end $$;
+revoke all on function public.nw_commit_scene(uuid,uuid,uuid,uuid,text,text,jsonb,integer) from public,anon;
+grant execute on function public.nw_commit_scene(uuid,uuid,uuid,uuid,text,text,jsonb,integer) to authenticated;

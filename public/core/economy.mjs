@@ -1,7 +1,7 @@
 /** Evidence-backed fictional property ledger. No guessed ownership or cash. */
 const text=v=>typeof v==='string'?v.trim():'';
 const key=(actor,currency)=>JSON.stringify([text(actor),text(currency)]);
-const actions=new Set(['acquire','transfer','drop','destroy','recover','observe']);
+const actions=new Set(['acquire','transfer','take','drop','destroy','recover','observe']);
 export function economyShapeError(e){
  if(e.type==='money'){
   if(!text(e.actor)||!text(e.currency)||!Number.isSafeInteger(e.delta))return 'Нужны владелец, валюта и точное целое изменение.';
@@ -13,8 +13,8 @@ export function economyShapeError(e){
   // Older events remain readable without inferring ownership from arbitrary action labels.
   if(e.custody_version===1){
    if(!actions.has(e.action))return 'Неизвестное действие с предметом.';
-   if(['acquire','recover','observe','drop','destroy','transfer'].includes(e.action)&&!text(e.actor))return 'Нужен участник действия с предметом.';
-   if(e.action==='transfer'&&(!text(e.counterparty)||text(e.actor)===text(e.counterparty)))return 'Передача требует другого получателя.';
+   if(['acquire','recover','observe','drop','destroy','transfer','take'].includes(e.action)&&!text(e.actor))return 'Нужен участник действия с предметом.';
+   if(['transfer','take'].includes(e.action)&&(!text(e.counterparty)||text(e.actor)===text(e.counterparty)))return 'Передача требует другого получателя.';
   }
  }
  return null;
@@ -51,9 +51,18 @@ export function applyItem(items,e,source){
  const actor=text(e.actor), recipient=text(e.counterparty);
  const status=old?.custody_status||'unknown';
  const holder=old?.holder||null;
+ if(e.action==='observe'){
+  // A sighting does not establish possession and does not erase earlier custody.
+  items.set(e.item_id,{...(old||{item_id:e.item_id,name:e.name,custody_status:'unknown',holder:null,source}),last_observation:{actor,source},action:old?.action||'observe'});
+  return null;
+ }
  if(status==='destroyed')return 'Предмет уже уничтожен; нужен новый ID для другого экземпляра.';
- if(status==='held'&&holder!==actor)return 'Действие приписано не подтверждённому владельцу предмета.';
- if(e.action==='acquire'&&status==='held')return 'Предмет уже находится у владельца; повторное получение не подтверждено.';
+ if(e.action==='take'){
+  if(status==='lost')return 'Потерянный предмет сначала нужно найти.';
+  if(status==='held'&&holder!==recipient)return 'Указан неверный прежний держатель предмета.';
+ }else if(status==='held'&&holder!==actor)return 'Действие приписано не подтверждённому держателю предмета.';
+ if(e.action==='acquire'&&status==='held')return 'Предмет уже находится у держателя; повторное получение не подтверждено.';
+ if(e.action==='acquire'&&status==='lost')return 'Потерянный предмет сначала нужно найти.';
  if(e.action==='recover'&&status==='held')return 'Предмет не потерян.';
  if(e.action==='transfer'&&status==='lost')return 'Потерянный предмет сначала нужно найти.';
  if(e.action==='drop'&&status==='lost')return 'Предмет уже потерян.';

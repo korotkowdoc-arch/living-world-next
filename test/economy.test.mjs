@@ -51,3 +51,15 @@ test('economy view pages results and labels partial memory',()=>{
  assert.equal(view.total_records,2);assert.equal(view.next_offset,1);assert.equal(view.memory_complete,false);
  assert.equal(economyView(p,{actor:'А',offset:1,limit:1}).records[0].kind,'item');
 });
+
+test('a sighting is not custody and hostile taking need not imply consent',()=>{
+ const p=replay([scene('a',item('a','А','acquire')),scene('b',item('b','Б','observe')),
+  scene('c',item('c','Б','take',{counterparty:'А'})),scene('d',item('d','В','observe'))]);
+ assert.equal(p.items[0].holder,'Б');assert.equal(p.items[0].source.scene_id,'c');
+ assert.equal(p.items[0].last_observation.source.scene_id,'d');
+ const empty=replay([scene('a',item('a','А','observe'))]);assert.equal(empty.items[0].custody_status,'unknown');
+});
+test('taking from an incorrect holder is rejected without changing the item',()=>{
+ const p=replay([scene('a',item('a','А','acquire')),scene('b',item('b','Б','take',{counterparty:'В'}))]);
+ assert.equal(p.items[0].holder,'А');assert.equal(p.validation_warnings.length,1);
+});
