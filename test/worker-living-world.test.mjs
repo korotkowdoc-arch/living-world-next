@@ -55,3 +55,21 @@ test('MCP derived notes require autosave and exact canonical source; no scene wr
   assert.equal(r.result.structuredContent.notes[0].note.quote,'Точный текст');
  }finally{globalThis.fetch=old;}
 });
+
+test('MCP reads relationship histories and habits from pinned active ancestry',async()=>{
+ const old=globalThis.fetch;
+ globalThis.fetch=async url=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,events:[{id:'r',type:'relationship',a:'А',b:'Б',stance:'enemies',evidence:'Вражда'}]}]);
+  throw Error('Unexpected '+p.pathname);
+ };
+ try{
+  const r=await (await worker.fetch(call('get_relationship_history',{actor:'А'}),env)).json();
+  assert.equal(r.result.structuredContent.current[0].stance,'enemies');assert.equal(r.result.structuredContent.total_history,1);
+  const a=await (await worker.fetch(call('get_character_activities',{actor:'А'}),env)).json();
+  assert.equal(a.result.structuredContent.habits.length,0);
+ }finally{globalThis.fetch=old;}
+});

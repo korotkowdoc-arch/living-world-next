@@ -48,12 +48,16 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
     certainty:open.has(status)?'recorded_open_obligation':'completion_status_unknown',
     guidance:'Сверить последнюю сцену и актуальное исполнение. Не считать обещание автоматически выполненным.'});
  }
+ for(const activity of (projection.worldFacts||[]).filter(x=>x.activity_version===1&&x.activity_kind==='activity'&&['planned','in_progress'].includes(x.status)).slice(-3).reverse()){
+  push({kind:'shared_activity',title:activity.name,actors:activity.actors,status:activity.status,source:activity.source,certainty:'recorded_activity_status',guidance:'Участие и итог показывать в сцене; не выводить дружбу из совместной деятельности.'});
+ }
  for(const relationship of (Array.isArray(projection.relationships)?projection.relationships:[])){
   if(!text(relationship?.a)||!text(relationship?.b))continue;
-  if(!negative.has(text(relationship.stance).toLowerCase()))continue;
+  const remembered=(relationship.relationship_fields||[]).filter(x=>['hatred','resentful','distrusted','disrespected'].includes(x.value));
+  if(!negative.has(text(relationship.stance).toLowerCase())&&!remembered.length)continue;
   if(locked.has(pairKey(relationship.a,relationship.b)))continue;
   push({kind:'established_antagonism',actors:[relationship.a,relationship.b],
-    stance:relationship.stance,source:relationship.source||null,
+    stance:relationship.stance||remembered.map(x=>x.value).join(', '),source:relationship.stance_source||relationship.source||null,relationship_fields:remembered.map(x=>({field:x.field,value:x.value,source:x.source})),
     certainty:'last_recorded_directional_relationship',
     guidance:'Вражда может продолжаться. Не навязывать уважение или компромисс; возможны односторонние и разные реакции.'});
  }
@@ -67,6 +71,7 @@ export function storyDriverPrompt(drivers=[]){
   if(d.kind==='npc_intention')
    return '• '+d.actor+' намерен: '+d.goal+' ('+d.status+'), источник '+(d.source?.scene_id||'не указан')+'. '+(d.next_step?'Возможный шаг: '+d.next_step+'. ':'')+(d.obstacle?'Препятствие: '+d.obstacle+'. ':'')+'Это ещё НЕ действие.';
   if(d.kind==='independent_thread')return '• Независимая линия: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'; '+d.visibility+'. Не раскрывай без причины, не завершай автоматически.';
+  if(d.kind==='shared_activity')return '• Совместное занятие: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'. Не считать выполненным заранее.';
   if(d.kind==='recorded_commitment')
    return '• Обязательство '+d.commitment_id+'; состояние '+d.status+'; источник '+(d.source?.scene_id||'не указан')+'. Уточни перед признанием исполненным.';
   return '• Направленный конфликт: '+d.actors.join(' → ')+', '+d.stance+'. Не переосмысливай без событий.';

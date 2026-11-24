@@ -35,7 +35,7 @@ export function focusedSceneContext(projection,focus,{complete=true,maxChars=180
    // A query may find a fact, but its actual holder and source remain explicit.
    if(key==='people')return match(entry.name)||includesText(entry.name,queries)||includesText(entry.description,queries)||
     (entry.state_fields||[]).some(v=>includesText(v.value,queries));
-   if(key==='relationships')return match(entry.a)||match(entry.b)||includesText(entry.evidence,queries);
+   if(key==='relationships')return match(entry.a)||match(entry.b)||includesText(entry.evidence,queries)||(entry.relationship_fields||[]).some(x=>includesText(x.value,queries)||includesText(x.evidence,queries));
    if(key==='items')return match(entry.holder)||match(entry.actor)||match(entry.counterparty)||
     includesText(entry.item_id,queries)||includesText(entry.name,queries)||includesText(entry.evidence,queries);
    return match(entry.actor)||match(entry.a)||match(entry.b)||(Array.isArray(entry.actors)&&entry.actors.some(match))||

@@ -6,6 +6,8 @@ import {characterStateError,applyCharacter} from './character-state.mjs';
 import {lifeRecordError,livingWorldView} from './living-world.mjs';
 import {socialRecordError,socialTransitionError,socialWorldView} from './social-world.mjs';
 import {knowledgeRecordError,knowledgeKey} from './knowledge.mjs';
+import {relationshipError,relationshipKey,applyRelationship,interactionError} from './relationship-memory.mjs';
+import {activityError,activityTransitionError,activityView} from './activities.mjs';
 
 const TYPES=new Set(['character','relationship','knowledge','money','item','commitment','world','offscreen','plan']);
 const PLAN_ACTIONS=new Set(['start','advance','pause','resume','complete','abandon']);
@@ -33,6 +35,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(event.type==='relationship'){
       if(!asText(event.a)||!asText(event.b))errors.push(`${prefix}: нужны оба участника.`);
       const lock=locks.get(pairKey(event.a,event.b));
+      const relationError=relationshipError(event,lock);if(relationError)errors.push(prefix+': '+relationError);
       if(lock?.forbid_reconciliation&&RECONCILED.has(event.stance))
         errors.push(`${prefix}: противоречит закреплённому запрету на примирение.`);
       if(lock?.forbid_respect&&(event.stance==='respect'||event.stance==='admiration'||event.respect===true))
@@ -47,7 +50,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
       const error=knowledgeRecordError(event);if(error)errors.push(prefix+': '+error);
     }
     if(event.type==='world'){
-      const error=lifeRecordError(event)||socialRecordError(event);if(error)errors.push(prefix+': '+error);
+      const error=lifeRecordError(event)||socialRecordError(event)||interactionError(event)||activityError(event);if(error)errors.push(prefix+': '+error);
     }
     if(event.type==='plan'){
       if(!asText(event.actor)||!asText(event.plan_id)||!PLAN_ACTIONS.has(event.action))errors.push(`${prefix}: для плана нужны герой, ID и действие.`);
@@ -71,7 +74,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
 /** Replay only the actual ancestry of one branch, oldest first. No other branch can leak in. */
 export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) {
   const people=new Map(), relationships=new Map(), knowledge=new Map(), balances=new Map(), items=new Map(), obligations=new Map(), worldFacts=new Map(), plans=new Map(), offscreen=[];
-  const evidence=[]; const failures=[];
+  const evidence=[]; const failures=[]; const relationshipHistory=[];
   for(const scene of scenes){
     const events=Array.isArray(scene.events)?scene.events:[];
     // Replay checks the whole saved package once; current user rules NEVER rewrite past facts.
@@ -83,7 +86,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
       const value={...event,source:from};
       switch(event.type){
         case 'character': if(asText(event.name)){const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));}break;
-        case 'relationship': relationships.set(`${event.a}→${event.b}`,value);break;
+        case 'relationship': {const key=relationshipKey(event);relationships.set(key,applyRelationship(relationships.get(key),event,from));break;}
         case 'knowledge':{
           const key=knowledgeKey(event);
           knowledge.set(key,value); break;
@@ -96,7 +99,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=socialTransitionError(worldFacts.get(event.key),event);
+          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
           else worldFacts.set(event.key,value);
         }break;
@@ -125,11 +128,11 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
           break;
         }
       }
-      if(accepted)evidence.push(from);
+      if(accepted){evidence.push(from);if(event.type==='relationship'||(event.type==='world'&&event.interaction_version===1))relationshipHistory.push({source:from});}
     }
   }
   const list=m=>[...m.values()];
-  return {people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,events_replayed:evidence.length,validation_warnings:failures};
+  return {people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:evidence.length,validation_warnings:failures};
 }
 
 export function branchAncestry(allScenes,headId) {
@@ -156,6 +159,7 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     recorded_agenda:recordedWorldAgenda(scenes,projection),
     living_world:livingWorldView(scenes,projection,{complete:historyComplete,limit:8}),
     social_world:socialWorldView(projection,{complete:historyComplete,limit:8}),
+    recorded_activities:activityView(projection,{complete:historyComplete,limit:8}),
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,
     memory_warning:(historyComplete?'':'История загружена не полностью. Результаты памяти НЕ полны. ')+'События проецируются только из размеченных фактов. Неразмеченные сцены необходимо читать, а не считать, будто событий в них не было.'};

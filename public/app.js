@@ -9,6 +9,8 @@ import {livingWorldView} from './core/living-world.mjs';
 import {annotationPassages} from './core/annotation-passages.mjs';
 import {socialWorldView} from './core/social-world.mjs';
 import {knowledgeView} from './core/knowledge.mjs';
+import {relationshipHistory} from './core/relationship-memory.mjs';
+import {activityView} from './core/activities.mjs';
 import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
@@ -353,6 +355,30 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
  if(!projection.relationships.length)ties.append(para('Связи ещё не отмечены в сохранённых событиях.'));
  for(const link of projection.relationships){const item=node('div','rule');add(item,node('strong','',`${link.a} → ${link.b}`),para(`Состояние: ${link.stance||'не указано'}`),para(link.evidence||''));ties.append(item);}
  root.append(ties);
+ const personal=panel(title('История отношений и занятий'),para('Два направления отношений, личные привычки и совместные эпизоды. Совместная работа не означает примирения.'));
+ const first=node('input','field'),second=node('input','field'),detail=node('div');first.placeholder='Имя героя';second.placeholder='Второй герой (необязательно)';first.maxLength=140;second.maxLength=140;
+ let offsetRel=0,selectedActor='',selectedOther='',memory=null;
+ const show=()=>{
+  const p=replay(memory.scenes,[],{evidencePrevalidated:true});
+  const r=relationshipHistory(memory.scenes,p,{actor:selectedActor,other:selectedOther,offset:offsetRel,complete:memory.complete});
+  const a=activityView(p,{actor:selectedActor,offset:offsetRel,complete:memory.complete});
+  detail.replaceChildren(para(memory.complete?'Вся действующая ветка.':'Память загружена частично.'));
+  const source=(card,s)=>{if(!s?.scene_id)return;const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,s.scene_id)).body;body.hidden=false;}),'text-button'),body);};
+  detail.append(title('Текущие записанные отношения'));
+  for(const x of r.current){const card=add(node('div','rule'),node('strong','',x.a+' → '+x.b),para(x.stance||'Общее отношение не установлено'));source(card,x.stance_source);
+   for(const field of x.relationship_fields){const line=add(node('div','rule'),para(field.field+': '+field.value),para(field.evidence));source(line,field.source);card.append(line);}detail.append(card);}
+  detail.append(title('История взаимодействия'));
+  for(const x of r.history){const card=add(node('div','rule'),node('strong','',x.type==='interaction'?x.kind+' · '+x.actors.join(', '):x.a+' → '+x.b),para(x.description||x.stance||''),para(x.outcome||''),para(x.evidence));source(card,x.source);detail.append(card);}
+  detail.append(title('Привычки и занятия'));
+  for(const x of [...a.habits,...a.activities]){const card=add(node('div','rule'),node('strong','',x.name+' · '+x.status),para(x.description),para(x.frequency||x.actors?.join(', ')||''));source(card,x.source);detail.append(card);}
+  if(!r.total_history&&!r.total_relationships&&!a.counts.habits&&!a.counts.activities)detail.append(para('Нет записей по этому имени. Это не доказывает отсутствие отношений или занятий.'));
+  if(offsetRel)detail.append(button('Назад',()=>{offsetRel=Math.max(0,offsetRel-20);show();},'btn secondary'));
+  if(r.next_offset!==null||a.next_offset!==null)detail.append(button('Ещё',()=>{offsetRel+=20;show();},'btn secondary'));
+ };
+ add(personal,first,second,button('Читать по всей ветке',()=>busy(async()=>{
+  selectedActor=first.value.trim();selectedOther=second.value.trim();if(!selectedActor)throw Error('Укажи имя героя.');
+  offsetRel=0;memory=await fullStructuredMemory(w);show();
+ })),detail);root.append(personal);
  const agency=panel(title('Самостоятельные планы NPC'),para('Цели — это намерения, а не уже совершившиеся поступки. Персонажи могут стремиться к разному, ссориться и не искать примирения. Завершение плана требует фактического события и источника.'));
  const resultsFull=node('div');
  const inspect=button('Загрузить планы из всей истории',()=>busy(async()=>{
@@ -567,6 +593,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
   const label=d.kind==='npc_intention'?d.actor+' — '+d.goal+' ('+d.status+')':
    d.kind==='recorded_commitment'?'Обязательство '+d.commitment_id+' ('+d.status+')':
    d.kind==='independent_thread'?'Сюжетная линия: '+d.title+' ('+d.status+')':
+   d.kind==='shared_activity'?'Совместное занятие: '+d.title+' ('+d.status+')':
    d.kind==='established_antagonism'?d.actors.join(' → ')+' · '+d.stance:
    d.actors.join(' ↔ ')+' · авторский запрет';
   pressure.append(add(node('div','rule'),node('strong','',label),para(d.guidance+source)));

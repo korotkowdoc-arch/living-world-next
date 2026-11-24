@@ -47,7 +47,8 @@ export function characterStateView(projection,actor,{complete=true,offset=0,limi
  const plans=(projection.plans||[]).filter(x=>identity(x.actor)).map(x=>({kind:'plan',...x,history_events:x.history?.length||0,history:undefined}));
  const knowledge=(projection.knowledge||[]).filter(x=>identity(x.actor)).map(x=>({kind:'knowledge',...x}));
  const commitments=(projection.obligations||[]).filter(x=>identity(x.actor)).map(x=>({kind:'commitment',...x}));
- const rows=[...relations,...plans,...knowledge,...commitments];
+ const activities=(projection.worldFacts||[]).filter(x=>x.activity_version===1&&(identity(x.actor)||x.actors?.some(identity))).map(x=>({kind:x.activity_kind,...x}));
+ const rows=[...relations,...plans,...knowledge,...commitments,...activities];
  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
  return {actor:subject,character:character?{name:character.name,description:character.description??null,
   state_fields:character.state_fields||[],latest_event_source:character.source}:null,
