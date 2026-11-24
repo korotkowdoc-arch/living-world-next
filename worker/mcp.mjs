@@ -19,7 +19,7 @@ import {dynamicsView} from '../public/core/world-dynamics.mjs';
 import {prepareStoryTurn} from '../public/core/story-turn.mjs';
 import {createAncestryReader} from '../public/core/ancestry-reader.mjs';
 import {reviewSceneDraft} from '../public/core/scene-draft.mjs';
-import {validateMemoryNotes,MEMORY_NOTE_POLICY} from '../public/core/memory-notes.mjs';
+import {validateMemoryNotes,MEMORY_NOTE_POLICY,focusedMemoryNotes} from '../public/core/memory-notes.mjs';
 import {economyView} from '../public/core/economy.mjs';
 import {characterStateView} from '../public/core/character-state.mjs';
 import {sceneFocusInput,focusedSceneContext,literalFocusHits} from '../public/core/scene-context.mjs';
@@ -29,13 +29,13 @@ import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
 import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
 
 const version='2025-06-18';
-const narratorWorkflow='When the user plays or continues a saved world, read get_world_context and prepare_story_turn before writing. Retrieve exact source scenes or focused context when relevant memory is missing. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals. When an older story has gaps, use get_memory_review_queue to locate sources and get_annotation_passages/get_story_scene to read them. If historical note storage is available, save_memory_notes can record evidence-backed retrieval aids; do not turn them into retroactive canonical events.';
+const narratorWorkflow='When the user plays or continues a saved world, read get_world_context and prepare_story_turn before writing. Retrieve exact source scenes or focused context when relevant memory is missing. Focused context includes bounded derived historical hints when storage is available; verify their source scenes and never confuse them with canonical knowledge. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals. When an older story has gaps, use get_memory_review_queue to locate sources and get_annotation_passages/get_story_scene to read them. If historical note storage is available, save_memory_notes can record evidence-backed retrieval aids; do not turn them into retroactive canonical events.';
 const toolsList=[
   {name:'list_worlds',description:'List the authenticated owner’s worlds.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes, and narration guidance. Reports incomplete history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
   {name:'search_story_memories',description:'Search the ENTIRE active branch by exact text substring, including scenes older than 1000. Returns scene IDs and evidence excerpts, never other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},query:{type:'string',minLength:2,maxLength:180},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','query']}},
   {name:'get_story_scene',description:'Retrieve exact original text of a saved scene by ID, annotated whether it belongs to CURRENT active ancestry. Inactive alternatives are NOT canonical facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'}},required:['world_id','scene_id']}},
-  {name:'get_scene_context',description:'Retrieve a focused sample for the next scene: selected characters, directed relationships, their knowledge, goals, commitments, property and relevant literal source hits. Search terms are clues, not facts. Use before important callbacks in long stories.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actors:{type:'array',maxItems:8,items:{type:'string',minLength:1,maxLength:140}},queries:{type:'array',maxItems:4,items:{type:'string',minLength:2,maxLength:140}}},required:['world_id'],additionalProperties:false}},
+  {name:'get_scene_context',description:'Retrieve a focused sample for the next scene: selected characters, directed relationships, their knowledge, goals, commitments, property, relevant literal source hits and optional derived historical hints. Hints are not canonical facts; unavailable storage is reported. Search terms are clues, not facts. Use before important callbacks in long stories.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actors:{type:'array',maxItems:8,items:{type:'string',minLength:1,maxLength:140}},queries:{type:'array',maxItems:4,items:{type:'string',minLength:2,maxLength:140}}},required:['world_id'],additionalProperties:false}},
   {name:'get_character_state',description:'Read last explicit character field observations with per-field source scenes, calendar-derived age when birth date and story clock are established, directed relationships, known facts, plans and commitments. Does not infer unrecorded traits, consent, emotions or current whereabouts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_actor_memory',description:'Recall a character from the entire played active branch WITHOUT manual annotation: separately return proven structured events and raw literal mentions with exact source scene IDs. Text mentions are clues, not confirmed facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:2,maxLength:140},limit:{type:'integer',minimum:1,maximum:40},event_offset:{type:'integer',minimum:0},mention_offset:{type:'integer',minimum:0}},required:['world_id','actor']}},
   {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
@@ -143,6 +143,22 @@ async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
  }
  return reader.result();
 }
+/** Optional historical hints. Failure is visible, does not break canonical reads.
+ * All queries remain scoped to the pinned owner branch. Never turn notes into knowledge. */
+async function readFocusedNotes(env,token,world,head,actors){
+ if(head===null)return focusedMemoryNotes([]);
+ const selected=[...new Set(actors)].slice(0,8);
+ const groups=await Promise.all(selected.map(async actor=>{
+  try{
+   const rows=await rpc(env,token,'nw_read_memory_notes',{p_world_id:world.id,p_expected_head:head,p_actor:actor,p_scene_id:null,p_limit:5,p_offset:0});
+   if(!Array.isArray(rows))throw Error('Invalid note response');
+   // Exact holder is also checked by the DB; reject mismatched response rather than leaking it.
+   if(rows.some(r=>!r?.scene_id||!r.note_key||!Array.isArray(r.note?.actors)||!r.note.actors.includes(actor)))throw Error('Invalid note actor');
+   return {actor,status:'available',rows,more:rows.length===5};
+  }catch{return {actor,status:'unavailable',rows:[]};}
+ }));
+ return focusedMemoryNotes(groups);
+}
 async function callTool(name,args,env,token){
  switch(name){
   case 'list_worlds':return await rest(env,token,'nw_worlds?select=id,title,seed,start_marker,active_branch_id,auto_save,updated_at&order=updated_at.desc');
@@ -184,9 +200,10 @@ async function callTool(name,args,env,token){
    const focus=sceneFocusInput(args);
    const world=await ownerWorld(env,token,args.world_id);
    const active=await branch(env,token,world);
-   const [memory,hits]=await Promise.all([
+   const [memory,hits,notes]=await Promise.all([
     readStructuredMemory(env,token,world,active.head_scene_id),
-    Promise.all(focus.queries.map(query=>rpc(env,token,'nw_search_history',{p_world_id:world.id,p_query:query,p_limit:8,p_offset:0})))
+    Promise.all(focus.queries.map(query=>rpc(env,token,'nw_search_history',{p_world_id:world.id,p_query:query,p_limit:8,p_offset:0}))),
+    readFocusedNotes(env,token,world,active.head_scene_id,focus.actors)
    ]);
    const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
@@ -194,7 +211,7 @@ async function callTool(name,args,env,token){
     throw Error('Story changed while building focused scene context; retry.');
    return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
     ...focusedSceneContext(projection,focus,{complete:memory.complete,maxChars:18000,worldTime:memory.scenes.at(-1)?.world_time}),
-    literal_hits:focus.queries.map((query,i)=>literalFocusHits(query,hits[i]))};
+    historical_hints:notes,literal_hits:focus.queries.map((query,i)=>literalFocusHits(query,hits[i]))};
   }
   case 'get_character_state':{
    const actor=String(args.actor??'').trim();
