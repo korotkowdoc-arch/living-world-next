@@ -199,3 +199,18 @@ test('turn links independent plans to actual means and possible constraints with
  assert.equal(a.experience[0].name,'Письмо');assert.equal(a.responsibilities[0].kind,'consequence');
  assert.equal(JSON.stringify(p),snapshot);assert.ok(JSON.stringify(turn.actor_context).length<=18000);
 });
+
+test('turn candidate pages are stable and independent threads remain accessible',()=>{
+ const p={plans:Array.from({length:13},(_,i)=>({actor:i<5?'Анна':'Борис',plan_id:'p'+i,goal:'Цель '+i,status:'active'}))};
+ const scenes=[{id:'s',world_time:'2026-11-24'}],opts={actors:['Анна'],limit:3};
+ const first=prepareStoryTurn(scenes,p,[],{...opts,scope:'background'});
+ const second=prepareStoryTurn(scenes,p,[],{...opts,scope:'background',offset:first.next_offset});
+ const third=prepareStoryTurn(scenes,p,[],{...opts,scope:'background',offset:second.next_offset});
+ assert.equal(first.total_candidates,8);assert.equal(first.candidate_counts.focus,5);
+ assert.equal(third.next_offset,null);
+ const ids=[...first.candidates,...second.candidates,...third.candidates].map(x=>x.key);
+ assert.equal(new Set(ids).size,8);
+ assert.ok([...first.candidates,...second.candidates,...third.candidates].every(x=>!x.focus_match));
+ assert.equal(prepareStoryTurn(scenes,p,[],{...opts,scope:'focus'}).total_candidates,5);
+ assert.throws(()=>prepareStoryTurn(scenes,p,[],{offset:-1}));
+});
