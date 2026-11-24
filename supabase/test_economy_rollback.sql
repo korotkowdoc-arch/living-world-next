@@ -48,4 +48,17 @@ begin
   if not caught then raise exception 'Invalid story shape accepted: %',bad; end if;
  end loop;
 end $story$;
+-- Linked family duty occurrences cannot duplicate or drift off their date grid.
+do $family$
+declare st jsonb:='{"plans":{},"records":{}}'; e jsonb; bad boolean;
+begin
+ st:=public.nw_story_transition_step(st,'{"type":"world","dynamics_version":1,"dynamics_kind":"family_duty","record_id":"care","key":"dynamics:family_duty:care","family_kind":"care","actors":["Anna"],"title":"Care","description":"Care","starts_on":"2026-01-01","every_days":2,"status":"active"}');
+ e:='{"type":"world","dynamics_version":1,"dynamics_kind":"family_event","record_id":"care1","key":"dynamics:family_event:care1","family_kind":"care","actors":["Anna"],"title":"Care","description":"Care","status":"completed","outcome":"Done","duty_id":"care","scheduled_on":"2026-01-03"}';
+ st:=public.nw_story_transition_step(st,e);
+ if (st->'records'->'dynamics:family_event:care1'->>'status') is distinct from 'completed' then raise exception 'Family occurrence not saved'; end if;
+ bad:=false; begin perform public.nw_story_transition_step(st,e||'{"record_id":"duplicate","key":"dynamics:family_event:duplicate"}'::jsonb); exception when raise_exception then bad:=true; end;
+ if not bad then raise exception 'Duplicate family occurrence accepted'; end if;
+ bad:=false; begin perform public.nw_story_transition_step(st,e||'{"record_id":"wrong","key":"dynamics:family_event:wrong","scheduled_on":"2026-01-04"}'::jsonb); exception when raise_exception then bad:=true; end;
+ if not bad then raise exception 'Off-grid family occurrence accepted'; end if;
+end $family$;
 rollback;
