@@ -1,7 +1,9 @@
 /** Evidence-backed per-field character continuity. No simulation, diagnosis or inference. */
+import {parseStoryDate} from './world-time.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 export const CHARACTER_FIELDS=Object.freeze({
  location:'Последнее известное место',occupation:'Занятие',condition:'Физическое состояние',
+ birth_date:'Дата рождения',
  pregnancy:'Последнее установленное состояние беременности',family_goal:'Семейные намерения',residence:'Место проживания',
  injury:'Травма или ограничение',appearance:'Внешность',mood:'Последнее выраженное настроение',
  habit:'Привычка',preference:'Предпочтение',aversion:'Неприязнь',affiliation:'Принадлежность',
@@ -17,6 +19,7 @@ export function characterStateError(event){
  if(!entries.length||entries.length>Object.keys(CHARACTER_FIELDS).length)return 'Неверное количество полей состояния.';
  for(const [field,value] of entries){
   if(!Object.hasOwn(CHARACTER_FIELDS,field))return 'Неизвестное поле состояния: '+field;
+  if(field==='birth_date'&&value!==null&&(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||parseStoryDate(value)?.precision!=='day'))return 'Дата рождения должна быть точной датой ГГГГ-ММ-ДД.';
   if(value!==null&&(typeof value!=='string'||!value.trim()||value.length>600))
    return 'Значение поля должно быть непустым текстом до 600 символов или null.';
  }
@@ -34,7 +37,16 @@ export function applyCharacter(previous,event,source){
   description:typeof event.description==='string'?event.description:previous?.description,
   state_fields:[...known.values()],source};
 }
-export function characterStateView(projection,actor,{complete=true,offset=0,limit=40}={}){
+/** Gregorian birthday convention: Feb 29 reaches next age on March 1 in non-leap years. */
+export function characterAge(character,worldTime){
+ const birth=character?.state_fields?.find(x=>x.field==='birth_date');
+ const date=parseStoryDate(birth?.value),clock=parseStoryDate(worldTime);
+ if(!date||date.precision!=='day'||!clock)return null;
+ const [by,bm,bd]=date.day.split('-').map(Number),[cy,cm,cd]=clock.day.split('-').map(Number);
+ if(clock.day<date.day)return {status:'before_recorded_birth',birth_date:date.day,as_of:clock.day,source:birth.source};
+ return {status:'calendar_derived',years:cy-by-Number(cm<bm||cm===bm&&cd<bd),birth_date:date.day,as_of:clock.day,source:birth.source};
+}
+export function characterStateView(projection,actor,{complete=true,offset=0,limit=40,worldTime=null}={}){
  const name=text(actor);
  if(!name||name.length>140)throw Error('Укажи имя персонажа длиной до 140 символов.');
  const canonical=name.toLocaleLowerCase('ru');
@@ -55,7 +67,7 @@ export function characterStateView(projection,actor,{complete=true,offset=0,limi
  const rows=[...relations,...plans,...knowledge,...commitments,...activities,...growth,...dynamics];
  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
  return {actor:subject,character:character?{name:character.name,description:character.description??null,
-  state_fields:character.state_fields||[],latest_event_source:character.source}:null,
+  state_fields:character.state_fields||[],age:characterAge(character,worldTime),latest_event_source:character.source}:null,
   ambiguous_names:matches.length>1&&!exact?matches.map(p=>p.name):[],
   records:rows.slice(start,start+size),total_records:rows.length,
   next_offset:start+size<rows.length?start+size:null,memory_complete:complete,
