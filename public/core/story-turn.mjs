@@ -68,6 +68,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.growth_version===1&&r.growth_kind==='project'&&['planned','active','paused'].includes(r.status))add('project',r,{timing:timing(r)});
   if(r.dynamics_version===1){
    if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor);if(window)add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
+   if(r.dynamics_kind==='life_transition'&&!closed.has(r.status))add('life_transition',r,{transition_kind:r.transition_kind,timing:timing(r)});
    if(r.dynamics_kind==='family_event'&&!closed.has(r.status))add('family_event',r,{family_kind:r.family_kind,timing:timing(r)});
    if(r.dynamics_kind==='contest'&&!closed.has(r.status))add('contest',r,{resource:clip(r.resource),timing:timing(r)});
    if(r.dynamics_kind==='institution'&&!closed.has(r.status))add('institution',r,{group_id:r.group_id});
@@ -98,7 +99,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  };
  // Latest source in canonical ancestry first; updates of old keys are not insert order.
  const recent=rows=>rows.slice().reverse().sort((a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
- const stateFields=new Set(['location','residence','availability','occupation','condition','injury','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','coping_style','humor','register']);
+ const stateFields=new Set(['location','residence','availability','occupation','condition','injury','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','coping_style','humor','register','life_stage','education','career_goal']);
  for(const p of projection.people||[]){
   if(!actorIndex.has(p.name))continue;
   const ctx=actorIndex.get(p.name);ctx.age=characterAge(p,anchor?.literal);
