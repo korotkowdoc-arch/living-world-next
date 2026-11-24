@@ -88,15 +88,30 @@ export async function deleteWorld(worldId){await dbRequest(`/rest/v1/nw_worlds?i
 
 
 /** Read every saved scene across every branch, not just active ancestry. */
+/** Export has an explicit, unique sort order even when many rows share created_at.
+ * A final 1-row probe distinguishes exactly maxRows from a silently truncated archive.
+ */
 async function allRows(table,worldId,{pageSize=200,maxRows=50000}={}){
- const rows=[];
- for(let offset=0;offset<maxRows;offset+=pageSize){
-  const page=await dbRequest(`/rest/v1/${table}?select=*&world_id=eq.${enc(worldId)}&order=created_at.asc&limit=${pageSize}&offset=${offset}`);
-  if(!Array.isArray(page))throw Error(`Не удалось прочитать раздел ${table}.`);
-  rows.push(...page);
-  if(page.length<pageSize)return rows;
+ const rows=[],seen=new Set();
+ const sort='created_at.asc,id.asc';
+ for(let offset=0;offset<=maxRows;offset+=pageSize){
+  const probe=offset===maxRows;
+  const limit=probe?1:Math.min(pageSize,maxRows-offset);
+  const page=await dbRequest(`/rest/v1/${table}?select=*&world_id=eq.${enc(worldId)}&order=${sort}&limit=${limit}&offset=${offset}`);
+  if(!Array.isArray(page)||page.length>limit)throw Error(`Неверная страница архива: ${table}.`);
+  if(probe){
+   if(page.length)throw Error(`Архив превышает ${maxRows} записей. Нужен постраничный экспорт, сохранение отменено.`);
+   return rows;
+  }
+  for(const item of page){
+   if(!item?.id||seen.has(item.id))
+    throw Error(`Повтор записи при выгрузке ${table}. Мир изменился или страницы получены неоднозначно; повтори экспорт.`);
+   seen.add(item.id);
+   rows.push(item);
+  }
+  if(page.length<limit)return rows;
  }
- throw Error(`Архив превышает ${maxRows} записей. Нужен постраничный экспорт, сохранение отменено.`);
+ throw Error('Неполная резервная копия. Экспорт отменён.');
 }
 
 /** Search actual saved text in the active ancestry, not arbitrary unrelated branches. */
