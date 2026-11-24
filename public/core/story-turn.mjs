@@ -109,6 +109,20 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
    else if(r.dynamics_kind==='bond'&&['active','estranged'].includes(r.status)&&['family','romantic','marriage','parenthood','cohabitation'].includes(r.bond_type)&&(focus.has(r.actor)||focus.has(r.counterparty)))add('personal_bond',r,{bond_type:r.bond_type});
   }
  }
+ const openPlanGoals=new Map();
+ for(const p of projection.plans||[])if(['active','paused'].includes(p.status)){
+  if(!openPlanGoals.has(p.actor))openPlanGoals.set(p.actor,new Set());openPlanGoals.get(p.actor).add(text(p.goal));
+ }
+ const goalFields=new Set(['personal_goal','family_goal','career_goal']);
+ for(const person of projection.people||[]){
+  for(const field of person.state_fields||[]){
+   if(!goalFields.has(field.field)||!text(field.value)||openPlanGoals.get(person.name)?.has(text(field.value)))continue;
+   add('goal_opportunity',{actor:person.name,key:JSON.stringify([person.name,field.field]),title:field.value,status:'recorded_goal',source:field.source},{goal_field:field.field,timing:'requires_character_choice',guidance:'Consider whether the recorded goal warrants a new concrete plan or independent action; do not assume progress or invent a goal.'});
+  }
+ }
+ // A recorded active habit can motivate leisure without assuming that it is due today.
+ for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active')
+  add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),guidance:'Optional established tendency, not a scheduled or completed action.'});
  const life_context=[];
  for(const person of projection.people||[]){
   const before=characterAge(person,clock?.literal),after=characterAge(person,anchor?.literal);
@@ -126,16 +140,17 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const candidate_counts={all:all.length,focus:all.filter(x=>x.focus_match).length,background:all.filter(x=>!x.focus_match).length};
  // Attach a bounded actor context to the actual turn, instead of forcing the narrator
  // to retrieve every subsystem independently. Focused actors precede background actors.
- const selectedActors=[...focus],omittedActors=new Set();
+ const selectedActors=scope==='background'?[]:[...focus],omittedActors=new Set();
  const addActor=name=>{if(!text(name)||selectedActors.includes(name))return;if(selectedActors.length<12)selectedActors.push(name);else omittedActors.add(name);};
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
+ if(scope==='background')for(const actor of focus)addActor(actor);
  const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],omitted:{}}]));
  const actorRows=(actor,kind,row,cap)=>{const ctx=actorIndex.get(actor);if(!ctx)return;
   if(ctx[kind].length<cap)ctx[kind].push(row);else ctx.omitted[kind]=(ctx.omitted[kind]||0)+1;
  };
  // Latest source in canonical ancestry first; updates of old keys are not insert order.
  const recent=rows=>rows.slice().reverse().sort((a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
- const stateFields=new Set(['location','residence','availability','occupation','condition','injury','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','coping_style','humor','register','life_stage','education','career_goal']);
+ const stateFields=new Set(['location','residence','availability','occupation','condition','injury','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','preference','aversion','habit','coping_style','humor','register','life_stage','education','career_goal']);
  for(const p of projection.people||[]){
   if(!actorIndex.has(p.name))continue;
   const ctx=actorIndex.get(p.name);ctx.age=characterAge(p,anchor?.literal);
