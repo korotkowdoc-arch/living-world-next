@@ -8,6 +8,9 @@ const fields=Object.freeze({
  fear:['fearful','unafraid','unknown'],
  resentment:['resentful','released','unknown'],
  cooperation:['cooperating','refuses','conditional','unknown'],
+ attraction:['attracted','not_attracted','ambivalent','unknown'],
+ jealousy:['jealous','not_jealous','unknown'],
+ commitment:['committed','uncertain','withdrawn','unknown'],
  boundary:['open','distance','no_contact','unknown']
 });
 export function relationshipError(e,lock){
