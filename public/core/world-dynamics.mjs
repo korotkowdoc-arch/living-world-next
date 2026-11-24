@@ -12,13 +12,14 @@ const kinds={
  development:['scheduled','ongoing','completed','cancelled','unknown']
 };
 const terminal={bond:new Set(['ended']),contest:new Set(['decided','abandoned']),development:new Set(['completed','cancelled'])};
-const bondTypes=['family','friendship','professional','mentorship','rivalry','community','romantic','other'];
+const bondTypes=['family','friendship','professional','mentorship','rivalry','community','romantic','marriage','parenthood','cohabitation','other'];
 export function dynamicsRecordError(e){
  if(e?.type!=='world')return null;
  if(e.dynamics_version===undefined)return text(e.key).startsWith('dynamics:')?'Ключ динамики требует версию записи.':null;
  const k=e.dynamics_kind;
  if(e.dynamics_version!==1||!Object.hasOwn(kinds,k)||!id(e.record_id)||e.key!=='dynamics:'+k+':'+e.record_id||!kinds[k].includes(e.status)||!valid(e.description,600))return 'Неверная запись динамики мира.';
  if(k==='bond'&&(!valid(e.actor)||!valid(e.counterparty)||e.actor===e.counterparty||!bondTypes.includes(e.bond_type)))return 'Связи нужны два разных участника и тип.';
+ if(k==='bond'&&e.bond_type==='parenthood'&&e.actor===e.counterparty)return 'Родитель и ребёнок должны различаться.';
  if(k==='institution'&&(!valid(e.name)||!valid(e.function,300)||!valid(e.place)||!id(e.group_id)))return 'Учреждению нужны название, назначение, место и ID группы.';
  if(k==='contest'&&(!valid(e.resource,300)||!list(e.actors,2)||!valid(e.title)))return 'Конкуренции нужны ресурс, название и минимум два участника.';
  if(k==='development'&&(!valid(e.title)||!valid(e.place)||!list(e.actors,0)))return 'Изменению мира нужны название, место и список участников (может быть пустым).';
