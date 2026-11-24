@@ -8,7 +8,7 @@ const open=new Set(['active','open','pending','owed','unfulfilled']);
 /** Story pressures from existing sources, not simulated actions or coerced plot beats.
  * These candidates are prompts for character choice, NOT new world facts.
  */
-export function storyDrivers(projection={},directives=[],{max=16}={}){
+export function storyDrivers(projection={},directives=[],{max=16,actors=[]}={}){
  const result=[],locked=new Set();
  const push=entry=>result.push(entry);
  const activeRules=Array.isArray(directives)?directives.filter(d=>d?.active!==false):[];
@@ -72,8 +72,11 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
  }
  // Binding rules first; round-robin remaining kinds to avoid many plans starving conflicts.
  const cap=Math.max(1,Math.min(50,Math.floor(Number(max)||16)));
+ const focus=new Set(Array.isArray(actors)?actors:[]);
+ const relevant=x=>focus.has(x.actor)||(x.actors||[]).some(a=>focus.has(a));
  const rules=result.filter(x=>x.kind==='author_relationship_boundary'),out=rules.slice(0,cap),groups=new Map();
  for(const x of result)if(x.kind!=='author_relationship_boundary'){if(!groups.has(x.kind))groups.set(x.kind,[]);groups.get(x.kind).push(x);}
+ if(focus.size){for(const group of groups.values())group.sort((a,b)=>Number(relevant(b))-Number(relevant(a)));}
  for(let i=0;out.length<cap;i++){let added=false;for(const group of groups.values()){if(group[i]){out.push(group[i]);added=true;if(out.length===cap)break;}}if(!added)break;}
  return out;
 }
