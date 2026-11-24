@@ -127,3 +127,26 @@ test('MCP memory review is pinned, paged and read-only',async()=>{
   assert.equal((await (await worker.fetch(call('get_memory_review_queue',{expected_head:head}),env)).json()).result.isError,true);
  }finally{globalThis.fetch=old;}
 });
+
+test('focused MCP memory retrieves separate historical hints and tolerates unavailable notes',async()=>{
+ const old=globalThis.fetch;let available=true;
+ const note={key:'n1',kind:'claim',summary:'Старая реплика',quote:'Точный текст',actors:['Анна']};
+ globalThis.fetch=async(url,opt={})=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,auto_save:true}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,events:[]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_read_memory_notes'){
+   assert.equal(JSON.parse(opt.body).p_expected_head,head);assert.equal(JSON.parse(opt.body).p_actor,'Анна');
+   return available?Response.json([{scene_id:head,note_key:'n1',note}]):Response.json({message:'Missing RPC'},{status:404});
+  }
+  throw Error('Unexpected '+p.pathname);
+ };
+ try{
+  const read=async()=>(await (await worker.fetch(call('get_scene_context',{actors:['Анна']}),env)).json()).result;
+  let r=await read();assert.equal(r.isError,false);assert.equal(r.structuredContent.historical_hints.notes[0].scene_id,head);
+  assert.equal(r.structuredContent.historical_hints.canonical,false);assert.deepEqual(r.structuredContent.memory.records.knowledge,[]);
+  available=false;r=await read();assert.equal(r.isError,false);assert.equal(r.structuredContent.historical_hints.status,'unavailable');
+ }finally{globalThis.fetch=old;}
+});
