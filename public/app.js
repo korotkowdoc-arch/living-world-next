@@ -36,6 +36,7 @@ const node=(tag,cl='',value='')=>{const e=document.createElement(tag);if(cl)e.cl
 const add=(parent,...children)=>{for(const c of children)if(c!=null)parent.append(c);return parent;};
 const button=(label,handler,cl='btn')=>{const b=node('button',cl,label);b.type='button';b.addEventListener('click',handler);return b;};
 const field=(placeholder='',cls='field')=>{const t=node('textarea',cls);t.placeholder=placeholder;t.rows=4;return t;};
+const sceneLink=(worldId,sceneId,label='Читать отдельно')=>{const a=node('a','btn secondary',label);a.href=sceneReaderUrl(worldId,sceneId);return a;};
 const row=(...children)=>add(node('div','btn-row'),...children);
 const panel=(...children)=>add(node('section','panel'),...children);
 const title=(text)=>node('h2','',text);
@@ -211,7 +212,7 @@ function renderStory(){const w=state.world;
   const container=node('div','story');state.scenes.forEach((s,i)=>{
     const card=node('article','scene');const chapter=node('h3','',`${state.historyComplete?'Сцена '+(i+1):'Сцена из действующей ветки'}${s.world_time?' · '+s.world_time:''}`);const details=node('details','scene-details');if(i===state.scenes.length-1)details.open=true;
     const summary=node('summary','',details.open?'Текст сцены':'Читать сцену');const body=node('div','scene-body',s.body);body.style.fontSize=readerPrefs.fontSize+'px';body.style.lineHeight=String(readerPrefs.lineHeight);add(details,summary,body);
-    const actions=add(node('div','scene-actions'),button('Ссылка на сцену',()=>busy(()=>copy(sceneReaderUrl(w.id,s.id))),'text-button'),button('На это: новая ветка',()=>{state.revision={scene_id:s.id,source_scene:s};renderWorld();document.querySelector('#sceneEditor')?.focus();},'text-button'));
+    const actions=add(node('div','scene-actions'),sceneLink(w.id,s.id),button('Ссылка на сцену',()=>busy(()=>copy(sceneReaderUrl(w.id,s.id))),'text-button'),button('На это: новая ветка',()=>{state.revision={scene_id:s.id,source_scene:s};renderWorld();document.querySelector('#sceneEditor')?.focus();},'text-button'));
     add(card,chapter,details,actions);container.append(card);
   });root.append(container);
   const changing=!!state.revision;
@@ -295,7 +296,7 @@ function renderSearch(){const w=state.world;
    for(const hit of found){const block=node('div','rule');
      const body=node('div','scene-body');
      add(block,node('strong','',hit.world_time||'Без точной даты'),para(hit.snippet||''),
-       button('Открыть исходную сцену',()=>busy(async()=>{const scene=await getScene(w.id,hit.scene_id);body.textContent=scene.body;body.hidden=false;}),'btn secondary'),body);
+       button('Открыть исходную сцену',()=>busy(async()=>{const scene=await getScene(w.id,hit.scene_id);body.textContent=scene.body;body.hidden=false;}),'btn secondary'),sceneLink(w.id,hit.scene_id),body);
      body.hidden=true;results.append(block);
    }
    more.hidden=found.length<20;
@@ -733,7 +734,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 window.addEventListener('focus',()=>void checkCloudChanges());
 // While visible, check only inexpensive owner/branch metadata; never download scenes automatically.
 setInterval(()=>{if(document.visibilityState==='visible')void checkCloudChanges();},90000);
-if(!(readSession()&&resumeOAuth()))openLanding();
+if(!(readSession()&&resumeOAuth()))void busy(openLanding);
 window.addEventListener('hashchange',()=>{
  if(state.pending){toast('Дождись завершения операции и обнови страницу для открытия ссылки.',true);return;}
  if(!confirmLeaveDraft()){clearReaderHash();return;}
