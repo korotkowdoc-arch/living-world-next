@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {replay,validateScene} from '../public/core/continuity.mjs';
 import {relationshipHistory} from '../public/core/relationship-memory.mjs';
 import {reviewSceneDraft} from '../public/core/scene-draft.mjs';
+import {focusedSceneContext} from '../public/core/scene-context.mjs';
 import {characterAge,characterStateView} from '../public/core/character-state.mjs';
 import {familyDutyWindow,dynamicsTransitionError} from '../public/core/world-dynamics.mjs';
 import {parseStoryDate} from '../public/core/world-time.mjs';
@@ -105,4 +106,13 @@ test('recurring duties count elapsed calendar days, not performed actions',()=>{
  assert.equal(p.worldFacts[0].status,'active');
  assert.equal(familyDutyWindow({...e,status:'paused'},null,parseStoryDate('2026-01-03')),null);
  assert.equal(familyDutyWindow(e,null,parseStoryDate('2026-01-04')),null);
+});
+
+test('focused context carries age for exact selected names only',()=>{
+ const body='Анна родилась в 2000 году, Борис в 1999 году.';
+ const events=[{id:'a',type:'character',name:'Анна',state_patch:{birth_date:'2000-01-01'},evidence:'Анна родилась в 2000 году'},{id:'b',type:'character',name:'Борис',state_patch:{birth_date:'1999-01-01'},evidence:'Борис в 1999 году'}];
+ const p=replay([{id:'s',body,events}]);
+ const r=focusedSceneContext(p,{actors:['Анна']},{worldTime:'2026-01-01'});
+ assert.equal(r.life_context.length,1);assert.equal(r.life_context[0].age.years,26);
+ assert.equal(focusedSceneContext(p,{actors:['анна']},{worldTime:'2026-01-01'}).life_context.length,0);
 });
