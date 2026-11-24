@@ -85,4 +85,17 @@ begin
  bad:=false;begin perform public.nw_story_transition_step(st,e||'{"record_id":"bad","key":"dynamics:payment_occurrence:bad","scheduled_on":"2026-11-02"}'::jsonb);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Off-grid payment accepted';end if;
 end $payment$;
+do $production$
+declare st jsonb:='{"plans":{},"records":{}}'; e jsonb; bad boolean;
+begin
+ st:=public.nw_story_transition_step(st,'{"type":"world","dynamics_version":1,"dynamics_kind":"stock_operation","record_id":"count","key":"dynamics:stock_operation:count","actor":"Workshop","status":"recorded","description":"Count","stock_action":"count","stock_lines":[{"product_id":"wood","unit":"piece","quantity":10},{"product_id":"chair","unit":"piece","quantity":0}]}');
+ e:='{"type":"world","dynamics_version":1,"dynamics_kind":"stock_operation","record_id":"batch","key":"dynamics:stock_operation:batch","actor":"Workshop","status":"recorded","description":"Batch","stock_action":"produce","stock_lines":[{"product_id":"wood","unit":"piece","quantity":-4},{"product_id":"chair","unit":"piece","quantity":2}]}';
+ st:=public.nw_story_transition_step(st,e);
+ if (st->'stock'->(jsonb_build_array('Workshop','wood','piece')::text)->>'quantity')::numeric<>6 then raise exception 'Input stock wrong'; end if;
+ if (st->'stock'->(jsonb_build_array('Workshop','chair','piece')::text)->>'quantity')::numeric<>2 then raise exception 'Output stock wrong'; end if;
+ bad:=false;begin perform public.nw_story_transition_step(st,e);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Stock operation repeated';end if;
+ bad:=false;begin perform public.nw_story_transition_step(st,e||'{"record_id":"large","key":"dynamics:stock_operation:large","stock_lines":[{"product_id":"wood","unit":"piece","quantity":-7},{"product_id":"chair","unit":"piece","quantity":3}]}'::jsonb);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Impossible batch accepted';end if;
+end $production$;
 rollback;
