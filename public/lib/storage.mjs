@@ -91,13 +91,18 @@ export async function deleteWorld(worldId){await dbRequest(`/rest/v1/nw_worlds?i
 /** Export has an explicit, unique sort order even when many rows share created_at.
  * A final 1-row probe distinguishes exactly maxRows from a silently truncated archive.
  */
-async function allRows(table,worldId,{pageSize=200,maxRows=50000}={}){
+export async function readPagedArchiveRows(table,worldId,{pageSize=200,maxRows=50000,request=dbRequest}={}){
+ if(!['nw_scenes','nw_revisions','nw_directive_edits'].includes(table))
+  throw Error('Недопустимый раздел архива.');
+ if(!Number.isInteger(pageSize)||pageSize<1||pageSize>1000||
+    !Number.isInteger(maxRows)||maxRows<1)throw Error('Неверные параметры выгрузки.');
  const rows=[],seen=new Set();
  const sort='created_at.asc,id.asc';
- for(let offset=0;offset<=maxRows;offset+=pageSize){
-  const probe=offset===maxRows;
-  const limit=probe?1:Math.min(pageSize,maxRows-offset);
-  const page=await dbRequest(`/rest/v1/${table}?select=*&world_id=eq.${enc(worldId)}&order=${sort}&limit=${limit}&offset=${offset}`);
+ for(let offset=0;offset<=maxRows;){
+  const remaining=maxRows-offset;
+  const probe=remaining===0;
+  const limit=probe?1:Math.min(pageSize,remaining);
+  const page=await request(`/rest/v1/${table}?select=*&world_id=eq.${enc(worldId)}&order=${sort}&limit=${limit}&offset=${offset}`);
   if(!Array.isArray(page)||page.length>limit)throw Error(`Неверная страница архива: ${table}.`);
   if(probe){
    if(page.length)throw Error(`Архив превышает ${maxRows} записей. Нужен постраничный экспорт, сохранение отменено.`);
@@ -110,6 +115,7 @@ async function allRows(table,worldId,{pageSize=200,maxRows=50000}={}){
    rows.push(item);
   }
   if(page.length<limit)return rows;
+  offset+=limit;
  }
  throw Error('Неполная резервная копия. Экспорт отменён.');
 }
@@ -125,7 +131,7 @@ export async function searchActiveScenes(worldId,query,{limit=30,offset=0}={}){
 export async function exportWorldArchive(worldId){
  const [before,branches,directives,directiveEdits,scenes,revisions]=await Promise.all([
    getWorld(worldId),listBranches(worldId),listDirectives(worldId),
-   allRows('nw_directive_edits',worldId),allRows('nw_scenes',worldId),allRows('nw_revisions',worldId)
+   readPagedArchiveRows('nw_directive_edits',worldId),readPagedArchiveRows('nw_scenes',worldId),readPagedArchiveRows('nw_revisions',worldId)
  ]);
  const [after,branchesAfter]=await Promise.all([getWorld(worldId),listBranches(worldId)]);
  const signature=(world,list)=>JSON.stringify({head:world.active_branch_id,rules:world.directive_version,updated:world.updated_at,
