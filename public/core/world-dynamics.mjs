@@ -5,6 +5,7 @@ import {parseStoryDate} from './world-time.mjs';
 const valid=(v,n=140)=>typeof v==='string'&&!!v.trim()&&v.length<=n;
 const id=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v);
 const exactDay=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&parseStoryDate(v)?.precision==='day';
+const sameStockLines=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((l,i)=>l.product_id===b[i].product_id&&l.unit===b[i].unit&&l.quantity===b[i].quantity);
 const text=v=>typeof v==='string'?v.trim():'';
 const list=(v,min=1,max=12)=>Array.isArray(v)&&v.length>=min&&v.length<=max&&v.every(x=>valid(x))&&new Set(v).size===v.length;
 const kinds={
@@ -79,7 +80,7 @@ export function dynamicsTransitionError(records,e){
   if(k==='institution'&&old.group_id!==e.group_id)return 'Нельзя переносить учреждение на другую группу.';
   if(k==='stock_operation'||k==='production_order'&&terminal[k].has(old.status))return 'Выполненная операция или закрытый заказ неизменяемы.';
   if(k==='enterprise'&&(old.actor!==e.actor||old.group_id!==e.group_id))return 'Новый держатель или организация требует нового предприятия.';
-  if(k==='production_order'&&(old.actor!==e.actor||old.enterprise_id!==e.enterprise_id||JSON.stringify(old.stock_lines)!==JSON.stringify(e.stock_lines)))return 'Изменение состава заказа требует нового ID.';
+  if(k==='production_order'&&(old.actor!==e.actor||old.enterprise_id!==e.enterprise_id||!sameStockLines(old.stock_lines,e.stock_lines)))return 'Изменение состава заказа требует нового ID.';
   if(k==='payment_occurrence')return 'Закрытая дата оплаты не может быть записана повторно.';
   if(k==='payment_schedule'&&['actor','counterparty','amount','currency','payment_kind','starts_on','every_days'].some(field=>old[field]!==e[field]))return 'Изменение условий оплаты требует нового расписания.';
   if(['employment','market_offer','economic_agreement'].includes(k)&&(old.actor!==e.actor||(old.group_id??null)!==(e.group_id??null)
@@ -99,7 +100,7 @@ export function dynamicsTransitionError(records,e){
   if(!enterprise||enterprise.actor!==e.actor)return 'Заказ не связан с действительным предприятием и держателем.';
   if(e.status==='completed'){
    const op=records.get('dynamics:stock_operation:'+e.stock_record_id);
-   if(enterprise.status!=='operating'||op?.stock_action!=='produce'||op.actor!==e.actor||JSON.stringify(op.stock_lines)!==JSON.stringify(e.stock_lines))return 'Для завершения нужны работающее предприятие и совпадающая производственная операция.';
+   if(enterprise.status!=='operating'||op?.stock_action!=='produce'||op.actor!==e.actor||!sameStockLines(op.stock_lines,e.stock_lines))return 'Для завершения нужны работающее предприятие и совпадающая производственная операция.';
    for(const x of records.values())if(x.dynamics_kind==='production_order'&&x.stock_record_id===e.stock_record_id)return 'Операция уже использована для другого заказа.';
   }
  }
