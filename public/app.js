@@ -163,6 +163,13 @@ function renderWorld(){if(!state.world)return openWorlds();const w=state.world;s
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
+  const last=state.scenes.at(-1),pending=last?.events?.at(-1);
+  if(pending?.dynamics_kind==='player_choice'&&pending.status==='pending'){
+   const choice=panel(title('Ожидается решение героя'),para(pending.actor+' · '+pending.question),para('Выбирай в ChatGPT. Здесь можно скопировать ответ; нажатие само по себе ничего не сохраняет.'));
+   const message=(option,action)=>JSON.stringify({world_id:w.id,branch_id:w.active_branch_id,expected_head:last.id,expected_rules_version:w.directive_version,choice_id:pending.record_id,selected_option:option,...(action?{action_text:action}:{})});
+   for(const option of pending.options||[])choice.append(button(option.text,()=>busy(()=>copy('Мой выбор героя: '+message(option.id))),'btn secondary'));
+   const own=field('Свой поступок или реплика…','field');choice.append(own,button('Скопировать свой ответ',()=>busy(async()=>{if(!own.value.trim())throw Error('Введи действие.');await copy('Мой выбор героя: '+message('custom',own.value.trim()));}),'btn secondary'));root.append(choice);
+  }
   const heading=node('div','section-head');add(heading,title('Хроника'),node('span','count',state.scenes.length+' загружено'));root.append(heading);
   const readerInfo=node('span','count',readerPrefs.fontSize+' px · '+readerPrefs.lineHeight+' интервал');
   readerInfo.id='readerSizeLabel';
@@ -444,6 +451,7 @@ function renderEconomy(){
    const card=node('div','rule');
    if(e.kind==='money')add(card,node('strong','',e.actor+' · '+e.currency),
     para(e.known?'Записанный остаток: '+e.balance:'Остаток неизвестен · записанное изменение: '+e.delta));
+   else if(e.kind==='stock')add(card,node('strong','',e.holder+' · '+e.product_id),para(e.known?'Запас: '+e.quantity+' '+e.unit:'Неизвестный запас · изменение '+e.delta+' '+e.unit));
    else add(card,node('strong','',e.name||e.item_id),para(e.custody_status==='held'?'Владелец по записи: '+e.holder:
     e.custody_status==='lost'?'Потерян':e.custody_status==='destroyed'?'Уничтожен':'Владение не установлено'),
     para('Последнее действие: '+e.action));
@@ -462,7 +470,7 @@ function renderEconomy(){
   try{const memory=await fullStructuredMemory(w);projection=replay(memory.scenes,[],{evidencePrevalidated:true});complete=memory.complete;offset=0;show();}
   finally{load.disabled=false;}
  }),'btn secondary');
- root.append(panel(title('Деньги и имущество'),para('Учёт только подтверждённых событий. Неизвестный остаток не равен нулю. Предметы не появляются и не исчезают автоматически.'),actor,row(load),output));
+ root.append(panel(title('Деньги, имущество и запасы'),para('Учёт только подтверждённых событий. Неизвестный остаток не равен нулю. Предметы не появляются и не исчезают автоматически.'),actor,row(load),output));
  show();
 }
 
@@ -626,12 +634,12 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
   const v=prepareStoryTurn(turnScenes,projection,state.directives,{...filters,offset:turnOffset});
   turnOut.replaceChildren(para('Игровое время: '+(v.clock||'не установлено')+(v.target_time?' → '+v.target_time:'')+(v.elapsed_story_minutes!==null?' · '+v.elapsed_story_minutes+' мин.':'')));
   for(const warning of v.warnings)turnOut.append(node('div','notice',warning));
-  const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь',personal_bond:'Личная связь',family_event:'Семейное событие',family_duty:'Семейная обязанность',life_transition:'Жизненный переход',age_milestone:'День рождения',goal_opportunity:'Личная цель — возможность инициативы',habit_opportunity:'Привычное занятие',shared_schedule:'Возможная встреча',group_opportunity:'Дела организации',mentorship_opportunity:'Учёба с наставником',employment:'Работа',market_offer:'Товар или услуга',economic_agreement:'Денежное соглашение',payment_schedule:'Периодическая оплата'};
+  const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь',personal_bond:'Личная связь',family_event:'Семейное событие',family_duty:'Семейная обязанность',life_transition:'Жизненный переход',age_milestone:'День рождения',goal_opportunity:'Личная цель — возможность инициативы',habit_opportunity:'Привычное занятие',shared_schedule:'Возможная встреча',group_opportunity:'Дела организации',mentorship_opportunity:'Учёба с наставником',employment:'Работа',market_offer:'Товар или услуга',economic_agreement:'Денежное соглашение',payment_schedule:'Периодическая оплата',enterprise:'Предприятие',production_order:'Производственный заказ'};
   for(const person of v.life_context||[])if(person.target_age?.status==='calendar_derived')turnOut.append(para(person.actor+' · возраст '+person.target_age.years+' на '+person.target_age.as_of));
    for(const r of v.candidates){
    const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource,r.amount!=null?String(r.amount)+' '+r.currency+(r.pay_period?' / '+r.pay_period:''):null,r.occurrences?('Не закрыто: '+(r.pending_occurrences??r.occurrences)+' из '+r.occurrences+' · '+r.first_due_on+' — '+r.last_due_on):null,r.age_years!=null?('Возраст: '+r.age_years):null].filter(Boolean).join(' · ')));
-   const checkLabels={paused_intention:'Отложено — нужна причина возобновления',recorded_obstacle:'Препятствие',ambiguous_place:'Несколько записей места',place_access_unknown:'Доступ неизвестен',recorded_place_constraint:'Ограничение места',travel_requires_story:'Нужно показать перемещение',competing_schedule:'Возможный конфликт расписания',clock_unknown:'Время не установлено',insufficient_recorded_funds:'Записанных средств недостаточно',recorded_funds_cover_price:'Записанных средств достаточно',funds_unknown:'Средства неизвестны',offer_custody_unconfirmed:'Владение предметом не подтверждено'};
-   for(const ch of r.checks||[])card.append(para([checkLabels[ch.kind]||ch.kind,ch.actor,ch.description,ch.from&&ch.to?ch.from+' → '+ch.to:ch.place,ch.status,ch.access,ch.other_places?.join(', ')].filter(Boolean).join(' · ')));
+   const checkLabels={paused_intention:'Отложено — нужна причина возобновления',recorded_obstacle:'Препятствие',ambiguous_place:'Несколько записей места',place_access_unknown:'Доступ неизвестен',recorded_place_constraint:'Ограничение места',travel_requires_story:'Нужно показать перемещение',competing_schedule:'Возможный конфликт расписания',clock_unknown:'Время не установлено',insufficient_recorded_funds:'Записанных средств недостаточно',recorded_funds_cover_price:'Записанных средств достаточно',funds_unknown:'Средства неизвестны',offer_custody_unconfirmed:'Владение предметом не подтверждено',enterprise_not_operating:'Предприятие не работает',stock_unknown:'Запас неизвестен',stock_insufficient:'Недостаточно сырья',stock_available:'Сырьё есть'};
+   for(const ch of r.checks||[])card.append(para([checkLabels[ch.kind]||ch.kind,ch.actor,ch.description,ch.from&&ch.to?ch.from+' → '+ch.to:ch.place,ch.status,ch.access,ch.product_id,ch.required!=null?('Нужно '+ch.required+' '+ch.unit+', имеется '+(ch.quantity??'неизвестно')):null,ch.other_places?.join(', ')].filter(Boolean).join(' · ')));
    if(r.participants_omitted)card.append(para('Других участников: '+r.participants_omitted));
    if(r.checks_omitted)card.append(para('Других условий: '+r.checks_omitted));
    if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}turnOut.append(card);
@@ -642,7 +650,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
     for(const f of actor.state_fields)card.append(para(f.field+': '+(f.value??'не установлено')));
     for(const k of actor.knowledge)card.append(para('Знание '+k.holder+' · '+k.status+': '+k.fact));
     for(const e of actor.recent_offscreen)card.append(para('За кадром: '+e.description));
-    for(const r of actor.resources||[])card.append(para(r.kind==='balance'?'Средства · '+r.currency+': '+(r.known?r.balance:'неизвестно'):'Держит: '+(r.name||r.item_id)));
+    for(const r of actor.resources||[])card.append(para(r.kind==='balance'?'Средства · '+r.currency+': '+(r.known?r.balance:'неизвестно'):r.kind==='stock'?'Запас '+r.product_id+': '+(r.known?r.quantity:'неизвестно')+' '+r.unit:'Держит: '+(r.name||r.item_id)));
     for(const e of actor.experience||[])card.append(para([e.kind==='skill'?'Навык':'Привычка',e.name,e.status,e.frequency].filter(Boolean).join(' · ')));
     for(const r of actor.responsibilities||[])card.append(para(['Ответственность',r.title||r.description||r.bond_type||r.role||r.group_id,r.status,r.deadline].filter(Boolean).join(' · ')));
     if(Object.keys(actor.omitted).length)card.append(para('Есть дополнительные записи; смотри карточку персонажа.'));
@@ -659,9 +667,9 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  const showDynamics=()=>{
   const v=dynamicsView(replay(turnScenes,[],{evidencePrevalidated:turnVerified}),{actor:focus.value.includes(',')?'':focus.value.trim(),place:place.value,complete:turnComplete,offset:dOffset,limit:15});
   dOut.replaceChildren();
-  for(const [heading,rows] of [['Связи',v.bonds],['Учреждения',v.institutions],['Конкуренция',v.contests],['Изменения',v.developments],['Семейные события',v.family_events],['Семейные обязанности',v.family_duties],['Жизненные переходы',v.life_transitions],['Работа',v.employment],['Товары и услуги',v.market_offers],['Денежные соглашения',v.economic_agreements],['Расписание оплаты',v.payment_schedules],['Исполнение оплаты',v.payment_occurrences]]){
+  for(const [heading,rows] of [['Связи',v.bonds],['Учреждения',v.institutions],['Конкуренция',v.contests],['Изменения',v.developments],['Семейные события',v.family_events],['Семейные обязанности',v.family_duties],['Жизненные переходы',v.life_transitions],['Работа',v.employment],['Товары и услуги',v.market_offers],['Денежные соглашения',v.economic_agreements],['Расписание оплаты',v.payment_schedules],['Исполнение оплаты',v.payment_occurrences],['Предприятия',v.enterprises],['Производственные заказы',v.production_orders],['Операции с запасами',v.stock_operations]]){
    dOut.append(title(heading));if(!rows.length)dOut.append(para('Нет записей в выборке.'));
-   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.title||r.name||[r.actor,r.counterparty].join(' — ')),para([r.bond_type,r.transition_kind,r.offer_kind,r.agreement_kind,r.payment_kind,r.status,r.resource,r.place,r.amount!=null?String(r.amount)+' '+r.currency+(r.pay_period?' / '+r.pay_period:''):null,r.every_days?('Период (дней): '+r.every_days):null,r.starts_on,r.ends_on,r.scheduled_on].filter(Boolean).join(' · ')),para(r.description),para(r.outcome||r.terms||''));
+   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.title||r.name||[r.actor,r.counterparty].join(' — ')),para([r.bond_type,r.transition_kind,r.offer_kind,r.agreement_kind,r.payment_kind,r.status,r.resource,r.place,r.amount!=null?String(r.amount)+' '+r.currency+(r.pay_period?' / '+r.pay_period:''):null,r.every_days?('Период (дней): '+r.every_days):null,r.starts_on,r.ends_on,r.scheduled_on].filter(Boolean).join(' · ')),para(r.description),para(r.stock_lines?.map(l=>l.product_id+': '+l.quantity+' '+l.unit).join('; ')||''),para(r.outcome||r.terms||''));
     if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}dOut.append(card);}
   }
   if(dOffset)dOut.append(button('Назад',()=>{dOffset=Math.max(0,dOffset-15);showDynamics();},'btn secondary'));

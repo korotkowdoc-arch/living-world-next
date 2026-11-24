@@ -1,15 +1,21 @@
 /** Branch-local social structures, institutional processes, competing claims
  * and scheduled changes. No automatic side effects, no real-time ticking. */
+import {stockOperationError,stockLinesError} from './economy.mjs';
 import {parseStoryDate} from './world-time.mjs';
 const valid=(v,n=140)=>typeof v==='string'&&!!v.trim()&&v.length<=n;
 const id=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v);
 const exactDay=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&parseStoryDate(v)?.precision==='day';
+const sameStockLines=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((l,i)=>l.product_id===b[i].product_id&&l.unit===b[i].unit&&l.quantity===b[i].quantity);
 const text=v=>typeof v==='string'?v.trim():'';
 const list=(v,min=1,max=12)=>Array.isArray(v)&&v.length>=min&&v.length<=max&&v.every(x=>valid(x))&&new Set(v).size===v.length;
 const kinds={
  bond:['active','strained','estranged','ended','unknown'],
  institution:['operating','restricted','suspended','closed','unknown'],
  contest:['open','negotiating','decided','abandoned','unknown'],
+ player_choice:['pending','answered'],
+ enterprise:['planned','operating','suspended','closed'],
+ production_order:['planned','ongoing','completed','cancelled'],
+ stock_operation:['recorded'],
  payment_schedule:['active','paused','ended'],
  payment_occurrence:['paid','waived'],
  employment:['offered','active','suspended','ended','declined','unknown'],
@@ -20,7 +26,7 @@ const kinds={
  family_event:['planned','ongoing','completed','cancelled','unknown'],
  development:['scheduled','ongoing','completed','cancelled','unknown']
 };
-const terminal={payment_schedule:new Set(['ended']),employment:new Set(['ended','declined']),market_offer:new Set(['withdrawn','sold']),economic_agreement:new Set(['settled','cancelled']),life_transition:new Set(['completed','cancelled']),family_duty:new Set(['ended']),family_event:new Set(['completed','cancelled']),bond:new Set(['ended']),contest:new Set(['decided','abandoned']),development:new Set(['completed','cancelled'])};
+const terminal={enterprise:new Set(['closed']),production_order:new Set(['completed','cancelled']),payment_schedule:new Set(['ended']),employment:new Set(['ended','declined']),market_offer:new Set(['withdrawn','sold']),economic_agreement:new Set(['settled','cancelled']),life_transition:new Set(['completed','cancelled']),family_duty:new Set(['ended']),family_event:new Set(['completed','cancelled']),bond:new Set(['ended']),contest:new Set(['decided','abandoned']),development:new Set(['completed','cancelled'])};
 const bondTypes=['family','friendship','professional','mentorship','rivalry','community','romantic','marriage','parenthood','cohabitation','other'];
 export function dynamicsRecordError(e){
  if(e?.type!=='world')return null;
@@ -31,6 +37,25 @@ export function dynamicsRecordError(e){
  if(k==='bond'&&e.bond_type==='parenthood'&&e.actor===e.counterparty)return 'Родитель и ребёнок должны различаться.';
  if(k==='institution'&&(!valid(e.name)||!valid(e.function,300)||!valid(e.place)||!id(e.group_id)))return 'Учреждению нужны название, назначение, место и ID группы.';
  if(k==='contest'&&(!valid(e.resource,300)||!list(e.actors,2)||!valid(e.title)))return 'Конкуренции нужны ресурс, название и минимум два участника.';
+ if(k==='player_choice'){
+  if(!valid(e.actor)||!valid(e.description,600))return 'Выбор требует имя героя и описание ситуации.';
+  if(e.status==='pending'){
+   if(!valid(e.question,600)||!Array.isArray(e.options)||e.options.length<2||e.options.length>5)return 'Нужны вопрос и 2–5 вариантов.';
+   const ids=new Set(),labels=new Set();
+   for(const o of e.options){
+    if(!o||typeof o!=='object'||Array.isArray(o)||Object.keys(o).length!==2||!id(o.id)||o.id==='custom'||!valid(o.text,600)||ids.has(o.id)||labels.has(o.text.trim()))return 'Варианты выбора должны быть различными.';
+    ids.add(o.id);labels.add(o.text.trim());
+   }
+   if(e.selected_option!=null||e.action_text!=null)return 'Нельзя отвечать за игрока заранее.';
+  }else if(!id(e.selected_option)||!valid(e.action_text,5000)||e.options!=null||e.question!=null)return 'Ответ требует выбранный вариант и действие без нового меню.';
+ }
+ if(k==='stock_operation')return stockOperationError(e);
+ if(k==='enterprise'&&(!valid(e.actor)||!valid(e.title)||!valid(e.place)||!id(e.group_id)||!valid(e.business_kind,140)))return 'Предприятию нужны держатель запасов, организация, место и вид деятельности.';
+ if(k==='production_order'){
+  if(!valid(e.actor)||!valid(e.title)||!id(e.enterprise_id))return 'Заказу нужны держатель и предприятие.';
+  const error=stockLinesError(e.stock_lines,'produce');if(error)return error;
+  if(e.status==='completed'&&(!id(e.stock_record_id)||!valid(e.outcome,600))||e.status!=='completed'&&e.stock_record_id!=null)return 'Завершение заказа требует выполненную производственную операцию и результат.';
+ }
  if(['payment_schedule','payment_occurrence'].includes(k)){
   if(!valid(e.actor)||!valid(e.counterparty)||e.actor===e.counterparty||!valid(e.title)||!Number.isSafeInteger(e.amount)||e.amount<=0||!valid(e.currency,80))return 'Нужны плательщик, получатель, название и точная положительная сумма.';
   if(k==='payment_schedule'&&(!['wage','rent','debt','service','other'].includes(e.payment_kind)||!exactDay(e.starts_on)||!Number.isInteger(e.every_days)||e.every_days<1||e.every_days>366||e.ends_on!=null&&(!exactDay(e.ends_on)||e.ends_on<e.starts_on)))return 'Неверное расписание оплаты.';
@@ -62,10 +87,21 @@ export function dynamicsRecordError(e){
 export function dynamicsTransitionError(records,e){
  if(e.dynamics_version!==1)return null;
  const old=records.get(e.key),k=e.dynamics_kind;
+ if(k==='player_choice'){
+  if(e.status==='pending'){
+   if(old||[...records.values()].some(x=>x.dynamics_kind==='player_choice'&&x.status==='pending'))return 'Сначала разреши текущий выбор; ID не используется повторно.';
+  }else{
+   if(old?.dynamics_kind!=='player_choice'||old.status!=='pending'||old.actor!==e.actor)return 'Ответ не относится к ожидающему выбору героя.';
+   if(e.selected_option!=='custom'&&!old.options.some(o=>o.id===e.selected_option&&o.text===e.action_text))return 'Ответ не соответствует сохранённому варианту.';
+  }
+ }
  if(old){
   if(old.dynamics_version!==1||old.dynamics_kind!==k||old.record_id!==e.record_id)return 'Нельзя менять идентичность записи динамики.';
   if(k==='bond'&&(old.actor!==e.actor||old.counterparty!==e.counterparty||old.bond_type!==e.bond_type))return 'Нельзя переносить связь на других участников.';
   if(k==='institution'&&old.group_id!==e.group_id)return 'Нельзя переносить учреждение на другую группу.';
+  if(k==='stock_operation'||k==='production_order'&&terminal[k].has(old.status))return 'Выполненная операция или закрытый заказ неизменяемы.';
+  if(k==='enterprise'&&(old.actor!==e.actor||old.group_id!==e.group_id))return 'Новый держатель или организация требует нового предприятия.';
+  if(k==='production_order'&&(old.actor!==e.actor||old.enterprise_id!==e.enterprise_id||!sameStockLines(old.stock_lines,e.stock_lines)))return 'Изменение состава заказа требует нового ID.';
   if(k==='payment_occurrence')return 'Закрытая дата оплаты не может быть записана повторно.';
   if(k==='payment_schedule'&&['actor','counterparty','amount','currency','payment_kind','starts_on','every_days'].some(field=>old[field]!==e[field]))return 'Изменение условий оплаты требует нового расписания.';
   if(['employment','market_offer','economic_agreement'].includes(k)&&(old.actor!==e.actor||(old.group_id??null)!==(e.group_id??null)
@@ -78,6 +114,16 @@ export function dynamicsTransitionError(records,e){
   if(k==='family_event'&&(old.family_kind!==e.family_kind||(old.duty_id??null)!==(e.duty_id??null)||(old.scheduled_on??null)!==(e.scheduled_on??null)))return 'Нельзя менять вид семейного события.';
   if(k==='contest'&&old.resource!==e.resource)return 'Новый ресурс требует новой записи конкуренции.';
   if(terminal[k]?.has(old.status)&&old.status!==e.status)return 'Новая попытка требует нового ID.';
+ }
+ if(k==='enterprise'&&!records.has('social:group:'+e.group_id))return 'Сначала нужна организация предприятия.';
+ if(k==='production_order'){
+  const enterprise=records.get('dynamics:enterprise:'+e.enterprise_id);
+  if(!enterprise||enterprise.actor!==e.actor)return 'Заказ не связан с действительным предприятием и держателем.';
+  if(e.status==='completed'){
+   const op=records.get('dynamics:stock_operation:'+e.stock_record_id);
+   if(enterprise.status!=='operating'||op?.stock_action!=='produce'||op.actor!==e.actor||!sameStockLines(op.stock_lines,e.stock_lines))return 'Для завершения нужны работающее предприятие и совпадающая производственная операция.';
+   for(const x of records.values())if(x.dynamics_kind==='production_order'&&x.stock_record_id===e.stock_record_id)return 'Операция уже использована для другого заказа.';
+  }
  }
  if(k==='payment_occurrence'){
   const schedule=records.get('dynamics:payment_schedule:'+e.schedule_id);
@@ -101,9 +147,9 @@ export function dynamicsView(projection={},opts={}){
  const limit=Math.max(1,Math.min(40,Math.floor(Number(opts.limit)||20))),offset=Math.max(0,Math.floor(Number(opts.offset)||0));
  const rows=(projection.worldFacts||[]).filter(r=>r.dynamics_version===1&&!dynamicsRecordError(r)&&(!actor||r.actor===actor||r.counterparty===actor||r.actors?.includes(actor))&&(!place||r.place===place));
  const byKind=Object.fromEntries(Object.keys(kinds).map(k=>[k,rows.filter(x=>x.dynamics_kind===k)]));
- const compact=r=>({id:r.record_id,key:r.key,kind:r.dynamics_kind,payment_kind:r.payment_kind,schedule_id:r.schedule_id,transfer_event_id:r.transfer_event_id,offer_kind:r.offer_kind,agreement_kind:r.agreement_kind,amount:r.amount,currency:r.currency,pay_period:r.pay_period,item_id:r.item_id,transition_kind:r.transition_kind,family_kind:r.family_kind,duty_id:r.duty_id,scheduled_on:r.scheduled_on,starts_on:r.starts_on,ends_on:r.ends_on,every_days:r.every_days,status:r.status,actor:r.actor,counterparty:r.counterparty,bond_type:r.bond_type,actors:r.actors,name:r.name,title:r.title,resource:r.resource,group_id:r.group_id,place:r.place,function:r.function,description:r.description,due_at:r.due_at,terms:r.terms,obstacle:r.obstacle,next_step:r.next_step,outcome:r.outcome,source:r.source,evidence:String(r.evidence||'').slice(0,600)});
+ const compact=r=>({id:r.record_id,key:r.key,kind:r.dynamics_kind,business_kind:r.business_kind,enterprise_id:r.enterprise_id,stock_action:r.stock_action,stock_lines:r.stock_lines,stock_record_id:r.stock_record_id,payment_kind:r.payment_kind,schedule_id:r.schedule_id,transfer_event_id:r.transfer_event_id,offer_kind:r.offer_kind,agreement_kind:r.agreement_kind,amount:r.amount,currency:r.currency,pay_period:r.pay_period,item_id:r.item_id,transition_kind:r.transition_kind,family_kind:r.family_kind,duty_id:r.duty_id,scheduled_on:r.scheduled_on,starts_on:r.starts_on,ends_on:r.ends_on,every_days:r.every_days,status:r.status,actor:r.actor,counterparty:r.counterparty,bond_type:r.bond_type,actors:r.actors,name:r.name,title:r.title,resource:r.resource,group_id:r.group_id,place:r.place,function:r.function,description:r.description,due_at:r.due_at,terms:r.terms,obstacle:r.obstacle,next_step:r.next_step,outcome:r.outcome,source:r.source,evidence:String(r.evidence||'').slice(0,600)});
  const page=k=>byKind[k].slice().reverse().slice(offset,offset+limit).map(compact);
- return {bonds:page('bond'),institutions:page('institution'),contests:page('contest'),developments:page('development'),family_events:page('family_event'),family_duties:page('family_duty'),life_transitions:page('life_transition'),employment:page('employment'),market_offers:page('market_offer'),economic_agreements:page('economic_agreement'),payment_schedules:page('payment_schedule'),payment_occurrences:page('payment_occurrence'),
+ return {bonds:page('bond'),institutions:page('institution'),contests:page('contest'),developments:page('development'),family_events:page('family_event'),family_duties:page('family_duty'),life_transitions:page('life_transition'),employment:page('employment'),market_offers:page('market_offer'),economic_agreements:page('economic_agreement'),payment_schedules:page('payment_schedule'),payment_occurrences:page('payment_occurrence'),enterprises:page('enterprise'),production_orders:page('production_order'),stock_operations:page('stock_operation'),
  counts:Object.fromEntries(Object.entries(byKind).map(([k,v])=>[k,v.length])),next_offset:Math.max(...Object.values(byKind).map(x=>x.length))>offset+limit?offset+limit:null,memory_complete:opts.complete!==false,
  policy:'A social bond is not an emotion, consent or knowledge. Institutions are not individual characters. Contests do not transfer resources automatically. Scheduled developments are not completed events.'};
 }
@@ -148,4 +194,28 @@ export function paymentScheduleWindow(schedule,to,occurrences=[]){
  let first=0,final=last;while(closed.has(first))first++;while(closed.has(final))final--;
  const day=i=>new Date((start+i*step)*86400000).toISOString().slice(0,10);
  return {occurrences:last+1,pending_occurrences:pending,first_due_on:day(first),last_due_on:day(final),window:'unreviewed_schedule_dates_not_debt'};
+}
+
+/** Menu metadata is not a performed action; return only the current saved decision. */
+export function playerChoiceView(scenes,projection,{worldId,branchId,rulesVersion,complete=true}={}){
+ const head=scenes.at(-1)?.id??null;
+ if(!complete)return {status:'unknown_incomplete',pending:null};
+ const rows=(projection.worldFacts||[]).filter(e=>e.dynamics_kind==='player_choice'&&e.status==='pending');
+ if(!rows.length)return {status:'none',pending:null};
+ if(rows.length!==1||rows[0].source?.scene_id!==head)return {status:'inconsistent',pending:null};
+ const e=rows[0];
+ return {status:'awaiting_player',pending:{choice_id:e.record_id,actor:e.actor,question:e.question,options:e.options,allow_custom:true,source:e.source,world_id:worldId,branch_id:branchId,expected_head:head,expected_rules_version:rulesVersion},policy:'Options are proposals only. Do not decide for the player. A clicked option or typed action is input, not a guaranteed outcome.'};
+}
+export function resolvePlayerChoice(view,input){
+ const p=view?.pending;
+ if(view?.status!=='awaiting_player'||!p)throw Error('No current saved player choice');
+ for(const k of ['world_id','branch_id','expected_head','expected_rules_version','choice_id'])if(input[k]!==p[k])throw Error('Stale choice: refresh the current scene');
+ const selected=input.selected_option;
+ if(selected==='custom'){
+  if(!valid(input.action_text,5000))throw Error('Enter your own action');
+  return {choice_id:p.choice_id,actor:p.actor,selected_option:selected,action_text:input.action_text.trim(),saved:false,policy:'Intent only; narrate actual outcome and save an answered event with literal evidence.'};
+ }
+ const option=p.options.find(o=>o.id===selected);
+ if(!option||input.action_text!=null&&input.action_text!==option.text)throw Error('Unknown or altered choice option');
+ return {choice_id:p.choice_id,actor:p.actor,selected_option:selected,action_text:option.text,saved:false,policy:'Intent only; narrate actual outcome and save an answered event with literal evidence.'};
 }

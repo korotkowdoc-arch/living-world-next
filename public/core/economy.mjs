@@ -75,9 +75,49 @@ export function economyView(projection,{actor='',offset=0,limit=40,complete=true
  const match=v=>!person||text(v).toLocaleLowerCase('ru')===person;
  const rows=[
   ...(projection.balances||[]).filter(x=>match(x.actor)).map(x=>({kind:'money',...x})),
-  ...(projection.items||[]).filter(x=>!person||match(x.holder)||match(x.actor)||match(x.counterparty)).map(x=>({kind:'item',...x}))
+  ...(projection.items||[]).filter(x=>!person||match(x.holder)||match(x.actor)||match(x.counterparty)).map(x=>({kind:'item',...x})),
+  ...(projection.stock||[]).filter(x=>match(x.holder)).map(x=>({kind:'stock',...x}))
  ];
  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
  return {records:rows.slice(start,start+size),total_records:rows.length,next_offset:start+size<rows.length?start+size:null,
   memory_complete:complete,policy:'Only annotated events; unknown cash is not zero, unknown custody is not ownership. No automatic wages, spending or inventory changes.'};
+}
+
+/** Branch-local bulk stock. Counts set exact amounts; receipts never invent prior stock.
+ * Debits require known sufficient stock. A batch is applied entirely or not at all. */
+export function stockLinesError(lines,action){
+ if(!Array.isArray(lines)||lines.length<1||lines.length>20)return 'Нужно от 1 до 20 строк запасов.';
+ const ids=new Set();let input=false,output=false;
+ for(const l of lines){
+  if(!l||typeof l!=='object'||Array.isArray(l)||Object.keys(l).length!==3||typeof l.product_id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(l.product_id)||typeof l.unit!=='string'||!l.unit.trim()||l.unit!==l.unit.trim()||l.unit.length>40||!Number.isSafeInteger(l.quantity))return 'Некорректная строка запасов.';
+  const k=JSON.stringify([l.product_id,l.unit]);if(ids.has(k))return 'Повтор товара и единицы в одной операции.';ids.add(k);
+  if(action==='count'?l.quantity<0:action==='receive'||action==='transfer'?l.quantity<=0:action==='consume'?l.quantity>=0:l.quantity===0)return 'Некорректный знак количества.';
+  input||=l.quantity<0;output||=l.quantity>0;
+ }
+ if(action==='produce'&&(!input||!output))return 'Производство требует расхода сырья и выпуска продукта.';
+ return null;
+}
+export function stockOperationError(e){
+ if(!['count','receive','consume','transfer','produce'].includes(e.stock_action)||typeof e.actor!=='string'||!e.actor.trim()||e.actor!==e.actor.trim()||e.actor.length>140)return 'Неверная операция запасов или держатель.';
+ if(e.stock_action==='transfer'&&(typeof e.counterparty!=='string'||!e.counterparty.trim()||e.counterparty!==e.counterparty.trim()||e.counterparty.length>140||e.actor===e.counterparty))return 'Передача требует другого держателя.';
+ if(e.stock_action!=='transfer'&&e.counterparty!=null)return 'Получатель допустим только для передачи.';
+ return stockLinesError(e.stock_lines,e.stock_action);
+}
+export function applyStock(stock,e,source){
+ const error=stockOperationError(e);if(error)return error;
+ const staged=new Map();
+ const step=(holder,line,delta,count=false)=>{
+  const k=JSON.stringify([holder,line.product_id,line.unit]),old=staged.get(k)||stock.get(k)||{holder,product_id:line.product_id,unit:line.unit,known:false,quantity:null,delta:0};
+  if(count){staged.set(k,{...old,known:true,quantity:delta,delta:0,source});return null;}
+  if(delta<0&&(!old.known||old.quantity< -delta))return 'Недостаточно подтверждённого запаса: '+line.product_id;
+  const net=old.delta+delta,qty=old.known?old.quantity+delta:null;
+  if(!Number.isSafeInteger(net)||(old.known&&!Number.isSafeInteger(qty)))return 'Переполнение количества.';
+  staged.set(k,{...old,quantity:qty,delta:net,source});return null;
+ };
+ for(const l of e.stock_lines){
+  const a=e.stock_action,err=step(e.actor,l,a==='transfer'?-l.quantity:l.quantity,a==='count');if(err)return err;
+  if(a==='transfer'){const err=step(e.counterparty,l,l.quantity);if(err)return err;}
+ }
+ for(const [k,v] of staged)stock.set(k,v);
+ return null;
 }

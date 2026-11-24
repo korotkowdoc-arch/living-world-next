@@ -275,3 +275,58 @@ test('recurring payments require exact transfers and never repeat closed dates',
  assert.equal(v.pending_occurrences,2);assert.equal(v.first_due_on,'2026-11-03');
  const m=new Map(p.worldFacts.map(x=>[x.key,x]));assert.ok(dynamicsTransitionError(m,paid));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other'}));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other',scheduled_on:'2026-11-02'}));
 });
+
+test('enterprise production consumes exact stock atomically and closes a matching order',()=>{
+ const body='Мастерская получила заказ и изготовила изделия.';
+ const e=(kind,id,fields)=>({id,type:'world',dynamics_version:1,dynamics_kind:kind,record_id:id,key:'dynamics:'+kind+':'+id,description:body,evidence:body,...fields});
+ const group={id:'g',type:'world',social_record_version:1,social_kind:'group',record_id:'shop',key:'social:group:shop',name:'Мастерская',purpose:'Изделия',status:'active',evidence:body};
+ const enterprise=e('enterprise','shop',{actor:'Мастерская',group_id:'shop',title:'Мастерская',place:'Город',business_kind:'Производство',status:'operating'});
+ const count=e('stock_operation','count',{actor:'Мастерская',status:'recorded',stock_action:'count',stock_lines:[{product_id:'wood',unit:'шт',quantity:10},{product_id:'chair',unit:'шт',quantity:0}]});
+ const lines=[{product_id:'wood',unit:'шт',quantity:-4},{product_id:'chair',unit:'шт',quantity:2}];
+ const order=e('production_order','order',{actor:'Мастерская',enterprise_id:'shop',title:'Стулья',status:'planned',stock_lines:lines});
+ const initial={id:'s',body,world_time:'2026-11-24',events:[group,enterprise,count,order]};
+ const before=replay([initial]);assert.equal(before.validation_warnings.length,0);
+ assert.ok(prepareStoryTurn([initial],before,[],{}).candidates.find(x=>x.kind==='production_order').checks.some(x=>x.kind==='stock_available'));
+ const operation=e('stock_operation','batch',{actor:'Мастерская',status:'recorded',stock_action:'produce',stock_lines:lines});
+ const closed={...order,id:'closed',status:'completed',stock_record_id:'batch',outcome:'Готово'};
+ const final=replay([initial,{id:'s2',body,events:[operation,closed]}]);
+ assert.equal(final.validation_warnings.length,0);assert.equal(final.stock.find(x=>x.product_id==='wood').quantity,6);assert.equal(final.stock.find(x=>x.product_id==='chair').quantity,2);
+ const bad=replay([initial,{id:'bad',body,events:[{...operation,stock_lines:[{product_id:'wood',unit:'шт',quantity:-11},lines[1]]}]}]);
+ assert.equal(bad.validation_warnings.length,1);assert.equal(bad.stock.find(x=>x.product_id==='chair').quantity,0);
+ assert.ok(dynamicsTransitionError(new Map(final.worldFacts.map(x=>[x.key,x])),closed));
+});
+
+test('bulk transfers preserve unknown incoming balances and reject partial debit batches',()=>{
+ const body='Склад отправил материалы другому складу.';
+ const op=(id,action,lines,extra={})=>({id,type:'world',dynamics_version:1,dynamics_kind:'stock_operation',record_id:id,key:'dynamics:stock_operation:'+id,description:body,evidence:body,actor:'A',status:'recorded',stock_action:action,stock_lines:lines,...extra});
+ const line=(product_id,quantity)=>({product_id,unit:'kg',quantity});
+ const init={id:'a',body,events:[op('count','count',[line('wood',5),line('steel',2)])]};
+ const good=op('send','transfer',[line('wood',3)],{counterparty:'B'});
+ const bad=op('bad','transfer',[line('wood',1),line('steel',3)],{counterparty:'B'});
+ const p=replay([init,{id:'b',body,events:[good]},{id:'c',body,events:[bad]}]);
+ assert.equal(p.validation_warnings.length,1);
+ assert.equal(p.stock.find(x=>x.holder==='A'&&x.product_id==='wood').quantity,2);
+ const received=p.stock.find(x=>x.holder==='B'&&x.product_id==='wood');assert.equal(received.known,false);assert.equal(received.quantity,null);assert.equal(received.delta,3);
+ assert.equal(p.stock.some(x=>x.holder==='B'&&x.product_id==='steel'),false);
+ assert.equal(validateScene({body,events:[op('x','count',[{...line('wood',1),extra:true}])]}).ok,false);
+});
+
+test('long-form choice stops at the scene boundary, rejects stale answers and preserves branch agency',async()=>{
+ const {playerChoiceView,resolvePlayerChoice}=await import('../public/core/world-dynamics.mjs');
+ const body='Анна ждала его ответа.';
+ const pending={id:'q',type:'world',dynamics_version:1,dynamics_kind:'player_choice',record_id:'q1',key:'dynamics:player_choice:q1',actor:'Борис',description:'Решение героя',status:'pending',question:'Что сказать?',options:[{id:'yes',text:'Согласиться'},{id:'no',text:'Отказаться'}],evidence:body};
+ const first={id:'s1',body,events:[pending]};
+ const p=replay([first]);assert.equal(p.validation_warnings.length,0);
+ const view=playerChoiceView([first],p,{worldId:'w',branchId:'b',rulesVersion:2});
+ const args={world_id:'w',branch_id:'b',expected_head:'s1',expected_rules_version:2,choice_id:'q1',selected_option:'yes'};
+ assert.equal(resolvePlayerChoice(view,args).action_text,'Согласиться');assert.equal(resolvePlayerChoice(view,{...args,selected_option:'custom',action_text:'Спросить подробнее'}).saved,false);
+ assert.throws(()=>resolvePlayerChoice(view,{...args,expected_head:'old'}));
+ assert.throws(()=>resolvePlayerChoice(view,{...args,action_text:'Другая реплика'}));
+ assert.equal(validateScene({body:body+' Потом он ушёл.',events:[pending]}).ok,false);
+ assert.equal(replay([first,{id:'s2',body:'Он ушёл, не ответив.',events:[]}]).validation_warnings.length,1);
+ const answer={...pending,id:'a',status:'answered',selected_option:'no',action_text:'Отказаться',question:undefined,options:undefined,evidence:'Борис отказался.'};
+ const second={id:'s2',body:'Борис отказался. Анна задумалась.',events:[answer]};
+ const final=replay([first,second]);assert.equal(final.validation_warnings.length,0);assert.equal(playerChoiceView([first,second],final).status,'none');
+ assert.equal(playerChoiceView([first],replay([first])).status,'awaiting_player');
+ assert.ok(dynamicsTransitionError(new Map(final.worldFacts.map(x=>[x.key,x])),answer));
+});

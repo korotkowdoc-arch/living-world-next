@@ -20,7 +20,7 @@ export function sceneFocusInput({actors,queries}={}){
 function includesText(value,queries){
  return typeof value==='string'&&queries.some(q=>norm(value).includes(norm(q)));
 }
-const groups=['people','relationships','knowledge','plans','obligations','balances','items','worldFacts','offscreen'];
+const groups=['people','relationships','knowledge','plans','obligations','balances','items','stock','worldFacts','offscreen'];
 export function focusedSceneContext(projection,focus,{complete=true,maxChars=18000,worldTime=null}={}){
  const input=sceneFocusInput(focus);
  const actorSet=new Set(input.actors);
@@ -37,6 +37,7 @@ export function focusedSceneContext(projection,focus,{complete=true,maxChars=180
    if(key==='people')return match(entry.name)||includesText(entry.name,queries)||includesText(entry.description,queries)||
     (entry.state_fields||[]).some(v=>includesText(v.value,queries));
    if(key==='relationships')return match(entry.a)||match(entry.b)||includesText(entry.evidence,queries)||(entry.relationship_fields||[]).some(x=>includesText(x.value,queries)||includesText(x.evidence,queries));
+   if(key==='stock')return match(entry.holder)||includesText(entry.product_id,queries);
    if(key==='items')return match(entry.holder)||match(entry.actor)||match(entry.counterparty)||
     includesText(entry.item_id,queries)||includesText(entry.name,queries)||includesText(entry.evidence,queries);
    return match(entry.actor)||match(entry.counterparty)||match(entry.sender)||match(entry.recipient)||match(entry.teacher)||match(entry.responsible)||match(entry.a)||match(entry.b)||(Array.isArray(entry.actors)&&entry.actors.some(match))||
