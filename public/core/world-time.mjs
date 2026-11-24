@@ -11,7 +11,7 @@ export function parseStoryDate(raw){
  const [,yyyy,mm,dd,hh='00',minute='00']=m;
  const year=+yyyy,month=+mm,day=+dd,hour=+hh,min=+minute;
  if(year<1||year>9999||hour>23||min>59)return null;
- const d=new Date(Date.UTC(year,month-1,day,hour,min));
+ const d=new Date(0);d.setUTCFullYear(year,month-1,day);d.setUTCHours(hour,min,0,0);
  if(d.getUTCFullYear()!==year||d.getUTCMonth()+1!==month||d.getUTCDate()!==day||
     d.getUTCHours()!==hour||d.getUTCMinutes()!==min)return null;
  return {literal:value,precision:m[4]!==undefined?'minute':'day',day:yyyy+'-'+mm+'-'+dd,

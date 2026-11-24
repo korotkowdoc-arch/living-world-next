@@ -73,7 +73,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  }
  const rank=x=>x.timing==='reached_requires_story'?0:x.focus_match?1:x.timing==='future'?3:2;
  for(const xs of byKind.values())xs.sort((a,b)=>rank(a)-rank(b)||(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
- const candidates=[];for(let i=0;candidates.length<limit;i++){let added=false;for(const xs of byKind.values()){if(xs[i]){candidates.push(xs[i]);added=true;if(candidates.length===limit)break;}}if(!added)break;}
+ const categories=[...byKind.values()].sort((a,b)=>rank(a[0])-rank(b[0]));
+ const candidates=[];for(let i=0;candidates.length<limit;i++){let added=false;for(const xs of categories){if(xs[i]){candidates.push(xs[i]);added=true;if(candidates.length===limit)break;}}if(!added)break;}
  const warnings=[];
  if(!clock)warnings.push('Последняя сцена не задаёт точное время; длительность перехода неизвестна.');
  if(clock&&proposed&&!comparable)warnings.push('Точность дат различается: длительность перехода неизвестна.');

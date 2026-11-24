@@ -2,6 +2,7 @@ import {dbRequest} from './session.mjs';
 import {requestIdentity,sameJson} from '../core/request-identity.mjs';
 import {needsStatePreflight,validateStateAppend,validateScene} from '../core/continuity.mjs';
 import {revisionStatePreflight} from '../core/revisions.mjs';
+import {createAncestryReader} from '../core/ancestry-reader.mjs';
 import {prependHistoryPage} from '../core/reader.mjs';
 import {buildWorldDraft} from '../core/world.mjs';
 import {classifyDirective} from '../core/directives.mjs';
@@ -189,21 +190,13 @@ export async function getScene(worldId,sceneId){
  * Pinned to the active head: concurrent story updates invalidate the read.
  */
 export async function fullStructuredMemory(world,{maxScenes=50000}={}){
- const expected=world.head_scene_id??null;
- if(expected===null)return {scenes:[],complete:true};
- const newest=[];
- for(let offset=0;offset<maxScenes;offset+=200){
-  const page=await rpc('nw_active_memory_page',{p_world_id:world.id,p_expected_head:expected,p_limit:200,p_offset:offset});
-  if(!Array.isArray(page))throw Error('Получена неверная страница памяти.');
-  newest.push(...page);
-  if(page.length<200){
-   const [after,branches]=await Promise.all([getWorld(world.id),listBranches(world.id)]);
-   if(after.active_branch_id!==world.active_branch_id||branches.find(x=>x.id===after.active_branch_id)?.head_scene_id!==expected)
-    throw Error('История изменилась во время чтения памяти. Обнови мир и повтори.');
-   return {scenes:newest.reverse(),complete:true};
-  }
+ const expected=world.head_scene_id??null,reader=createAncestryReader(expected,{maxScenes});
+ for(let page=reader.next();page;page=reader.next())reader.accept(await rpc('nw_active_memory_page',{p_world_id:world.id,p_expected_head:expected,p_limit:page.limit,p_offset:page.offset}));
+ if(expected!==null){
+  const [after,branches]=await Promise.all([getWorld(world.id),listBranches(world.id)]);
+  if(after.active_branch_id!==world.active_branch_id||branches.find(x=>x.id===after.active_branch_id)?.head_scene_id!==expected)throw Error('История изменилась во время чтения. Обнови мир.');
  }
- return {scenes:newest.reverse(),complete:false};
+ return reader.result();
 }
 
 /** Restore an owner-verified archive to a new world, never over existing saves.

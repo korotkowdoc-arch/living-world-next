@@ -17,6 +17,8 @@ import {consequenceView} from '../public/core/consequences.mjs';
 import {growthView} from '../public/core/growth.mjs';
 import {dynamicsView} from '../public/core/world-dynamics.mjs';
 import {prepareStoryTurn} from '../public/core/story-turn.mjs';
+import {createAncestryReader} from '../public/core/ancestry-reader.mjs';
+import {reviewSceneDraft} from '../public/core/scene-draft.mjs';
 import {validateMemoryNotes,MEMORY_NOTE_POLICY} from '../public/core/memory-notes.mjs';
 import {economyView} from '../public/core/economy.mjs';
 import {characterStateView} from '../public/core/character-state.mjs';
@@ -54,6 +56,7 @@ const toolsList=[
   {name:'get_npc_agency',description:'Read evidence-backed independent NPC plans and their statuses across all annotated active-branch scenes. A plan is not a completed action and there is no hidden background simulation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140}},required:['world_id']}},
   {name:'create_world',description:'Create a world from one natural-language premise. No advance NPC forms. Returns new world ID.',inputSchema:{type:'object',properties:{description:{type:'string',minLength:8,maxLength:12000},title:{type:'string'},start_marker:{type:'string'}},required:['description']}},
   {name:'add_world_directive',description:'Save the owner’s plain-language world rule verbatim. Never rewrite it to sound more conciliatory.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},text:{type:'string'}},required:['world_id','text']}},
+  {name:'review_scene_draft',description:'Read-only review of a proposed scene against pinned branch, rules, literal evidence and state transitions. Returns corrections and preview of changed records. Never saves.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},body:{type:'string'},events:{type:'array',items:{type:'object'}},world_time:{type:['string','null']}},required:['world_id','branch_id','expected_head','expected_rules_version','body']}},
   {name:'save_scene',description:'Atomically save an already narrated scene on the currently selected branch using expected_head and request_id; requires owner opt-in auto_save. Events must have literal evidence.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},request_id:{type:'string',format:'uuid'},body:{type:'string'},world_time:{type:['string','null']},events:{type:'array',items:{type:'object'}}},required:['world_id','branch_id','expected_head','expected_rules_version','request_id','body']}},
   {name:'fork_before_scene',description:'Create a new active alternative branch before the given scene; does not delete older history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'},name:{type:'string'}},required:['world_id','scene_id']}},
   {name:'get_scene_receipt',description:'Check whether a request_id has already saved a scene, especially after a lost network response; never retry with a NEW id blindly.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},request_id:{type:'string',format:'uuid'}},required:['world_id','request_id']}},
@@ -128,23 +131,15 @@ async function readHistory(env,token,id,limit=100,offset=0){return rpc(env,token
  * Never present a capped projection as complete; a write during pagination aborts the read.
  */
 async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
- if(head==null)return {scenes:[],complete:true};
- const out=[];
- for(let offset=0;offset<maxScenes;offset+=200){
-  const page=await rpc(env,token,'nw_active_memory_page',{
-   p_world_id:world.id,p_expected_head:head,p_limit:200,p_offset:offset
-  });
-  if(!Array.isArray(page))throw Error('Invalid structured memory page');
-  out.push(...page);
-  if(page.length<200){
-   const current=await ownerWorld(env,token,world.id);
-   if(current.active_branch_id!==world.active_branch_id)throw Error('Active branch changed during memory read');
-   const currentBranch=await branch(env,token,current);
-   if(currentBranch.head_scene_id!==head)throw Error('History changed during memory read; retry');
-   return {scenes:out.reverse(),complete:true};
-  }
+ const reader=createAncestryReader(head,{maxScenes});
+ for(let page=reader.next();page;page=reader.next())reader.accept(await rpc(env,token,'nw_active_memory_page',{p_world_id:world.id,p_expected_head:head,p_limit:page.limit,p_offset:page.offset}));
+ if(head!=null){
+  const current=await ownerWorld(env,token,world.id);
+  if(current.active_branch_id!==world.active_branch_id)throw Error('Active branch changed during memory read');
+  const currentBranch=await branch(env,token,current);
+  if(currentBranch.head_scene_id!==head)throw Error('History changed during memory read; retry');
  }
- return {scenes:out.reverse(),complete:false};
+ return reader.result();
 }
 async function callTool(name,args,env,token){
  switch(name){
@@ -358,6 +353,15 @@ async function callTool(name,args,env,token){
    const directiveId=await rpc(env,token,'nw_add_directive',{p_world_id:world.id,p_text:directive.text,p_category:directive.category,p_metadata:{tags:directive.tags,relationship_lock:directive.relationship_lock,relationship_locks:directive.relationship_locks}});
    return {directive_id:directiveId,stored_verbatim:true,classification:directive.category};
   }
+  case 'review_scene_draft':{
+   const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
+   if(world.active_branch_id!==args.branch_id||active.head_scene_id!==args.expected_head||world.directive_version!==args.expected_rules_version)throw Error('Story or rules changed; refresh context.');
+   const [rules,memory]=await Promise.all([directives(env,token,world.id),readStructuredMemory(env,token,world,active.head_scene_id)]);
+   const report=reviewSceneDraft(memory,{body:args.body,events:args.events??[],world_time:args.world_time??null,directives:rules});
+   const current=await ownerWorld(env,token,world.id),currentBranch=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||currentBranch.head_scene_id!==active.head_scene_id||current.directive_version!==world.directive_version)throw Error('Story or rules changed during review; retry.');
+   return {world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:current.auto_save,...report};
+  }
   case 'save_scene':{
    const world=await ownerWorld(env,token,args.world_id);
    assertUuid(args.request_id);assertUuid(args.branch_id);
@@ -423,7 +427,7 @@ async function callTool(name,args,env,token){
    }
    if(!world.auto_save)throw Error('Owner disabled MCP autosave');
    if(world.directive_version!==args.expected_rules_version)throw Error('Rules changed; fetch world context again');
-   const rows=await rest(env,token,`nw_scenes?select=id,body,events,world_time&world_id=eq.${ep(world.id)}&id=eq.${ep(args.source_scene_id)}&limit=1`);
+   const rows=await rest(env,token,`nw_scenes?select=id,parent_scene_id,body,events,world_time&world_id=eq.${ep(world.id)}&id=eq.${ep(args.source_scene_id)}&limit=1`);
    const original=rows?.[0];if(!original)throw Error('Source scene not found');
    if(typeof args.prefix!=='string'||!original.body.startsWith(args.prefix))throw Error('Prefix does not match original scene');
    if(typeof args.continuation!=='string')throw Error('Missing continuation');

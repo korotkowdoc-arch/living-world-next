@@ -13,7 +13,7 @@ const world={id:w,title:'История',seed:'Мир в Хогвартсе',dir
 const smallHistory=[{id:head,parent_scene_id:null,body:'Гарри повернул за угол.',world_time:'1991',events:[]}];
 test('MCP reads more than 1000 annotated scenes without large literary bodies',async()=>{
  const old=globalThis.fetch;let pages=0;
- const length=1201,events=Array.from({length},(_,i)=>({id:'memory-'+i,parent_scene_id:null,events:i===length-1?[{id:'plan1',type:'plan',actor:'Драко',plan_id:'strategy',action:'start',goal:'Одержать победу',evidence:'Драко решил победить'}]:[],world_time:'1991'}));
+ const length=1201,events=Array.from({length},(_,i)=>({id:i===0?head:'memory-'+i,parent_scene_id:i===length-1?null:'memory-'+(i+1),events:i===length-1?[{id:'plan1',type:'plan',actor:'Драко',plan_id:'strategy',action:'start',goal:'Одержать победу',evidence:'Драко решил победить'}]:[],world_time:'1991'}));
  globalThis.fetch=requestHandler((p,opt)=>{
   if(p.pathname==='/auth/v1/user')return Response.json({id:u});
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([world]);
