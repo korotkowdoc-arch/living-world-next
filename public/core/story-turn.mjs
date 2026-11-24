@@ -68,7 +68,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
    if(r.dynamics_kind==='contest'&&!closed.has(r.status))add('contest',r,{resource:clip(r.resource),timing:timing(r)});
    if(r.dynamics_kind==='institution'&&!closed.has(r.status))add('institution',r,{group_id:r.group_id});
    if(r.dynamics_kind==='development'&&!closed.has(r.status))add('development',r,{timing:timing(r)});
-   if(r.dynamics_kind==='bond'&&r.status==='strained')add('strained_bond',r);
+   if(r.dynamics_kind==='bond'&&r.status==='strained')add('strained_bond',r,{bond_type:r.bond_type});
+   else if(r.dynamics_kind==='bond'&&['active','estranged'].includes(r.status)&&['family','romantic','marriage','parenthood','cohabitation'].includes(r.bond_type)&&(focus.has(r.actor)||focus.has(r.counterparty)))add('personal_bond',r,{bond_type:r.bond_type});
   }
  }
  const rank=x=>x.timing==='reached_requires_story'?0:x.focus_match?1:x.timing==='future'?3:2;
