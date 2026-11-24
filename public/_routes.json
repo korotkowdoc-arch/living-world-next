@@ -2,6 +2,7 @@
   "version": 1,
   "include": [
     "/mcp",
+    "/api/fiction-draft",
     "/health",
     "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-protected-resource/mcp"
