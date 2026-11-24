@@ -373,7 +373,7 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
   for(const x of r.current){const card=add(node('div','rule'),node('strong','',x.a+' → '+x.b),para(x.stance||'Общее отношение не установлено'));source(card,x.stance_source);
    for(const field of x.relationship_fields){const line=add(node('div','rule'),para(field.field+': '+field.value),para(field.evidence));source(line,field.source);card.append(line);}detail.append(card);}
   detail.append(title('История взаимодействия'));
-  for(const x of r.history){const card=add(node('div','rule'),node('strong','',x.type==='interaction'?x.kind+' · '+x.actors.join(', '):x.a+' → '+x.b),para(x.description||x.stance||''),para(x.outcome||''),para(x.evidence));source(card,x.source);detail.append(card);}
+  for(const x of r.history){const card=add(node('div','rule'),node('strong','',x.type==='interaction'?({date:'Свидание',romantic_milestone:'Романтическое событие',intimacy:'Интимная близость',separation:'Расставание'}[x.kind]||x.kind)+' · '+x.actors.join(', '):x.a+' → '+x.b),para(x.description||x.stance||''),para(x.outcome||''),para(x.evidence));source(card,x.source);detail.append(card);}
   detail.append(title('Привычки и занятия'));
   for(const x of [...a.habits,...a.activities]){const card=add(node('div','rule'),node('strong','',x.name+' · '+x.status),para(x.description),para(x.frequency||x.actors?.join(', ')||''));source(card,x.source);detail.append(card);}
   detail.append(title('Долговременные последствия'));
