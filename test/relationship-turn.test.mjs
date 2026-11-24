@@ -62,3 +62,14 @@ test('family state survives independent health updates',()=>{
  const scenes=[{id:'s',body,events:[{id:'p',type:'character',name:'Анна',state_patch:{pregnancy:'Подтверждена'},evidence:'сообщила о беременности'},{id:'h',type:'character',name:'Анна',state_patch:{condition:'Простуда'},evidence:'она простудилась'}]}];
  const p=replay(scenes);assert.equal(p.validation_warnings.length,0);assert.equal(p.people[0].state_fields.find(x=>x.field==='pregnancy').value,'Подтверждена');assert.equal(p.people[0].state_fields.find(x=>x.field==='condition').value,'Простуда');
 });
+
+test('family milestones become due candidates without completing themselves',()=>{
+ const body='Анна запланировала семейный праздник.';
+ const e={id:'family1',type:'world',dynamics_version:1,dynamics_kind:'family_event',record_id:'party',key:'dynamics:family_event:party',family_kind:'birthday',title:'Праздник',actors:['Анна'],description:'Семейный праздник',status:'planned',due_at:'2026-12-01',evidence:'запланировала семейный праздник'};
+ const scenes=[{id:'s',body,world_time:'2026-11-24',events:[e]}];
+ assert.equal(validateScene({body,events:[e]}).ok,true);
+ assert.equal(validateScene({body,events:[{...e,status:'completed'}]}).ok,false);
+ const p=replay(scenes);const turn=prepareStoryTurn(scenes,p,[],{target_time:'2026-12-02'});
+ assert.equal(turn.candidates.find(x=>x.kind==='family_event').timing,'reached_requires_story');
+ assert.equal(p.worldFacts[0].status,'planned');
+});
