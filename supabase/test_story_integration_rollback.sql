@@ -84,6 +84,31 @@ begin
  -- A second valid transfer remains possible, proving rejected attempts did not debit.
  perform public.nw_commit_scene(wid,bid,paid_head,gen_random_uuid(),body,'2026-11-03',jsonb_build_array(transfer,paid||'{"record_id":"rent2","key":"dynamics:payment_occurrence:rent2","scheduled_on":"2026-11-03"}'::jsonb),0);
 end $payments$;
+-- Real append path: enterprise stock and production are atomic and branch-local.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $stock_integration$
+declare wid uuid; bid uuid; root uuid; done uuid; rejected boolean;
+ body text:='Workshop counted stock and completed an order.';
+ grp jsonb:='{"id":"g","type":"world","social_record_version":1,"social_kind":"group","record_id":"shop","key":"social:group:shop","name":"Workshop","purpose":"Furniture","status":"active"}';
+ enterprise jsonb:='{"id":"e","type":"world","dynamics_version":1,"dynamics_kind":"enterprise","record_id":"shop","key":"dynamics:enterprise:shop","actor":"Workshop","group_id":"shop","title":"Workshop","place":"Town","business_kind":"Furniture","status":"operating"}';
+ count_record jsonb:='{"id":"c","type":"world","dynamics_version":1,"dynamics_kind":"stock_operation","record_id":"count","key":"dynamics:stock_operation:count","actor":"Workshop","status":"recorded","stock_action":"count","stock_lines":[{"product_id":"wood","unit":"piece","quantity":10},{"product_id":"chair","unit":"piece","quantity":0}]}';
+ planned jsonb:='{"id":"o","type":"world","dynamics_version":1,"dynamics_kind":"production_order","record_id":"order","key":"dynamics:production_order:order","actor":"Workshop","enterprise_id":"shop","title":"Chairs","status":"planned","stock_lines":[{"product_id":"wood","unit":"piece","quantity":-4},{"product_id":"chair","unit":"piece","quantity":2}]}';
+ batch jsonb:='{"id":"b","type":"world","dynamics_version":1,"dynamics_kind":"stock_operation","record_id":"batch","key":"dynamics:stock_operation:batch","actor":"Workshop","status":"recorded","stock_action":"produce","stock_lines":[{"product_id":"wood","unit":"piece","quantity":-4},{"product_id":"chair","unit":"piece","quantity":2}]}';
+ common jsonb:=jsonb_build_object('description',body,'evidence',body); closed jsonb;
+begin
+ wid:=public.nw_create_world('Production test','Synthetic enterprise','2026-11-01');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ root:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2026-11-01',jsonb_build_array(grp||common,enterprise||common,count_record||common,planned||common),0);
+ closed:=planned||common||'{"status":"completed","stock_record_id":"batch","outcome":"Chairs ready"}'::jsonb;
+ rejected:=false;begin perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),body,'2026-11-02',jsonb_build_array(closed),0);exception when raise_exception then rejected:=true;end;
+ if not rejected then raise exception 'Order completed without batch';end if;
+ done:=public.nw_commit_scene(wid,bid,root,gen_random_uuid(),body,'2026-11-02',jsonb_build_array(batch||common,closed),0);
+ rejected:=false;begin perform public.nw_commit_scene(wid,bid,done,gen_random_uuid(),body,'2026-11-03',jsonb_build_array(batch||common||'{"record_id":"oversize","key":"dynamics:stock_operation:oversize","stock_lines":[{"product_id":"wood","unit":"piece","quantity":-7},{"product_id":"chair","unit":"piece","quantity":3}]}'::jsonb),0);exception when raise_exception then rejected:=true;end;
+ if not rejected then raise exception 'Overdrawn stock accepted';end if;
+ if (select head_scene_id from public.nw_branches where id=bid) is distinct from done then raise exception 'Rejected stock change advanced head';end if;
+ perform public.nw_commit_scene(wid,bid,done,gen_random_uuid(),body,'2026-11-03',jsonb_build_array(batch||common||'{"record_id":"second","key":"dynamics:stock_operation:second"}'::jsonb),0);
+end $stock_integration$;
 -- A staged archive round trip; the original world and source IDs are never reused.
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
