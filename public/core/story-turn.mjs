@@ -87,6 +87,33 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const xs of byKind.values())xs.sort((a,b)=>rank(a)-rank(b)||(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
  const categories=[...byKind.values()].sort((a,b)=>rank(a[0])-rank(b[0]));
  const candidates=[];for(let i=0;candidates.length<limit;i++){let added=false;for(const xs of categories){if(xs[i]){candidates.push(xs[i]);added=true;if(candidates.length===limit)break;}}if(!added)break;}
+ // Attach a bounded actor context to the actual turn, instead of forcing the narrator
+ // to retrieve every subsystem independently. Focused actors precede background actors.
+ const selectedActors=[...focus];
+ const addActor=name=>{if(text(name)&&!selectedActors.includes(name)&&selectedActors.length<12)selectedActors.push(name);};
+ for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
+ const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],omitted:{}}]));
+ const actorRows=(actor,kind,row,cap)=>{const ctx=actorIndex.get(actor);if(!ctx)return;
+  if(ctx[kind].length<cap)ctx[kind].push(row);else ctx.omitted[kind]=(ctx.omitted[kind]||0)+1;
+ };
+ // Latest source in canonical ancestry first; updates of old keys are not insert order.
+ const recent=rows=>rows.slice().reverse().sort((a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
+ const stateFields=new Set(['location','residence','availability','occupation','condition','injury','mood','temperament','speech_style','values','personal_goal','family_goal']);
+ for(const p of projection.people||[]){
+  if(!actorIndex.has(p.name))continue;
+  const ctx=actorIndex.get(p.name);ctx.age=characterAge(p,anchor?.literal);
+  for(const field of (p.state_fields||[]).filter(x=>stateFields.has(x.field)))actorRows(p.name,'state_fields',{field:field.field,value:clip(field.value),source:source(field)},12);
+ }
+ for(const p of recent(projection.plans||[]))if(['active','paused'].includes(p.status))actorRows(p.actor,'intentions',{plan_id:p.plan_id,goal:clip(p.goal),status:p.status,next_step:clip(p.next_step),obstacle:clip(p.obstacle),source:source(p)},3);
+ for(const k of recent(projection.knowledge||[]))actorRows(k.actor,'knowledge',{holder:k.actor,topic_id:k.topic_id||null,fact:clip(k.fact),status:k.status||'legacy_recorded_knowledge',channel:clip(k.channel),source:source(k)},4);
+ for(const r of recent(projection.relationships||[])){
+  const row={a:r.a,b:r.b,stance:clip(r.stance),fields:(r.relationship_fields||[]).map(x=>({field:x.field,value:x.value,source:source(x)})),source:source(r)};
+  actorRows(r.a,'relationships',row,3);if(r.a!==r.b)actorRows(r.b,'relationships',row,3);
+ }
+ for(const e of recent(projection.offscreen||[])){
+  for(const actor of new Set([e.actor,...(Array.isArray(e.actors)?e.actors:[])].filter(Boolean)))actorRows(actor,'recent_offscreen',{description:clip(e.description||e.evidence),place:clip(e.place),source:source(e)},2);
+ }
+ const actor_context=[...actorIndex.values()];
  const relationship_context=[];
  let relationship_context_omitted=0;
  if(focus.size){
@@ -109,8 +136,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
   memory_complete:opts.complete!==false,focus:{actors:[...focus],place:place||null},candidates,omitted_candidates:all.length-candidates.length,
-  relationship_context,relationship_context_omitted,life_context,
-  drivers:storyDrivers(projection,directives,{max:8}),warnings,
-  workflow:['Read the pinned head and rules.','Consult relevant source scenes and each actor’s own knowledge.','Choose only developments compatible with elapsed fictional time, access, motives and player agency; show them in narrative (including offscreen if appropriate).','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
+  relationship_context,relationship_context_omitted,life_context,actor_context,
+  drivers:storyDrivers(projection,directives,{max:8,actors:[...focus]}),warnings,
+  workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Choose only developments compatible with elapsed fictional time, access, motives and player agency; show them in narrative (including offscreen if appropriate).','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
   policy:'This is a read-only turn proposal, not simulation results. No candidate changes world state, completes a deadline, transfers a resource, reveals a secret or proves presence. The player controls their own character.'};
 }
