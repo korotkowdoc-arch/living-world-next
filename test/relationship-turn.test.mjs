@@ -56,3 +56,9 @@ test('personal feelings and family bonds remain independent',()=>{
  assert.equal(prepareStoryTurn(scenes,p,[],{actors:['Борис']}).candidates.find(x=>x.kind==='personal_bond').bond_type,'marriage');
  assert.equal(prepareStoryTurn(scenes,p,[],{actors:['Вера']}).candidates.some(x=>x.kind==='personal_bond'),false);
 });
+
+test('family state survives independent health updates',()=>{
+ const body='Анна сообщила о беременности. Позже она простудилась.';
+ const scenes=[{id:'s',body,events:[{id:'p',type:'character',name:'Анна',state_patch:{pregnancy:'Подтверждена'},evidence:'сообщила о беременности'},{id:'h',type:'character',name:'Анна',state_patch:{condition:'Простуда'},evidence:'она простудилась'}]}];
+ const p=replay(scenes);assert.equal(p.validation_warnings.length,0);assert.equal(p.people[0].state_fields.find(x=>x.field==='pregnancy').value,'Подтверждена');assert.equal(p.people[0].state_fields.find(x=>x.field==='condition').value,'Простуда');
+});
