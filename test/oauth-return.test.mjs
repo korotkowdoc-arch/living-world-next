@@ -24,7 +24,7 @@ test('main account redirects after login and PWA cache never stores OAuth params
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const sw=readFileSync(new URL('../public/sw.js',import.meta.url),'utf8');
  assert.match(app,/await signIn\(email.value,password.value\);password.value='';if\(!resumeOAuth\(\)\)await openLanding\(\)/);
- assert.match(app,/if\(!\(readSession\(\)&&resumeOAuth\(\)\)\)openLanding\(\)/);
+ assert.match(app,/if\(!\(readSession\(\)&&resumeOAuth\(\)\)\)void busy\(openLanding\)/);
  assert.match(app,/return link\?openLinkedScene\(link\):openWorlds\(\)/);
  assert.match(sw,/if\(parsed.search\)return;/);
 });
