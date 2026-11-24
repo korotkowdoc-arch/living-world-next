@@ -21,3 +21,17 @@ test('original scene is unchanged and ambiguous anchor is rejected',()=>{
  assert.throws(()=>prepareRevision(old,{lastKeptQuote:'Несуществующая фраза',newContinuation:'Новое'}),/отсутствует/);
  assert.equal(JSON.stringify(old),snapshot);
 });
+
+test('revision preflight rejects incomplete or mixed ancestry and ignores discarded state',async()=>{
+ const {revisionStatePreflight}=await import('../public/core/revisions.mjs');
+ const project={id:'p',type:'world',growth_version:1,growth_kind:'project',record_id:'p',key:'growth:project:p',actor:'А',title:'Работа',description:'Проект',status:'active',evidence:'Проект начат'};
+ const original={id:'s',parent_scene_id:'a',body:'Проект начат. Потом он ушёл.',events:[project]};
+ const finish={...project,id:'p2',status:'completed',outcome:'Готово',evidence:'Работа закончена'};
+ const args={prefix:'',continuation:'Работа закончена.',events:[finish]};
+ const memory={complete:true,scenes:[{id:'a',parent_scene_id:null,events:[]},original]};
+ assert.equal(revisionStatePreflight(memory,original,args).ok,true); // first recorded project state may be completed
+ assert.equal(revisionStatePreflight({...memory,complete:false},original,args).ok,false);
+ assert.equal(revisionStatePreflight({complete:true,scenes:[{id:'b',events:[]},original]},original,args).ok,false);
+ const prior={...memory.scenes[0],events:[{...project,status:'abandoned'}]};
+ assert.equal(revisionStatePreflight({complete:true,scenes:[prior,original]},original,args).ok,false);
+});

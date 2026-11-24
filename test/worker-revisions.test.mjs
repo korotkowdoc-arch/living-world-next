@@ -87,3 +87,25 @@ test('revision retry remains valid after autosave and rule version change',async
   assert.equal(called,1);
  }finally{globalThis.fetch=old;}
 });
+
+test('alternative growth state is checked against earlier ancestors, not discarded ending',async()=>{
+ const old=globalThis.fetch;let writes=0;
+ const rumor={id:'r1',type:'world',growth_version:1,growth_kind:'rumor',record_id:'r1',key:'growth:rumor:r1',sender:'Снейп',recipient:'Гарри',topic_id:'letter',claim:'Письмо',channel:'разговор',evidence:'Малфой ушёл'};
+ const next={...rumor,id:'r2',record_id:'r2',key:'growth:rumor:r2',sender:'Гарри',recipient:'Люпин',parent_rumor_id:'r1',evidence:'Гарри рассказал слух'};
+ globalThis.fetch=stub((p,opt)=>{
+  if(p.pathname==='/auth/v1/user')return Response.json({id:u});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([world]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:b,head_scene_id:s}]);
+  if(p.pathname==='/rest/v1/nw_scenes')return Response.json([{id:s,parent_scene_id:null,body:original,events:[rumor]}]);
+  if(p.pathname==='/rest/v1/nw_revisions'||p.pathname==='/rest/v1/nw_directives')return Response.json([]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:s,parent_scene_id:null,events:[rumor]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_revise_scene'){writes++;return Response.json({scene_id:r,branch_id:b});}
+ });
+ try{
+  const args={world_id:w,source_scene_id:s,continuation:' Гарри рассказал слух.',request_id:r,expected_rules_version:1,events:[next]};
+  const denied=await (await worker.fetch(call('revise_scene',{...args,prefix:'Гарри открыл дверь.'}),env)).json();
+  assert.equal(denied.result.isError,true);assert.equal(writes,0);
+  const accepted=await (await worker.fetch(call('revise_scene',{...args,prefix:original}),env)).json();
+  assert.equal(accepted.result.isError,false);assert.equal(writes,1);
+ }finally{globalThis.fetch=old;}
+});

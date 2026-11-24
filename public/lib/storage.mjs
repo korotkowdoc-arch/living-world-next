@@ -1,5 +1,7 @@
 import {dbRequest} from './session.mjs';
 import {requestIdentity} from '../core/request-identity.mjs';
+import {needsStatePreflight,validateStateAppend,validateScene} from '../core/continuity.mjs';
+import {revisionStatePreflight} from '../core/revisions.mjs';
 import {prependHistoryPage} from '../core/reader.mjs';
 import {buildWorldDraft} from '../core/world.mjs';
 import {classifyDirective} from '../core/directives.mjs';
@@ -32,7 +34,20 @@ export async function directiveHistory(worldId){return dbRequest(`/rest/v1/nw_di
 export async function reviseScene({world,sourceSceneId,prefix,continuation,events=[],requestId=null,worldTime=null}){
  const payload={p_world_id:world.id,p_source_scene_id:sourceSceneId,p_prefix:prefix,p_continuation:continuation,p_events:events,p_world_time:worldTime,p_expected_rules_version:world.directive_version};
  const id=requestId||await requestIdentity('revision',payload);
- try{return await rpc('nw_revise_scene',{...payload,p_request_id:id});}
+ try{
+  // If an earlier response was lost, let the DB compare the original payload.
+  const previous=await dbRequest(`/rest/v1/nw_revisions?select=request_id&world_id=eq.${enc(world.id)}&request_id=eq.${enc(id)}&limit=1`);
+  if(!previous?.length){
+   const source=await getScene(world.id,sourceSceneId);
+   const preserved=(source.events||[]).filter(e=>e&&typeof e.evidence==='string'&&e.evidence.trim()&&prefix.includes(e.evidence));
+   const merged=[...preserved,...events];
+   const rules=await listDirectives(world.id);
+   const memory=needsStatePreflight(merged)?await fullStructuredMemory(world):null;
+   const checked=revisionStatePreflight(memory,source,{prefix,continuation,events,directives:rules});
+   if(!checked.ok)throw Error(checked.errors.join(' '));
+  }
+  return await rpc('nw_revise_scene',{...payload,p_request_id:id});
+ }
  catch(error){
   // The branch may have been committed even if the response was lost.
   const rows=await dbRequest(`/rest/v1/nw_revisions?select=branch_id,new_scene_id,source_scene_id,kept_prefix,continuation,new_events,requested_world_time&world_id=eq.${enc(world.id)}&request_id=eq.${enc(id)}&limit=1`).catch(()=>[]);
@@ -75,10 +90,27 @@ export async function saveScene({world,body,worldTime=null,events=[],requestId=n
  const payload={p_world_id:world.id,p_branch_id:world.active_branch_id,p_expected_head:world.head_scene_id??null,
   p_body:body,p_world_time:worldTime,p_events:events,p_expected_rules_version:world.directive_version};
  const id=requestId||await requestIdentity('scene',payload);
- try{return await rpc('nw_commit_scene',{...payload,p_request_id:id});}
+ try{
+  const receipt=await sceneReceipt(world.id,id);
+  if(!receipt?.saved){
+   const rules=await listDirectives(world.id);
+   const validation=validateScene({body,events,directives:rules});
+   if(!validation.ok)throw Error(validation.errors.join(' '));
+   if(needsStatePreflight(events)){
+    const memory=await fullStructuredMemory(world);
+    if(!memory.complete)throw Error('Для изменения состояния требуется полная память.');
+    const checked=validateStateAppend(memory.scenes,events,body);
+    if(!checked.ok)throw Error(checked.errors.join(' '));
+   }
+  }
+  return await rpc('nw_commit_scene',{...payload,p_request_id:id});
+ }
  catch(error){
   const receipt=await sceneReceipt(world.id,id).catch(()=>null);
-  if(receipt?.saved&&receipt.branch_id===payload.p_branch_id)return receipt.scene_id;
+  if(receipt?.saved&&receipt.branch_id===payload.p_branch_id){
+   const saved=await getScene(world.id,receipt.scene_id).catch(()=>null);
+   if(saved?.body===body&&saved.parent_scene_id===payload.p_expected_head&&JSON.stringify(saved.events)===JSON.stringify(events)&&(saved.world_time??null)===worldTime)return receipt.scene_id;
+  }
   throw Error(`${error.message} Запись не подтверждена. Не создавай новое продолжение до проверки; ID запроса: ${id}.`);
  }
 }

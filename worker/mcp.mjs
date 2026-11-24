@@ -5,6 +5,7 @@
  * Client registration, consent URLs and end-to-end ChatGPT setup require deployment.
  */
 import {buildNextContext,validateScene,replay,needsStatePreflight,validateStateAppend} from '../public/core/continuity.mjs';
+import {revisionStatePreflight} from '../public/core/revisions.mjs';
 import {recordedWorldAgenda} from '../public/core/world-time.mjs';
 import {livingWorldView} from '../public/core/living-world.mjs';
 import {annotationPassages} from '../public/core/annotation-passages.mjs';
@@ -261,7 +262,7 @@ async function callTool(name,args,env,token){
    const sceneId=assertUuid(args.scene_id);
    const inBranch=await rpc(env,token,'nw_scene_in_active_branch',{p_world_id:world.id,p_scene_id:sceneId});
    if(inBranch!==true)throw Error('Only current canonical scenes may be reviewed for memory.');
-   const rows=await rest(env,token,`nw_scenes?select=id,body,events,world_time&world_id=eq.${ep(world.id)}&id=eq.${ep(sceneId)}&limit=1`);
+   const rows=await rest(env,token,`nw_scenes?select=id,parent_scene_id,body,events,world_time&world_id=eq.${ep(world.id)}&id=eq.${ep(sceneId)}&limit=1`);
    if(!rows?.[0])throw Error('Scene not found');
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
@@ -418,6 +419,12 @@ async function callTool(name,args,env,token){
    const rules=await directives(env,token,world.id);
    const checked=validateScene({body:args.prefix+args.continuation,events:all,directives:rules});
    if(!checked.ok)throw Error(checked.errors.join(' '));
+   if(needsStatePreflight(all)){
+    const active=await branch(env,token,world);
+    const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
+    const preflight=revisionStatePreflight(memory,original,{prefix:args.prefix,continuation:args.continuation,events:args.events||[],directives:rules});
+    if(!preflight.ok)throw Error(preflight.errors.join(' '));
+   }
    const receipt=await rpc(env,token,'nw_revise_scene',{p_world_id:world.id,p_source_scene_id:args.source_scene_id,
       p_prefix:args.prefix,p_continuation:args.continuation,p_events:args.events||[],p_request_id:args.request_id,
       p_world_time:args.world_time??null,p_expected_rules_version:args.expected_rules_version});
