@@ -109,6 +109,34 @@ begin
  if (select head_scene_id from public.nw_branches where id=bid) is distinct from done then raise exception 'Rejected stock change advanced head';end if;
  perform public.nw_commit_scene(wid,bid,done,gen_random_uuid(),body,'2026-11-03',jsonb_build_array(batch||common||'{"record_id":"second","key":"dynamics:stock_operation:second"}'::jsonb),0);
 end $stock_integration$;
+-- Decisions: do not advance a paused scene without the player's answer.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $decision$
+declare wid uuid; bid uuid; root uuid; next_scene uuid; req uuid:=gen_random_uuid(); bad boolean;
+ body text:='Anna waited for his answer.';
+ q jsonb:='{"id":"q","type":"world","dynamics_version":1,"dynamics_kind":"player_choice","record_id":"q1","key":"dynamics:player_choice:q1","actor":"Boris","description":"Decision","status":"pending","question":"What to say?","options":[{"id":"yes","text":"Agree"},{"id":"no","text":"Decline"}],"evidence":"Anna waited for his answer."}';
+ a jsonb:='{"id":"a","type":"world","dynamics_version":1,"dynamics_kind":"player_choice","record_id":"q1","key":"dynamics:player_choice:q1","actor":"Boris","description":"Decision","status":"answered","selected_option":"no","action_text":"Decline","evidence":"Boris declined."}';
+begin
+ wid:=public.nw_create_world('Decision test','Synthetic decision','2026-11-01');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body||' He left.','2026-11-01',jsonb_build_array(q),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Choice does not end scene';end if;
+ root:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2026-11-01',jsonb_build_array(q),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),'He left without answering.','2026-11-01','[]',0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Pending choice bypassed';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),'Boris declined.','2026-11-01',jsonb_build_array(a||'{"action_text":"Agree"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Altered answer accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),'Boris declined.','2026-11-01',jsonb_build_array(a||'{"type":"character","name":"Boris"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Forged choice event type accepted';end if;
+ next_scene:=public.nw_commit_scene(wid,bid,root,req,'Boris declined.','2026-11-01',jsonb_build_array(a),0);
+ if public.nw_commit_scene(wid,bid,root,req,'Boris declined.','2026-11-01',jsonb_build_array(a),0) is distinct from next_scene then raise exception 'Answer retry changed receipt';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,next_scene,gen_random_uuid(),'Boris declined.','2026-11-01',jsonb_build_array(a),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Answer repeated';end if;
+ perform public.nw_fork_before(wid,next_scene,'Alternative choice');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),'Boris declined.','2026-11-01',jsonb_build_array(a||'{"selected_option":"custom","action_text":"Decline politely"}'),0);
+end $decision$;
 -- A staged archive round trip; the original world and source IDs are never reused.
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
