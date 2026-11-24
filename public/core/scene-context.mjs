@@ -1,3 +1,4 @@
+import {characterAge} from './character-state.mjs';
 import {limitedNarratorMemory} from './narration-budget.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 const norm=v=>text(v).toLocaleLowerCase('ru');
@@ -20,7 +21,7 @@ function includesText(value,queries){
  return typeof value==='string'&&queries.some(q=>norm(value).includes(norm(q)));
 }
 const groups=['people','relationships','knowledge','plans','obligations','balances','items','worldFacts','offscreen'];
-export function focusedSceneContext(projection,focus,{complete=true,maxChars=18000}={}){
+export function focusedSceneContext(projection,focus,{complete=true,maxChars=18000,worldTime=null}={}){
  const input=sceneFocusInput(focus);
  const actorSet=new Set(input.actors);
  // Case-sensitive recorded identities: exact actor keys do not merge distinct characters.
@@ -46,6 +47,7 @@ export function focusedSceneContext(projection,focus,{complete=true,maxChars=180
  selected.events_replayed=projection.events_replayed;
  selected.validation_warnings=projection.validation_warnings||[];
  return {focus:input,memory_complete:complete,memory:limitedNarratorMemory(selected,{maxChars,maxEntriesPerCategory:20}),
+  life_context:input.actors.flatMap(name=>{const age=characterAge((projection.people||[]).find(p=>p.name===name),worldTime);return age?[{actor:name,age}]:[];}),
   matched_actor_names:input.actors.filter(name=>(projection.people||[]).some(p=>p.name===name)),
   identity_policy:'Names are exact recorded labels. Unmatched names and missing fields do not prove that a character or fact is absent. Search the source text for variants.',
   knowledge_policy:'A retrieved fact remains known only to its recorded holder via its recorded channel. The narrator must not give it to other characters automatically.',

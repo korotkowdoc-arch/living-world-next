@@ -1,0 +1,56 @@
+name: LIVING WORLD NEXT SQL checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: story_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: story_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare minimal Supabase auth compatibility
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create role anon nologin;
+          create role authenticated nologin;
+          create schema auth;
+          create table auth.users(id uuid primary key);
+          create function auth.uid() returns uuid language sql stable as $$
+            select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid
+          $$;
+          grant usage on schema auth to anon,authenticated;
+          grant execute on function auth.uid() to anon,authenticated;
+          create schema extensions;
+          create extension pgcrypto with schema extensions;
+          SQL
+      - name: Apply base schema and every migration
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f supabase/schema.sql
+          for file in supabase/migrations/*.sql; do
+            echo "Applying $file"
+            psql -v ON_ERROR_STOP=1 -f "$file"
+          done
+      - name: Economy and story event rollback assertions
+        run: psql -v ON_ERROR_STOP=1 -f supabase/test_economy_rollback.sql
+      - name: Owner isolation, idempotency, branch and note integration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/test_story_integration_rollback.sql

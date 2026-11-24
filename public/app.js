@@ -111,7 +111,7 @@ function renderRestoreArchive(){
   out.replaceChildren(para(`Проверено: «${info.title}», ${info.scene_count} сцен, ${info.branch_count} веток. SHA-256 совпадает.`),
     row(save),progress,para('Большой архив загружается частями. При обрыве выбери тот же файл и повтори: принятые пакеты сохраняются. Мир появляется только после атомарной финальной операции.'),button('Отменить незавершённую загрузку',()=>busy(async()=>{if(confirm('Удалить только временные пакеты этого импорта? Существующие миры останутся.')){await cancelArchiveImport(raw);progress.hidden=true;toast('Незавершённая загрузка отменена.');}}),'text-button'));
  }));
- add(section,fileInput,out,para('До 5000 сцен / 30 МБ — прежний импорт; крупнее — пакетный режим (до 50 000 записей в разделе и 100 МБ) после установки миграции 008. Реальная производительность большого импорта пока требует проверки.'));
+ add(section,fileInput,out,para('До 5000 сцен / 30 МБ — прежний импорт; крупнее — пакетный режим (до 50 000 записей в разделе и 100 МБ) при наличии миграции 008 (установлена в NEXT). Реальная производительность большого импорта пока требует проверки.'));
  root.append(section);
 }
 
@@ -327,12 +327,13 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
   }
   moreMentions.hidden=hits.length<20;
  };
- const showProfile=(p,complete)=>{
+ const showProfile=(p,complete,worldTime)=>{
   profile.replaceChildren();
-  const current=characterStateView(p,lastActor,{complete});
+  const current=characterStateView(p,lastActor,{complete,worldTime});
   profile.append(title('Последнее известное состояние'));
   if(current.ambiguous_names.length)profile.append(para('Есть разные записанные имена: '+current.ambiguous_names.join(', ')+'. Уточни имя.'));
   if(!current.character?.state_fields.length)profile.append(para('Отдельные свойства ещё не записаны. Это не означает отсутствия места, травм или привычек.'));
+  const age=current.character?.age;if(age?.status==='calendar_derived')profile.append(para('Возраст на '+age.as_of+': '+age.years+' (по дате рождения).'));else if(age?.status==='before_recorded_birth')profile.append(para('Игровое время раньше записанной даты рождения; проверь историю.'));
   for(const field of current.character?.state_fields||[]){
    const card=node('div','rule');
    add(card,node('strong','',field.label),para(field.value??'Не установлено'));
@@ -348,7 +349,7 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
  const fullProfile=button('Состояние по всей ветке',()=>busy(async()=>{
   if(!fieldName.value.trim())throw Error('Укажи имя персонажа.');
   lastActor=fieldName.value.trim();fullProfile.disabled=true;
-  try{const memory=await fullStructuredMemory(w);showProfile(replay(memory.scenes,[],{evidencePrevalidated:true}),memory.complete);}
+  try{const memory=await fullStructuredMemory(w);showProfile(replay(memory.scenes,[],{evidencePrevalidated:true}),memory.complete,memory.scenes.at(-1)?.world_time);}
   finally{fullProfile.disabled=false;}
  }),'btn secondary');
  const form=node('form');form.addEventListener('submit',e=>{e.preventDefault();busy(()=>load());});
@@ -373,7 +374,7 @@ function renderPeople(){const w=state.world;const projection=replay(state.scenes
   for(const x of r.current){const card=add(node('div','rule'),node('strong','',x.a+' → '+x.b),para(x.stance||'Общее отношение не установлено'));source(card,x.stance_source);
    for(const field of x.relationship_fields){const line=add(node('div','rule'),para(field.field+': '+field.value),para(field.evidence));source(line,field.source);card.append(line);}detail.append(card);}
   detail.append(title('История взаимодействия'));
-  for(const x of r.history){const card=add(node('div','rule'),node('strong','',x.type==='interaction'?x.kind+' · '+x.actors.join(', '):x.a+' → '+x.b),para(x.description||x.stance||''),para(x.outcome||''),para(x.evidence));source(card,x.source);detail.append(card);}
+  for(const x of r.history){const card=add(node('div','rule'),node('strong','',x.type==='interaction'?({date:'Свидание',romantic_milestone:'Романтическое событие',intimacy:'Интимная близость',separation:'Расставание'}[x.kind]||x.kind)+' · '+x.actors.join(', '):x.a+' → '+x.b),para(x.description||x.stance||''),para(x.outcome||''),para(x.evidence));source(card,x.source);detail.append(card);}
   detail.append(title('Привычки и занятия'));
   for(const x of [...a.habits,...a.activities]){const card=add(node('div','rule'),node('strong','',x.name+' · '+x.status),para(x.description),para(x.frequency||x.actors?.join(', ')||''));source(card,x.source);detail.append(card);}
   detail.append(title('Долговременные последствия'));
@@ -538,7 +539,7 @@ function renderSocialWorld(){
   if(!append&&!rows.length)notesOut.append(para('Предложений пока нет.'));};
  const more=button('Ещё предложения',()=>busy(()=>getNotes(true)),'btn secondary');more.hidden=true;
  root.append(panel(title('Общество и личные знания'),para('Состав групп, личные убеждения и чужие сюжетные линии остаются раздельными. Не каждая запись известна всем героям.'),actor,group,row(button('Найти',()=>{offset=0;show();}),refresh),out),
-  panel(title('Восстановленная память'),para('Отдельные предложения рассказчика по старым сценам. Не меняют канон. Требуется миграция 009.'),button('Читать предложения',()=>busy(()=>getNotes(false)),'btn secondary'),notesOut,more));
+  panel(title('Восстановленная память'),para('Отдельные предложения рассказчика по старым сценам. Не меняют канон. Хранилище заметок подключено в NEXT.'),button('Читать предложения',()=>busy(()=>getNotes(false)),'btn secondary'),notesOut,more));
  show();
 }
 function renderGrowth(){
@@ -622,12 +623,22 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
   const v=prepareStoryTurn(turnScenes,projection,state.directives,{actors:focus.value.split(',').map(x=>x.trim()).filter(Boolean),place:place.value,target_time:target.value.trim()||null,complete:turnComplete,limit:20});
   turnOut.replaceChildren(para('Игровое время: '+(v.clock||'не установлено')+(v.target_time?' → '+v.target_time:'')+(v.elapsed_story_minutes!==null?' · '+v.elapsed_story_minutes+' мин.':'')));
   for(const warning of v.warnings)turnOut.append(node('div','notice',warning));
-  const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь'};
-  for(const r of v.candidates){
-   const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource].filter(Boolean).join(' · ')));
+  const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь',personal_bond:'Личная связь',family_event:'Семейное событие',family_duty:'Семейная обязанность',life_transition:'Жизненный переход',age_milestone:'День рождения'};
+  for(const person of v.life_context||[])if(person.target_age?.status==='calendar_derived')turnOut.append(para(person.actor+' · возраст '+person.target_age.years+' на '+person.target_age.as_of));
+   for(const r of v.candidates){
+   const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource,r.occurrences?('Не закрыто: '+(r.pending_occurrences??r.occurrences)+' из '+r.occurrences+' · '+r.first_due_on+' — '+r.last_due_on):null,r.age_years!=null?('Возраст: '+r.age_years):null].filter(Boolean).join(' · ')));
    if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}turnOut.append(card);
   }
-  if(v.omitted_candidates)turnOut.append(para('Других кандидатов: '+v.omitted_candidates+'. Их можно уточнить через MCP.'));
+  for(const actor of v.actor_context||[]){
+    const card=add(node('div','rule'),node('strong','','Контекст: '+actor.actor));
+    for(const p of actor.intentions)card.append(para(p.goal+' · '+p.status+(p.next_step?' → '+p.next_step:'')));
+    for(const f of actor.state_fields)card.append(para(f.field+': '+(f.value??'не установлено')));
+    for(const k of actor.knowledge)card.append(para('Знание '+k.holder+' · '+k.status+': '+k.fact));
+    for(const e of actor.recent_offscreen)card.append(para('За кадром: '+e.description));
+    if(Object.keys(actor.omitted).length)card.append(para('Есть дополнительные записи; смотри карточку персонажа.'));
+    turnOut.append(card);
+   }
+   if(v.omitted_candidates)turnOut.append(para('Других кандидатов: '+v.omitted_candidates+'. Их можно уточнить через MCP.'));
   if(!v.candidates.length)turnOut.append(para('Пока нет записанных кандидатов. Это не означает, что персонажи не могут действовать.'));
  };
  add(turnPanel,target,focus,place,row(button('Подготовить эпизод',()=>busy(async()=>showTurn())),button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);turnScenes=m.scenes;turnComplete=m.complete;turnVerified=true;showTurn();}),'btn secondary')),turnOut);root.append(turnPanel);showTurn();
@@ -636,9 +647,9 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  const showDynamics=()=>{
   const v=dynamicsView(replay(turnScenes,[],{evidencePrevalidated:turnVerified}),{actor:focus.value.includes(',')?'':focus.value.trim(),place:place.value,complete:turnComplete,offset:dOffset,limit:15});
   dOut.replaceChildren();
-  for(const [heading,rows] of [['Связи',v.bonds],['Учреждения',v.institutions],['Конкуренция',v.contests],['Изменения',v.developments]]){
+  for(const [heading,rows] of [['Связи',v.bonds],['Учреждения',v.institutions],['Конкуренция',v.contests],['Изменения',v.developments],['Семейные события',v.family_events],['Семейные обязанности',v.family_duties],['Жизненные переходы',v.life_transitions]]){
    dOut.append(title(heading));if(!rows.length)dOut.append(para('Нет записей в выборке.'));
-   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.title||r.name||[r.actor,r.counterparty].join(' — ')),para([r.bond_type,r.status,r.resource,r.place].filter(Boolean).join(' · ')),para(r.description),para(r.outcome||r.terms||''));
+   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.title||r.name||[r.actor,r.counterparty].join(' — ')),para([r.bond_type,r.transition_kind,r.status,r.resource,r.place,r.every_days?('Период (дней): '+r.every_days):null,r.starts_on,r.ends_on,r.scheduled_on].filter(Boolean).join(' · ')),para(r.description),para(r.outcome||r.terms||''));
     if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}dOut.append(card);}
   }
   if(dOffset)dOut.append(button('Назад',()=>{dOffset=Math.max(0,dOffset-15);showDynamics();},'btn secondary'));

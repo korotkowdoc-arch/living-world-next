@@ -15,7 +15,7 @@ test('MCP source review requires active ancestry and reads exact source only',as
   if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
   if(p.pathname==='/rest/v1/rpc/nw_scene_in_active_branch')return Response.json(canonical);
   if(p.pathname==='/rest/v1/nw_scenes')return Response.json([{id:head,body:'Точный текст старой сцены.',events:[]}]);
-  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,world_time:'1991-09-02 22:00',events:[]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,world_time:'1991-09-02 22:00',events:[]}]);
   return Response.json({error:'unexpected '+p.pathname},{status:404});
  };
  try{
@@ -63,7 +63,7 @@ test('MCP reads relationship histories and habits from pinned active ancestry',a
   if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid}]);
   if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
-  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,events:[{id:'r',type:'relationship',a:'А',b:'Б',stance:'enemies',evidence:'Вражда'}]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,events:[{id:'r',type:'relationship',a:'А',b:'Б',stance:'enemies',evidence:'Вражда'}]}]);
   throw Error('Unexpected '+p.pathname);
  };
  try{
@@ -81,7 +81,7 @@ test('MCP growth reads recorded skill from pinned ancestry without writing',asyn
   if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
   if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid}]);
   if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
-  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,events:[{id:'s',type:'world',growth_version:1,growth_kind:'skill',record_id:'s',key:'growth:skill:s',actor:'А',name:'Учёба',description:'Практика',status:'learning',evidence:'Учился'}]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,events:[{id:'s',type:'world',growth_version:1,growth_kind:'skill',record_id:'s',key:'growth:skill:s',actor:'А',name:'Учёба',description:'Практика',status:'learning',evidence:'Учился'}]}]);
   throw Error('Unexpected '+p.pathname);
  };
  try{const r=await (await worker.fetch(call('get_character_growth',{actor:'А'}),env)).json();assert.equal(r.result.structuredContent.skills[0].status,'learning');assert.equal(r.result.structuredContent.rumors.length,0);}
@@ -107,5 +107,46 @@ test('MCP integrated turn is read-only, pinned and includes recorded contest',as
   assert.equal(result.structuredContent.candidates[0].kind,'contest');
   const view=(await (await worker.fetch(call('get_world_dynamics',{}),env)).json()).result;
   assert.equal(view.structuredContent.contests.length,1);
+ }finally{globalThis.fetch=old;}
+});
+
+test('MCP memory review is pinned, paged and read-only',async()=>{
+ const old=globalThis.fetch;let changed=false;
+ globalThis.fetch=async(url,opt={})=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,auto_save:true}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:changed?null:head}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page'){assert.equal(JSON.parse(opt.body).p_expected_head,head);return Response.json([{id:head,parent_scene_id:null,events:[]}]);}
+  throw Error('Unexpected '+p.pathname);
+ };
+ try{
+  const r=(await (await worker.fetch(call('get_memory_review_queue',{expected_head:head}),env)).json()).result;
+  assert.equal(r.isError,false);assert.equal(r.structuredContent.items[0].scene_id,head);
+  assert.equal(r.structuredContent.next_offset,null);changed=true;
+  assert.equal((await (await worker.fetch(call('get_memory_review_queue',{expected_head:head}),env)).json()).result.isError,true);
+ }finally{globalThis.fetch=old;}
+});
+
+test('focused MCP memory retrieves separate historical hints and tolerates unavailable notes',async()=>{
+ const old=globalThis.fetch;let available=true;
+ const note={key:'n1',kind:'claim',summary:'Старая реплика',quote:'Точный текст',actors:['Анна']};
+ globalThis.fetch=async(url,opt={})=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,auto_save:true}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,events:[]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_read_memory_notes'){
+   assert.equal(JSON.parse(opt.body).p_expected_head,head);assert.equal(JSON.parse(opt.body).p_actor,'Анна');
+   return available?Response.json([{scene_id:head,note_key:'n1',note}]):Response.json({message:'Missing RPC'},{status:404});
+  }
+  throw Error('Unexpected '+p.pathname);
+ };
+ try{
+  const read=async()=>(await (await worker.fetch(call('get_scene_context',{actors:['Анна']}),env)).json()).result;
+  let r=await read();assert.equal(r.isError,false);assert.equal(r.structuredContent.historical_hints.notes[0].scene_id,head);
+  assert.equal(r.structuredContent.historical_hints.canonical,false);assert.deepEqual(r.structuredContent.memory.records.knowledge,[]);
+  available=false;r=await read();assert.equal(r.isError,false);assert.equal(r.structuredContent.historical_hints.status,'unavailable');
  }finally{globalThis.fetch=old;}
 });

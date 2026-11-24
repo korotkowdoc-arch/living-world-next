@@ -1,9 +1,9 @@
 {
   "app": "living-world-next",
-  "version": "0.18.1",
+  "version": "0.19.0",
   "mcp": "/mcp",
   "health": "/health",
   "deploy_source": "github-main",
   "note": "Public deployment marker only; check /health independently for MCP",
-  "deployment_probe": "2026-11-24-integrated-draft-ancestry"
+  "deployment_probe": "2026-11-24-personal-life-memory-sql"
 }

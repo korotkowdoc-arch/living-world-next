@@ -8,7 +8,7 @@ const open=new Set(['active','open','pending','owed','unfulfilled']);
 /** Story pressures from existing sources, not simulated actions or coerced plot beats.
  * These candidates are prompts for character choice, NOT new world facts.
  */
-export function storyDrivers(projection={},directives=[],{max=16}={}){
+export function storyDrivers(projection={},directives=[],{max=16,actors=[]}={}){
  const result=[],locked=new Set();
  const push=entry=>result.push(entry);
  const activeRules=Array.isArray(directives)?directives.filter(d=>d?.active!==false):[];
@@ -57,6 +57,9 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
  for(const project of (projection.worldFacts||[]).filter(x=>x.growth_version===1&&x.growth_kind==='project'&&['planned','active','paused'].includes(x.status)).slice(-5).reverse()){
   push({kind:'personal_project',actor:project.actor,title:project.title,status:project.status,next_step:project.next_step||null,obstacle:project.obstacle||null,source:project.source,certainty:'recorded_project_not_completed',guidance:'Проект развивается через реальные попытки, ошибки и достигнутые результаты, не автоматически.'});
  }
+ for(const bond of (projection.worldFacts||[]).filter(x=>x.dynamics_version===1&&x.dynamics_kind==='bond'&&['marriage','parenthood','cohabitation','romantic'].includes(x.bond_type)&&['active','strained','estranged'].includes(x.status)).slice(-4).reverse()){
+  push({kind:'personal_life',actors:[bond.actor,bond.counterparty],bond_type:bond.bond_type,status:bond.status,source:bond.source,certainty:'recorded_social_bond',guidance:'Учитывай самостоятельные семейные обязанности и личные цели NPC. Связь не доказывает чувства или согласие.'});
+ }
  for(const relationship of (Array.isArray(projection.relationships)?projection.relationships:[])){
   if(!text(relationship?.a)||!text(relationship?.b))continue;
   const remembered=(relationship.relationship_fields||[]).filter(x=>['hatred','resentful','distrusted','disrespected'].includes(x.value));
@@ -69,8 +72,11 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
  }
  // Binding rules first; round-robin remaining kinds to avoid many plans starving conflicts.
  const cap=Math.max(1,Math.min(50,Math.floor(Number(max)||16)));
+ const focus=new Set(Array.isArray(actors)?actors:[]);
+ const relevant=x=>focus.has(x.actor)||(x.actors||[]).some(a=>focus.has(a));
  const rules=result.filter(x=>x.kind==='author_relationship_boundary'),out=rules.slice(0,cap),groups=new Map();
  for(const x of result)if(x.kind!=='author_relationship_boundary'){if(!groups.has(x.kind))groups.set(x.kind,[]);groups.get(x.kind).push(x);}
+ if(focus.size){for(const group of groups.values())group.sort((a,b)=>Number(relevant(b))-Number(relevant(a)));}
  for(let i=0;out.length<cap;i++){let added=false;for(const group of groups.values()){if(group[i]){out.push(group[i]);added=true;if(out.length===cap)break;}}if(!added)break;}
  return out;
 }
@@ -84,6 +90,7 @@ export function storyDriverPrompt(drivers=[]){
   if(d.kind==='independent_thread')return '• Независимая линия: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'; '+d.visibility+'. Не раскрывай без причины, не завершай автоматически.';
   if(d.kind==='shared_activity')return '• Совместное занятие: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'. Не считать выполненным заранее.';
   if(d.kind==='lasting_consequence')return '• Последствие для '+d.actor+': '+d.description+' ('+d.status+'). Не стирай без записанного изменения.';
+  if(d.kind==='personal_life')return '• Личная жизнь: '+d.actors.join(' ↔ ')+'; '+d.bond_type+' ('+d.status+'). Учитывай самостоятельные цели и обязанности, не выводи чувства автоматически.';
   if(d.kind==='personal_project')return '• Личный проект '+d.actor+': '+d.title+' ('+d.status+'). '+(d.next_step?'Возможный шаг: '+d.next_step+'. ':'')+(d.obstacle?'Препятствие: '+d.obstacle+'. ':'')+'Не считать завершённым заранее.';
   if(d.kind==='recorded_commitment')
    return '• Обязательство '+d.commitment_id+'; состояние '+d.status+'; источник '+(d.source?.scene_id||'не указан')+'. Уточни перед признанием исполненным.';

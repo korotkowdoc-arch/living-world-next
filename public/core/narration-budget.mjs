@@ -20,7 +20,7 @@ function compactValue(value,depth=0){
   for(const k of ordered){
    if((k==='state_fields'||k==='relationship_fields')&&Array.isArray(value[k])){
     // Preserve per-field source links rather than generic nested-data placeholders.
-    const fields=value[k].slice(-8);
+    const fields=value[k].slice(-(k==='relationship_fields'?12:8));
     out[k]=fields.map(field=>({field:field.field,value:typeof field.value==='string'?field.value.slice(0,240):field.value,
      state:field.state,source:field.source}));
     if(value[k].length>fields.length)out[k+'_omitted']=value[k].length-fields.length;
