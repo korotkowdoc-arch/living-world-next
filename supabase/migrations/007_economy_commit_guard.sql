@@ -210,6 +210,107 @@ begin
 end $story$;
 revoke all on function public.nw_story_text_valid(jsonb,integer),public.nw_story_date_valid(jsonb,boolean),public.nw_story_actors_valid(jsonb,integer),public.nw_assert_story_event_shape(jsonb) from public,anon,authenticated;
 
+-- Branch-local transitions for plan lifecycles and persistent world records.
+-- Pure fold; invalid historic transitions are skipped, never rewritten.
+create or replace function public.nw_story_transition_step(st jsonb,e jsonb)
+returns jsonb language plpgsql immutable security invoker set search_path='' as $transition$
+declare k text; kind text; old jsonb; action text; next_status text; field text; parent jsonb;
+begin
+ if e->>'type'='plan' then
+  if not public.nw_story_text_valid(e->'actor',100000) or not public.nw_story_text_valid(e->'plan_id',100000) then raise exception 'Invalid plan identity'; end if;
+  k:=jsonb_build_array(e->>'actor',e->>'plan_id')::text; old:=st->'plans'->k; action:=e->>'action';
+  if action='start' then
+   if old is not null or not public.nw_story_text_valid(e->'goal',100000) then raise exception 'Invalid or duplicate plan start'; end if;
+   next_status:='active';
+  else
+   if old is null or old->>'status' in ('completed','abandoned') or coalesce(action,'') not in ('advance','pause','resume','complete','abandon')
+    or (action='resume' and old->>'status'<>'paused') or (action='pause' and old->>'status'<>'active') then raise exception 'Invalid plan transition'; end if;
+   next_status:=case action when 'complete' then 'completed' when 'abandon' then 'abandoned' when 'pause' then 'paused' else 'active' end;
+  end if;
+  return jsonb_set(st,array['plans',k],jsonb_build_object('status',next_status),true);
+ end if;
+ if e->>'type' is distinct from 'world' or not public.nw_story_text_valid(e->'key',100000) then return st; end if;
+ k:=e->>'key'; old:=st->'records'->k;
+ perform public.nw_assert_story_event_shape(e);
+ if e->'dynamics_version'='1'::jsonb then
+  kind:=e->>'dynamics_kind';
+  if old is not null then
+   foreach field in array array['dynamics_version','dynamics_kind','record_id'] loop
+    if old->field is distinct from e->field then raise exception 'Changed dynamics identity'; end if;
+   end loop;
+   if (kind='bond' and (old->'actor' is distinct from e->'actor' or old->'counterparty' is distinct from e->'counterparty' or old->'bond_type' is distinct from e->'bond_type'))
+    or (kind='institution' and old->'group_id' is distinct from e->'group_id')
+    or (kind='contest' and old->'resource' is distinct from e->'resource')
+    or (kind='life_transition' and (old->'actor' is distinct from e->'actor' or old->'transition_kind' is distinct from e->'transition_kind'))
+    or (kind='family_event' and old->'family_kind' is distinct from e->'family_kind')
+    or (kind='family_duty' and (old->'family_kind' is distinct from e->'family_kind' or old->'starts_on' is distinct from e->'starts_on' or old->'every_days' is distinct from e->'every_days' or not coalesce(old->'actors' @> e->'actors' and e->'actors' @> old->'actors',false)))
+    then raise exception 'Changed dynamics identity'; end if;
+   if old->'status' is distinct from e->'status' and
+    ((kind in ('bond','family_duty') and old->>'status'='ended') or
+     (kind in ('development','family_event','life_transition') and old->>'status' in ('completed','cancelled')) or
+     (kind='contest' and old->>'status' in ('decided','abandoned')))
+    then raise exception 'Terminal dynamics requires new ID'; end if;
+  end if;
+  if kind='institution' and not ((st->'records') ? ('social:group:'||(e->>'group_id'))) then raise exception 'Institution requires existing group'; end if;
+ elsif e->'social_record_version'='1'::jsonb and old is not null then
+  if old->'social_kind' is distinct from e->'social_kind' or old->'record_id' is distinct from e->'record_id'
+   or (e->>'social_kind'='membership' and (old->'actor' is distinct from e->'actor' or old->'group_id' is distinct from e->'group_id')) then raise exception 'Changed social identity'; end if;
+ elsif e->'activity_version'='1'::jsonb and old is not null then
+  if old->'activity_version' is distinct from e->'activity_version' or old->'activity_kind' is distinct from e->'activity_kind' or old->'record_id' is distinct from e->'record_id'
+   or (e->>'activity_kind'='habit' and old->'actor' is distinct from e->'actor')
+   or (e->>'activity_kind'='activity' and old->>'status' in ('completed','cancelled') and e->>'status' not in ('completed','cancelled')) then raise exception 'Invalid activity transition'; end if;
+ elsif e->'consequence_version'='1'::jsonb and old is not null then
+  if old->'consequence_version' is distinct from e->'consequence_version' or old->'actor' is distinct from e->'actor' or old->'consequence_kind' is distinct from e->'consequence_kind' or old->'source_incident' is distinct from e->'source_incident'
+   or (old->>'status'='resolved' and e->>'status'<>'resolved') then raise exception 'Invalid consequence transition'; end if;
+ elsif e->'growth_version'='1'::jsonb then
+  kind:=e->>'growth_kind';
+  if old is not null then
+   if old->'growth_version' is distinct from e->'growth_version' or old->'growth_kind' is distinct from e->'growth_kind' or old->'record_id' is distinct from e->'record_id' or kind='rumor'
+    or (kind in ('skill','project') and (old->'actor' is distinct from e->'actor' or (kind='skill' and old->'name' is distinct from e->'name') or (kind='project' and old->'title' is distinct from e->'title')))
+    or (kind='project' and old->>'status' in ('completed','abandoned') and old->'status' is distinct from e->'status')
+    or (kind='cause' and (old->'from_key' is distinct from e->'from_key' or old->'to_key' is distinct from e->'to_key')) then raise exception 'Invalid growth transition'; end if;
+  end if;
+  if kind='rumor' and e->>'parent_rumor_id' is not null then
+   parent:=st->'records'->('growth:rumor:'||(e->>'parent_rumor_id'));
+   if parent is null or parent->'topic_id' is distinct from e->'topic_id' or parent->'recipient' is distinct from e->'sender' then raise exception 'Invalid parent rumor'; end if;
+  end if;
+  if kind='cause' then
+   if not coalesce((st->'records') ? (e->>'from_key') and (st->'records') ? (e->>'to_key'),false) then raise exception 'Missing causal endpoints'; end if;
+   if e->>'status'='established' and exists(
+    with recursive reachable(node) as (
+     select e->>'to_key'
+     union
+     select edge.value->>'to_key' from reachable r cross join lateral jsonb_each(st->'records') edge
+     where edge.key<>k and edge.value->>'growth_kind'='cause' and edge.value->>'status'='established' and edge.value->>'from_key'=r.node
+    ) select 1 from reachable where node=e->>'from_key'
+   ) then raise exception 'Established causal cycle'; end if;
+  end if;
+ end if;
+ return jsonb_set(st,array['records',k],e,true);
+end $transition$;
+revoke all on function public.nw_story_transition_step(jsonb,jsonb) from public,anon,authenticated;
+
+create or replace function public.nw_assert_story_transitions(p_world uuid,p_head uuid,p_events jsonb)
+returns void language plpgsql security invoker set search_path='' as $transition$
+declare u uuid:=auth.uid(); st jsonb:='{"plans":{},"records":{}}'; rec record; e jsonb; seen integer:=0;
+begin
+ if not exists(select 1 from jsonb_array_elements(p_events) x where x->>'type'='plan' or (x->>'type'='world' and (x?'dynamics_version' or x?'social_record_version' or x?'activity_version' or x?'consequence_version' or x?'growth_version'))) then return; end if;
+ if u is null or not exists(select 1 from public.nw_worlds where id=p_world and owner_id=u) then raise exception 'World not found'; end if;
+ for rec in with recursive chain as (
+  select s.id,s.parent_scene_id,s.events,1 as depth from public.nw_scenes s where s.id=p_head and s.world_id=p_world and s.owner_id=u
+  union all select s.id,s.parent_scene_id,s.events,c.depth+1 from chain c join public.nw_scenes s on s.id=c.parent_scene_id where s.world_id=p_world and s.owner_id=u and c.depth<50001
+ ) select * from chain order by depth desc loop
+  seen:=seen+1;
+  if (seen=1 and rec.parent_scene_id is not null) or seen>50000 then raise exception 'Incomplete story transition ancestry'; end if;
+  for e in select value from jsonb_array_elements(rec.events) loop
+   begin st:=public.nw_story_transition_step(st,e); exception when raise_exception then null; end;
+  end loop;
+ end loop;
+ if p_head is not null and seen=0 then raise exception 'Missing story transition ancestry'; end if;
+ for e in select value from jsonb_array_elements(p_events) loop st:=public.nw_story_transition_step(st,e); end loop;
+end $transition$;
+revoke all on function public.nw_assert_story_transitions(uuid,uuid,jsonb) from public,anon,authenticated;
+
 create or replace function public.nw_commit_scene(
  p_world_id uuid,p_branch_id uuid,p_expected_head uuid,p_request_id uuid,p_body text,
  p_world_time text default null,p_events jsonb default '[]'::jsonb,p_expected_rules_version integer default null
@@ -298,6 +399,7 @@ begin
   ) then raise exception 'Explicit relationship lock violated'; end if;
  end loop;
  perform public.nw_assert_economy_append(p_world_id,current_head,coalesce(p_events,'[]'::jsonb));
+ perform public.nw_assert_story_transitions(p_world_id,current_head,coalesce(p_events,'[]'::jsonb));
  insert into public.nw_scenes(id,owner_id,world_id,branch_id,parent_scene_id,request_id,body,world_time,events,rules_version_at_commit)
  values(new_id,u,p_world_id,p_branch_id,current_head,p_request_id,p_body,nullif(trim(p_world_time),''),coalesce(p_events,'[]'::jsonb),actual_rules_version);
  update public.nw_branches set head_scene_id=new_id where id=p_branch_id;
