@@ -163,6 +163,13 @@ function renderWorld(){if(!state.world)return openWorlds();const w=state.world;s
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
+  const last=state.scenes.at(-1),pending=last?.events?.at(-1);
+  if(pending?.dynamics_kind==='player_choice'&&pending.status==='pending'){
+   const choice=panel(title('Ожидается решение героя'),para(pending.actor+' · '+pending.question),para('Выбирай в ChatGPT. Здесь можно скопировать ответ; нажатие само по себе ничего не сохраняет.'));
+   const message=(option,action)=>JSON.stringify({world_id:w.id,branch_id:w.active_branch_id,expected_head:last.id,expected_rules_version:w.directive_version,choice_id:pending.record_id,selected_option:option,...(action?{action_text:action}:{})});
+   for(const option of pending.options||[])choice.append(button(option.text,()=>busy(()=>copy('Мой выбор героя: '+message(option.id))),'btn secondary'));
+   const own=field('Свой поступок или реплика…','field');choice.append(own,button('Скопировать свой ответ',()=>busy(async()=>{if(!own.value.trim())throw Error('Введи действие.');await copy('Мой выбор героя: '+message('custom',own.value.trim()));}),'btn secondary'));root.append(choice);
+  }
   const heading=node('div','section-head');add(heading,title('Хроника'),node('span','count',state.scenes.length+' загружено'));root.append(heading);
   const readerInfo=node('span','count',readerPrefs.fontSize+' px · '+readerPrefs.lineHeight+' интервал');
   readerInfo.id='readerSizeLabel';
