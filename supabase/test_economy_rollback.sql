@@ -25,4 +25,27 @@ begin
  exception when raise_exception then caught:=true; end;
  if not caught then raise exception 'Destroyed item restored'; end if;
 end $verify$;
+-- The same pure validation used by the atomic commit, with valid and invalid payloads.
+do $story$
+declare bad jsonb; caught boolean;
+begin
+ perform public.nw_assert_story_event_shape('{"type":"character","name":"A","state_patch":{"birth_date":"2000-02-29","life_stage":"adult","condition":null}}');
+ perform public.nw_assert_story_event_shape('{"type":"relationship","a":"A","b":"B","relationship_version":1,"relationship_patch":{"attraction":"ambivalent","jealousy":"unknown"}}');
+ perform public.nw_assert_story_event_shape('{"type":"world","interaction_version":1,"interaction_kind":"date","actors":["A","B"],"description":"Meeting"}');
+ perform public.nw_assert_story_event_shape('{"type":"world","dynamics_version":1,"dynamics_kind":"family_duty","record_id":"d","key":"dynamics:family_duty:d","status":"active","title":"Care","description":"Care","actors":["A"],"family_kind":"care","starts_on":"2026-01-01","every_days":2}');
+ for bad in select value from jsonb_array_elements('[
+  {"type":"character","name":"A","state_patch":{"birth_date":"2001-02-29"}},
+  {"type":"character","name":"A","state_patch":{"invented":"x"}},
+  {"type":"relationship","a":"A","b":"B","relationship_version":1,"relationship_patch":{"trust":"jealous"}},
+  {"type":"world","interaction_version":1,"interaction_kind":"date","actors":["A","B","C"],"description":"Meeting"},
+  {"type":"world","key":"dynamics:bond:bad","description":"Unversioned"},
+  {"type":"world","interaction_version":1,"dynamics_version":1},
+  {"type":"world","dynamics_version":1,"dynamics_kind":"life_transition","record_id":"t","key":"dynamics:life_transition:t","status":"completed","actor":"A","title":"Work","description":"Work","transition_kind":"employment"}
+ ]'::jsonb) loop
+  caught:=false;
+  begin perform public.nw_assert_story_event_shape(bad);
+  exception when raise_exception then caught:=true; end;
+  if not caught then raise exception 'Invalid story shape accepted: %',bad; end if;
+ end loop;
+end $story$;
 rollback;
