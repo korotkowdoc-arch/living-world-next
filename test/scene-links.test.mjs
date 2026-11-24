@@ -1,8 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {sceneReaderUrl,parseSceneReaderHash,readLinkedScene} from '../public/core/scene-links.mjs';
-const worldId='fe98f295-d526-4b7e-b71c-8e4c64db1de9';
-const sceneId='72125208-c198-46d8-b64e-030ecf97c60f';
+const worldId='11111111-1111-4111-8111-111111111111';
+const sceneId='22222222-2222-4222-8222-222222222222';
 const link={worldId,sceneId};
 test('private link round trips without query, credentials or prose',()=>{
  const url=new URL(sceneReaderUrl(worldId,sceneId));
