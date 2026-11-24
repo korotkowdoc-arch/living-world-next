@@ -29,14 +29,42 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const placeRecords=new Map(records.filter(x=>x.world_record_version===1&&x.record_kind==='place').map(x=>[x.name,x]));
  const location=new Map((projection.people||[]).map(x=>[x.name,x.state_fields?.find(y=>y.field==='location')]));
  const byKind=new Map(),all=[];
+ // Multiple records may use the same place name. Do not select access arbitrarily.
+ const namedPlaces=new Map();
+ for(const r of records)if(r.world_record_version===1&&r.record_kind==='place'){
+  if(!namedPlaces.has(r.name))namedPlaces.set(r.name,[]);namedPlaces.get(r.name).push(r);
+ }
+ const currentRoutines=new Map();
+ for(const r of records)if(r.world_record_version===1&&r.record_kind==='routine'&&routineWindow(r,anchor)==='scheduled_window_not_actual_presence'){
+  if(!currentRoutines.has(r.actor))currentRoutines.set(r.actor,[]);currentRoutines.get(r.actor).push(r);
+ }
+ function candidateChecks(row,participants,kind){
+  const checks=[];
+  if(row.status==='paused')checks.push({kind:'paused_intention',source:source(row),policy:'Need a narrated reason to resume.'});
+  if(row.obstacle)checks.push({kind:'recorded_obstacle',description:clip(row.obstacle),source:source(row)});
+  if(row.place){
+   const places=namedPlaces.get(row.place)||[];
+   if(places.length>1)checks.push({kind:'ambiguous_place',place:row.place,records:places.slice(0,3).map(x=>({key:x.key,status:x.status,source:source(x)}))});
+   else if(!places.length)checks.push({kind:'place_access_unknown',place:row.place});
+   else if(['closed','restricted','damaged','destroyed'].includes(places[0].status))checks.push({kind:'recorded_place_constraint',place:row.place,status:places[0].status,access:clip(places[0].access),source:source(places[0])});
+   for(const actor of participants){
+    const known=location.get(actor);
+    if(known?.value&&known.value!==row.place)checks.push({kind:'travel_requires_story',actor,from:known.value,to:row.place,source:source(known)});
+    const overlaps=(currentRoutines.get(actor)||[]).filter(r=>r.key!==row.key&&r.place!==row.place);
+    if(overlaps.length)checks.push({kind:'competing_schedule',actor,other_places:[...new Set(overlaps.map(r=>r.place))].slice(0,3),sources:overlaps.slice(0,3).map(source),policy:'Possible scheduling conflict, not proof of actual presence.'});
+   }
+  }
+  if(!anchor&&['routine','family_duty','activity','life_transition'].includes(kind))checks.push({kind:'clock_unknown'});
+  return {checks:checks.slice(0,8),checks_omitted:Math.max(0,checks.length-8)};
+ }
  function add(kind,row,info={}){
   const participants=[...new Set([row.actor,row.counterparty,...(Array.isArray(row.actors)?row.actors:[])].filter(Boolean))];
   const relevant=participants.some(x=>focus.has(x))||!!place&&row.place===place;
-  const where=row.place&&placeRecords.get(row.place);
+  const where=row.place&&namedPlaces.get(row.place)?.length===1?placeRecords.get(row.place):null;
   const candidate={kind,key:row.key||row.plan_id||row.commitment_id||row.id||null,actors:participants,title:clip(row.title||row.name||row.goal||row.activity||row.description||row.evidence),
    status:row.status||'unknown',source:source(row),place:row.place||null,
    location_status:where?.status||null,location_source:source(where),focus_match:relevant,
-   next_step:clip(row.next_step),obstacle:clip(row.obstacle),...info,certainty:'candidate_only_not_performed'};
+   next_step:clip(row.next_step),obstacle:clip(row.obstacle),...info,...candidateChecks(row,participants,kind),certainty:'candidate_only_not_performed'};
   all.push(candidate);if(!byKind.has(kind))byKind.set(kind,[]);byKind.get(kind).push(candidate);
  }
  const timing=row=>{
@@ -95,7 +123,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const selectedActors=[...focus],omittedActors=new Set();
  const addActor=name=>{if(!text(name)||selectedActors.includes(name))return;if(selectedActors.length<12)selectedActors.push(name);else omittedActors.add(name);};
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
- const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],omitted:{}}]));
+ const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],omitted:{}}]));
  const actorRows=(actor,kind,row,cap)=>{const ctx=actorIndex.get(actor);if(!ctx)return;
   if(ctx[kind].length<cap)ctx[kind].push(row);else ctx.omitted[kind]=(ctx.omitted[kind]||0)+1;
  };
@@ -116,9 +144,23 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const e of recent(projection.offscreen||[])){
   for(const actor of new Set([e.actor,...(Array.isArray(e.actors)?e.actors:[])].filter(Boolean)))actorRows(actor,'recent_offscreen',{description:clip(e.description||e.evidence),place:clip(e.place),source:source(e)},2);
  }
+ // Actor context includes material means and social constraints, not just motives.
+ for(const b of recent(projection.balances||[]))actorRows(b.actor,'resources',{kind:'balance',currency:b.currency,known:b.known===true,balance:b.known===true?b.balance:null,recorded_delta:b.delta,source:source(b)},4);
+ for(const item of recent(projection.items||[]))if(item.custody_status==='held'&&item.holder)actorRows(item.holder,'resources',{kind:'held_item',item_id:item.item_id,name:clip(item.name),custody_status:'held',source:source(item)},4);
+ for(const r of recent(records)){
+  if(r.growth_version===1&&r.growth_kind==='skill')actorRows(r.actor,'experience',{kind:'skill',name:clip(r.name),status:r.status,description:clip(r.description),source:source(r)},5);
+  if(r.activity_version===1&&r.activity_kind==='habit')actorRows(r.actor,'experience',{kind:'habit',name:clip(r.name),status:r.status,frequency:clip(r.frequency),description:clip(r.description),source:source(r)},5);
+  if(r.social_record_version===1&&r.social_kind==='membership')actorRows(r.actor,'responsibilities',{kind:'membership',group_id:r.group_id,status:r.status,role:clip(r.role),source:source(r)},6);
+  if(r.consequence_version===1&&r.status!=='resolved')actorRows(r.actor,'responsibilities',{kind:'consequence',category:r.consequence_kind,status:r.status,description:clip(r.description),source:source(r)},6);
+  if(r.dynamics_version===1&&r.dynamics_kind==='bond'&&!closed.has(r.status)){
+   for(const actor of new Set([r.actor,r.counterparty]))actorRows(actor,'responsibilities',{kind:'bond',bond_type:r.bond_type,actor:r.actor,counterparty:r.counterparty,status:r.status,source:source(r)},6);
+  }
+  if(r.dynamics_version===1&&r.dynamics_kind==='family_duty'&&r.status==='active')for(const actor of r.actors||[])actorRows(actor,'responsibilities',{kind:'family_duty',title:clip(r.title),every_days:r.every_days,starts_on:r.starts_on,ends_on:r.ends_on,source:source(r)},6);
+ }
+ for(const o of recent(projection.obligations||[]))if(!closed.has(text(o.status)))actorRows(o.actor,'responsibilities',{kind:'commitment',title:clip(o.description||o.evidence),status:o.status,deadline:o.due_at||o.deadline||o.due||null,source:source(o)},6);
  // Round-robin across actors AND categories, reserving counts up front.
  // Bound extra turn payload even if all participants have lengthy records.
- const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen'];
+ const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen','resources','experience','responsibilities'];
  const actor_context=actorQueues.map(({actor,age,omitted,...rows})=>({actor,age,omitted:Object.fromEntries(kinds.map(k=>[k,(omitted[k]||0)+rows[k].length])),...Object.fromEntries(kinds.map(k=>[k,[]]))}));
  const actorBudget=18000;
  for(let i=0;i<12;i++)for(const kind of kinds)for(let j=0;j<actor_context.length;j++){
@@ -151,6 +193,6 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   memory_complete:opts.complete!==false,focus:{actors:[...focus],place:place||null},candidates,omitted_candidates:all.length-candidates.length,
   relationship_context,relationship_context_omitted,life_context,actor_context,actor_context_omitted:omittedActors.size,
   drivers:storyDrivers(projection,directives,{max:8,actors:[...focus]}),warnings,
-  workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Choose only developments compatible with elapsed fictional time, access, motives and player agency; show them in narrative (including offscreen if appropriate).','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
+  workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
   policy:'This is a read-only turn proposal, not simulation results. No candidate changes world state, completes a deadline, transfers a resource, reveals a secret or proves presence. The player controls their own character.'};
 }
