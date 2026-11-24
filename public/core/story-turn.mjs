@@ -37,6 +37,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const r of records)if(r.world_record_version===1&&r.record_kind==='place'){
   if(!namedPlaces.has(r.name))namedPlaces.set(r.name,[]);namedPlaces.get(r.name).push(r);
  }
+ const stockByKey=new Map((projection.stock||[]).map(s=>[JSON.stringify([s.holder,s.product_id,s.unit]),s]));
+ const enterpriseById=new Map(records.filter(r=>r.dynamics_kind==='enterprise').map(r=>[r.record_id,r]));
  const balancesByActor=new Map((projection.balances||[]).map(b=>[JSON.stringify([b.actor,b.currency]),b]));
  const itemsById=new Map((projection.items||[]).map(i=>[i.item_id,i]));
  const currentRoutines=new Map();
@@ -58,6 +60,10 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
     const overlaps=(currentRoutines.get(actor)||[]).filter(r=>r.key!==row.key&&r.place!==row.place);
     if(overlaps.length)checks.push({kind:'competing_schedule',actor,other_places:[...new Set(overlaps.map(r=>r.place))].slice(0,3),sources:overlaps.slice(0,3).map(source),policy:'Possible scheduling conflict, not proof of actual presence.'});
    }
+  }
+  if(row.dynamics_kind==='production_order'){
+   const enterprise=enterpriseById.get(row.enterprise_id);if(enterprise?.status!=='operating')checks.push({kind:'enterprise_not_operating',status:enterprise?.status||'unknown',source:source(enterprise)});
+   for(const l of row.stock_lines||[])if(l.quantity<0){const s=stockByKey.get(JSON.stringify([row.actor,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity< -l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:-l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
   if(row.dynamics_kind==='market_offer'||row.dynamics_kind==='economic_agreement'||row.dynamics_kind==='payment_schedule'){
    const payer=row.dynamics_kind==='market_offer'?row.counterparty:row.actor;
@@ -108,6 +114,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.growth_version===1&&r.growth_kind==='project'&&['planned','active','paused'].includes(r.status))add('project',r,{timing:timing(r)});
   if(r.dynamics_version===1){
    if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor,dutyOccurrences.get(r.record_id)||[]);if(window)add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
+   if(r.dynamics_kind==='production_order'&&['planned','ongoing'].includes(r.status))add('production_order',r,{enterprise_id:r.enterprise_id,stock_lines:r.stock_lines,timing:timing(r)});
+   if(r.dynamics_kind==='enterprise'&&['planned','operating','suspended'].includes(r.status))add('enterprise',r,{business_kind:r.business_kind,timing:timing(r)});
    if(r.dynamics_kind==='payment_schedule'){const window=paymentScheduleWindow(r,anchor,paymentOccurrences.get(r.record_id)||[]);if(window)add('payment_schedule',r,{...window,amount:r.amount,currency:r.currency,payment_kind:r.payment_kind,timing:'reached_requires_story'});}
    if(r.dynamics_kind==='employment'&&['offered','active','suspended'].includes(r.status))add('employment',r,{amount:r.amount,currency:r.currency,pay_period:r.pay_period,timing:timing(r)});
    if(r.dynamics_kind==='market_offer'&&['available','reserved'].includes(r.status))add('market_offer',r,{offer_kind:r.offer_kind,amount:r.amount,currency:r.currency,item_id:r.item_id,timing:timing(r)});
@@ -205,6 +213,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  }
  // Actor context includes material means and social constraints, not just motives.
  for(const b of recent(projection.balances||[]))actorRows(b.actor,'resources',{kind:'balance',currency:b.currency,known:b.known===true,balance:b.known===true?b.balance:null,recorded_delta:b.delta,source:source(b)},4);
+ for(const s of recent(projection.stock||[]))actorRows(s.holder,'resources',{kind:'stock',product_id:s.product_id,unit:s.unit,known:s.known,quantity:s.quantity,recorded_delta:s.delta,source:source(s)},4);
  for(const item of recent(projection.items||[]))if(item.custody_status==='held'&&item.holder)actorRows(item.holder,'resources',{kind:'held_item',item_id:item.item_id,name:clip(item.name),custody_status:'held',source:source(item)},4);
  for(const r of recent(records)){
   if(r.growth_version===1&&r.growth_kind==='skill')actorRows(r.actor,'experience',{kind:'skill',name:clip(r.name),status:r.status,description:clip(r.description),source:source(r)},5);
