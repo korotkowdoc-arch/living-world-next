@@ -180,3 +180,22 @@ test('recorded family duty occurrences close only their exact scheduled dates',(
  const window=familyDutyWindow(duty,parseStoryDate('2026-01-01'),parseStoryDate('2026-01-05'),[e]);
  assert.equal(window.occurrences,2);assert.equal(window.pending_occurrences,1);assert.equal(window.first_due_on,'2026-01-05');
 });
+
+test('turn links independent plans to actual means and possible constraints without performing them',()=>{
+ const src={scene_id:'s',event_id:'x'};
+ const p={people:[{name:'Анна',state_fields:[{field:'location',value:'Дом',source:src}]}],
+ plans:[{actor:'Анна',plan_id:'buy',goal:'Купить книгу',status:'paused',place:'Магазин',obstacle:'Закрыт',source:src}],
+ balances:[{actor:'Анна',currency:'coin',known:false,balance:null,delta:10,source:src},{actor:'Борис',currency:'coin',known:true,balance:20,source:src}],
+ items:[{item_id:'book',name:'Книга',holder:'Борис',custody_status:'held',source:src},{item_id:'key',holder:'Анна',custody_status:'held',source:src}],
+ worldFacts:[{world_record_version:1,record_kind:'place',key:'place:shop',name:'Магазин',status:'closed',source:src},
+ {world_record_version:1,record_kind:'routine',key:'routine:work',actor:'Анна',activity:'Работа',place:'Офис',status:'active',weekdays:[2],start:'09:00',end:'18:00',source:src},
+ {growth_version:1,growth_kind:'skill',actor:'Анна',name:'Письмо',status:'competent',source:src},
+ {consequence_version:1,consequence_kind:'access',actor:'Анна',status:'active',description:'Пропуск ограничен',source:src}]};
+ const snapshot=JSON.stringify(p),turn=prepareStoryTurn([{id:'s',world_time:'2026-11-24 12:00'}],p,[],{actors:['Анна']});
+ const plan=turn.candidates.find(x=>x.key==='buy'),a=turn.actor_context.find(x=>x.actor==='Анна');
+ for(const kind of ['paused_intention','recorded_obstacle','recorded_place_constraint','travel_requires_story','competing_schedule'])assert.ok(plan.checks.some(x=>x.kind===kind),kind);
+ assert.equal(a.resources.find(x=>x.kind==='balance').balance,null);assert.equal(a.resources.find(x=>x.kind==='balance').known,false);
+ assert.deepEqual(a.resources.filter(x=>x.kind==='held_item').map(x=>x.item_id),['key']);
+ assert.equal(a.experience[0].name,'Письмо');assert.equal(a.responsibilities[0].kind,'consequence');
+ assert.equal(JSON.stringify(p),snapshot);assert.ok(JSON.stringify(turn.actor_context).length<=18000);
+});
