@@ -34,12 +34,13 @@ export function applyRelationship(old,e,source){
  return result;
 }
 /** Separate episodes record what happened, not what the participants must feel. */
-const episodeKinds=new Set(['meeting','conversation','cooperation','conflict','betrayal','support','competition','shared_activity']);
+const episodeKinds=new Set(['meeting','conversation','cooperation','conflict','betrayal','support','competition','shared_activity','date','romantic_milestone','intimacy','separation']);
 export function interactionError(e){
  if(e.type!=='world'||e.interaction_version===undefined)return null;
  if(e.interaction_version!==1||!episodeKinds.has(e.interaction_kind)||
   !Array.isArray(e.actors)||e.actors.length<2||e.actors.length>12||e.actors.some(x=>!valid(x))||new Set(e.actors).size!==e.actors.length||
   !valid(e.description,600))return 'Эпизод взаимодействия требует участников, вида и описания.';
+ if(['date','romantic_milestone','intimacy','separation'].includes(e.interaction_kind)&&e.actors.length!==2)return 'Личный эпизод требует двух участников.';
  if(e.place!=null&&!valid(e.place))return 'Некорректное место встречи.';
  if(e.outcome!=null&&!valid(e.outcome,600))return 'Некорректный итог встречи.';
  return null;
