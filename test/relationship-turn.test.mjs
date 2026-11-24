@@ -214,3 +214,16 @@ test('turn candidate pages are stable and independent threads remain accessible'
  assert.equal(prepareStoryTurn(scenes,p,[],{...opts,scope:'focus'}).total_candidates,5);
  assert.throws(()=>prepareStoryTurn(scenes,p,[],{offset:-1}));
 });
+
+test('recorded goals and habits motivate independent choices without inventing new plans',()=>{
+ const source={scene_id:'s',event_id:'g'};
+ const p={people:[{name:'Анна',state_fields:[{field:'personal_goal',value:'Переехать',source},{field:'family_goal',value:null,source},{field:'career_goal',value:'Учиться',source},{field:'preference',value:'Тишина',source}]}],
+ plans:[{actor:'Анна',plan_id:'p',status:'active',goal:'Переехать',source}],
+ worldFacts:[{activity_version:1,activity_kind:'habit',key:'activity:habit:read',actor:'Анна',name:'Чтение',status:'active',frequency:'По выходным',source},{activity_version:1,activity_kind:'habit',key:'activity:habit:old',actor:'Анна',name:'Старое',status:'abandoned',source}]};
+ const snapshot=JSON.stringify(p);
+ const v=prepareStoryTurn([{id:'s',world_time:'2026-11-24'}],p,[],{actors:['Борис'],scope:'background'});
+ assert.deepEqual(v.candidates.filter(x=>x.kind==='goal_opportunity').map(x=>x.title),['Учиться']);
+ assert.equal(v.candidates.find(x=>x.kind==='habit_opportunity').timing,'frequency_not_a_schedule');
+ assert.equal(v.actor_context[0].actor,'Анна');assert.ok(v.actor_context[0].state_fields.some(x=>x.field==='preference'));
+ assert.equal(JSON.stringify(p),snapshot);
+});
