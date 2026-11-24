@@ -116,3 +116,20 @@ test('focused context carries age for exact selected names only',()=>{
  assert.equal(r.life_context.length,1);assert.equal(r.life_context[0].age.years,26);
  assert.equal(focusedSceneContext(p,{actors:['анна']},{worldTime:'2026-01-01'}).life_context.length,0);
 });
+
+test('turn attaches bounded independent actor context and background NPC motives',()=>{
+ const p={people:[{name:'Анна',state_fields:[{field:'temperament',value:'Решительная',source:{scene_id:'s1'}}]}],
+ plans:[{actor:'Борис',plan_id:'b',goal:'Устроиться на работу',status:'active',source:{scene_id:'s1'}},{actor:'Анна',plan_id:'a',goal:'Переехать',status:'active',source:{scene_id:'s2'}}],
+ knowledge:Array.from({length:6},(_,i)=>({actor:'Анна',fact:'Факт '+i,channel:'Разговор',source:{scene_id:'s2'}})).concat({actor:'Борис',fact:'Тайна Бориса',source:{scene_id:'s1'}}),
+ relationships:[{a:'Анна',b:'Борис',stance:'enemies',source:{scene_id:'s2'}}],
+ offscreen:[{actor:'Борис',description:'Сходил на собеседование',source:{scene_id:'s2'}}]};
+ const scenes=[{id:'s1',world_time:'2026-01-01'},{id:'s2',world_time:'2026-01-02'}],snapshot=JSON.stringify(p);
+ const turn=prepareStoryTurn(scenes,p,[],{actors:['Анна'],limit:10});
+ const a=turn.actor_context[0],b=turn.actor_context.find(x=>x.actor==='Борис');
+ assert.equal(a.actor,'Анна');assert.equal(a.knowledge.length,4);assert.equal(a.omitted.knowledge,2);
+ assert.ok(a.knowledge.every(k=>k.holder==='Анна'));assert.equal(b.knowledge[0].holder,'Борис');
+ assert.equal(a.relationships[0].a,'Анна');assert.equal(b.relationships[0].b,'Борис');
+ assert.equal(b.recent_offscreen[0].description,'Сходил на собеседование');
+ assert.equal(turn.drivers.find(x=>x.kind==='npc_intention').actor,'Анна');
+ assert.equal(JSON.stringify(p),snapshot);
+});
