@@ -23,6 +23,19 @@ begin
  if (select head_scene_id from public.nw_branches where id=bid) is distinct from root then raise exception 'Rejected write changed head'; end if;
  second_scene:=public.nw_commit_scene(wid,bid,root,gen_random_uuid(),'Anna planned a new job.','2026-11-25','[{"id":"work","type":"world","dynamics_version":1,"dynamics_kind":"life_transition","record_id":"work","key":"dynamics:life_transition:work","actor":"Anna","title":"Work","transition_kind":"employment","description":"Plan","status":"planned","evidence":"Anna planned a new job."}]',0);
  if (select count(*) from public.nw_active_memory_page(wid,second_scene,20,0))<>2 then raise exception 'Ancestry missing'; end if;
+ -- Every failing append must leave the pinned head intact.
+ for result in select value from jsonb_array_elements('[
+ {"id":"x","type":"plan","actor":"Anna","plan_id":"missing","action":"resume","evidence":"Anna planned a new job."},
+ {"id":"x","type":"world","dynamics_version":1,"dynamics_kind":"life_transition","record_id":"work","key":"dynamics:life_transition:work","actor":"Boris","title":"Work","transition_kind":"employment","description":"Plan","status":"planned","evidence":"Anna planned a new job."},
+ {"id":"x","type":"world","dynamics_version":1,"dynamics_kind":"institution","record_id":"shop","key":"dynamics:institution:shop","name":"Shop","function":"Sales","group_id":"missing","place":"Town","status":"operating","description":"Shop","evidence":"Anna planned a new job."}
+ ]'::jsonb) loop
+  bad:=false;
+  begin perform public.nw_commit_scene(wid,bid,second_scene,gen_random_uuid(),'Anna planned a new job.','2026-11-26',jsonb_build_array(result),0);
+  exception when raise_exception then bad:=true; end;
+  if not bad then raise exception 'Invalid transition accepted: %',result; end if;
+  if (select head_scene_id from public.nw_branches where id=bid) is distinct from second_scene then raise exception 'Rejected transition changed head'; end if;
+ end loop;
+
  result:=public.nw_save_memory_notes(wid,root,second_scene,notes);
  if result->>'saved' is distinct from 'true' or result->>'canonical' is distinct from 'false' then raise exception 'Note receipt wrong'; end if;
  perform public.nw_save_memory_notes(wid,root,second_scene,notes);
