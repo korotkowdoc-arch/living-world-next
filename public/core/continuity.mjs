@@ -158,7 +158,7 @@ export function branchAncestry(allScenes,headId) {
   return out.reverse();
 }
 
-export function buildNextContext({world,directives=[],scenes=[],evidencePrevalidated=false,historyComplete=true}){
+export function buildNextContext({world,directives=[],scenes=[],evidencePrevalidated=false,historyComplete=true,turnOptions={}}){
   const projection=replay(scenes,directives,{evidencePrevalidated});
   return {world_id:world.id,world_title:world.title,world_seed:world.seed,start_marker:world.start_marker,
     active_branch_id:world.active_branch_id,head_scene_id:scenes.at(-1)?.id??null,directive_version:world.directive_version,auto_save:world.auto_save,
@@ -173,7 +173,7 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     recorded_consequences:consequenceView(projection,{complete:historyComplete,limit:8}),
     recorded_growth:growthView(projection,{complete:historyComplete,limit:6}),
     world_dynamics:dynamicsView(projection,{complete:historyComplete,limit:6}),
-    next_turn:prepareStoryTurn(scenes,projection,directives,{complete:historyComplete,limit:12}),
+    next_turn:prepareStoryTurn(scenes,projection,directives,{limit:12,...turnOptions,complete:historyComplete}),
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,
     memory_warning:(historyComplete?'':'История загружена не полностью. Результаты памяти НЕ полны. ')+'События проецируются только из размеченных фактов. Неразмеченные сцены необходимо читать, а не считать, будто событий в них не было.'};
