@@ -3,6 +3,7 @@ import {storyDrivers} from './story-drivers.mjs';
 import {recordedWorldAgenda} from './world-time.mjs';
 import {economyShapeError,applyMoney,applyItem} from './economy.mjs';
 import {characterStateError,applyCharacter} from './character-state.mjs';
+import {lifeRecordError,livingWorldView} from './living-world.mjs';
 
 const TYPES=new Set(['character','relationship','knowledge','money','item','commitment','world','offscreen','plan']);
 const PLAN_ACTIONS=new Set(['start','advance','pause','resume','complete','abandon']);
@@ -40,6 +41,9 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     }
     if(event.type==='knowledge'&&(!asText(event.actor)||!asText(event.fact)||!asText(event.channel)))
       errors.push(`${prefix}: нужны знающий, факт и канал знания.`);
+    if(event.type==='world'){
+      const error=lifeRecordError(event);if(error)errors.push(prefix+': '+error);
+    }
     if(event.type==='plan'){
       if(!asText(event.actor)||!asText(event.plan_id)||!PLAN_ACTIONS.has(event.action))errors.push(`${prefix}: для плана нужны герой, ID и действие.`);
       if(event.action==='start'&&!asText(event.goal))errors.push(`${prefix}: начальный план требует собственную цель героя.`);
@@ -127,6 +131,7 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     memory:projection,
     active_story_drivers:storyDrivers(projection,directives),
     recorded_agenda:recordedWorldAgenda(scenes,projection),
+    living_world:livingWorldView(scenes,projection,{complete:historyComplete,limit:8}),
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,
     memory_warning:(historyComplete?'':'История загружена не полностью. Результаты памяти НЕ полны. ')+'События проецируются только из размеченных фактов. Неразмеченные сцены необходимо читать, а не считать, будто событий в них не было.'};

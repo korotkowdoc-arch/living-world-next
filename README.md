@@ -119,3 +119,6 @@ Migration 007 adds the database-side append guard for both ordinary and revised 
 Необязательные события character со state_patch обновляют независимые свойства героя; остальные поля сохраняют свои источники. Структурированная память не угадывает состояние по отсутствию записей. MCP get_character_state и экран персонажей показывают поля, цитаты и источники по активной ветке. Не требует создания анкет при старте мира.
 
 MCP `get_scene_context` retrieves targeted evidence for up to eight recorded actors and four literal queries in the active branch. The response separates structured events and source snippets, reports incomplete memory, and does not authorize fictional knowledge transfer or automatic plot actions.
+
+## v0.13 — жизнь мира
+Вкладка «Мир» и MCP get_living_world показывают места, явно описанный распорядок, последние известные местонахождения и подтверждённые события вне кадра. Записи world_record_version=1 используют стабильный ключ place:<ID> или routine:<ID>, полный актуальный набор полей и дословное evidence. Интервал расписания не означает фактическое присутствие. get_annotation_passages позволяет читать неизменённые фрагменты канонических сцен для будущего доказательного извлечения памяти. Исторический текст не изменяется.

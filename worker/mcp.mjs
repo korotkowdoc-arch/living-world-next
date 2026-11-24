@@ -6,6 +6,8 @@
  */
 import {buildNextContext,validateScene,replay,validateEconomyAppend} from '../public/core/continuity.mjs';
 import {recordedWorldAgenda} from '../public/core/world-time.mjs';
+import {livingWorldView} from '../public/core/living-world.mjs';
+import {annotationPassages} from '../public/core/annotation-passages.mjs';
 import {economyView} from '../public/core/economy.mjs';
 import {characterStateView} from '../public/core/character-state.mjs';
 import {sceneFocusInput,focusedSceneContext,literalFocusHits} from '../public/core/scene-context.mjs';
@@ -26,6 +28,8 @@ const toolsList=[
   {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_branch_history',description:'Read exact saved scenes of active branch, newest first, in pages, without other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'get_world_economy',description:'Read recorded balances and unique item custody in the current branch, optionally by actor. Unknown balances and ownership remain unknown. Paginated evidence with scene IDs.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
+  {name:'get_living_world',description:'Read recorded places, access/status, NPC routine windows, last known locations and recorded offscreen events in the active branch. Schedule is not actual presence.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},place:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
+  {name:'get_annotation_passages',description:'Read exact paged passages of a canonical saved scene for narrator-assisted memory extraction. Returns literal source offsets and existing event IDs, NOT extracted facts; no writes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:8}},required:['world_id','scene_id']}},
   {name:'get_world_agenda',description:'Read fictional time anchors, dated unresolved commitments and NPC intentions from confirmed active-branch scenes; no real-time progression or automatic offscreen actions.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
   {name:'get_npc_agency',description:'Read evidence-backed independent NPC plans and their statuses across all annotated active-branch scenes. A plan is not a completed action and there is no hidden background simulation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140}},required:['world_id']}},
   {name:'create_world',description:'Create a world from one natural-language premise. No advance NPC forms. Returns new world ID.',inputSchema:{type:'object',properties:{description:{type:'string',minLength:8,maxLength:12000},title:{type:'string'},start_marker:{type:'string'}},required:['description']}},
@@ -136,7 +140,7 @@ async function callTool(name,args,env,token){
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
    return {...ctx,memory:compactMemory,memory_is_sample:true,
-    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy'],
+    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_annotation_passages'],
     head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
@@ -226,6 +230,28 @@ async function callTool(name,args,env,token){
     throw Error('Story changed during economy read; retry.');
    return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
     ...economyView(projection,{actor:args.actor,offset:args.offset,limit:args.limit,complete:memory.complete})};
+  }
+  case 'get_living_world':{
+   const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
+   const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
+   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
+    throw Error('Story changed while reading living world; retry.');
+   return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
+    ...livingWorldView(memory.scenes,projection,{actor:args.actor,place:args.place,offset:args.offset,limit:args.limit,complete:memory.complete})};
+  }
+  case 'get_annotation_passages':{
+   const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
+   const sceneId=assertUuid(args.scene_id);
+   const inBranch=await rpc(env,token,'nw_scene_in_active_branch',{p_world_id:world.id,p_scene_id:sceneId});
+   if(inBranch!==true)throw Error('Only current canonical scenes may be reviewed for memory.');
+   const rows=await rest(env,token,`nw_scenes?select=id,body,events,world_time&world_id=eq.${ep(world.id)}&id=eq.${ep(sceneId)}&limit=1`);
+   if(!rows?.[0])throw Error('Scene not found');
+   const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
+    throw Error('Story changed while reading source passages; retry.');
+   return {world_id:world.id,head_scene_id:active.head_scene_id,...annotationPassages(rows[0],{offset:args.offset,limit:args.limit})};
   }
   case 'get_world_agenda':{
    const world=await ownerWorld(env,token,args.world_id);

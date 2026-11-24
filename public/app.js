@@ -5,6 +5,8 @@ import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
 import {storyDrivers} from './core/story-drivers.mjs';
 import {recordedWorldAgenda} from './core/world-time.mjs';
+import {livingWorldView} from './core/living-world.mjs';
+import {annotationPassages} from './core/annotation-passages.mjs';
 import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
@@ -146,9 +148,9 @@ async function checkCloudChanges(){
 }
 
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
-  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
+  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
@@ -427,6 +429,47 @@ function renderEconomy(){
  show();
 }
 
+function renderLivingWorld(){
+ const w=state.world, output=node('div');
+ const actor=node('input','field'),place=node('input','field');actor.placeholder='Точное имя героя (необязательно)';place.placeholder='Название места (необязательно)';actor.maxLength=140;place.maxLength=140;
+ let scenes=state.scenes, complete=state.historyComplete, verified=false, offset=0;
+ const show=()=>{
+  const data=livingWorldView(scenes,replay(scenes,[],{evidencePrevalidated:verified}),{actor:actor.value,place:place.value,complete,offset,limit:20});
+  output.replaceChildren(para('Время последней сцены: '+(data.clock||'точное время неизвестно')));
+  const addSource=(card,record)=>{if(record.source?.scene_id){
+   const source=node('div','scene-body');source.hidden=true;
+   card.append(button('Открыть источник',()=>busy(async()=>{const s=await getScene(w.id,record.source.scene_id);source.textContent=s.body;source.hidden=false;}),'text-button'),source);
+  }};
+  const groups=[
+   ['Места',data.places,r=>[r.name,r.status+(r.access?' · '+r.access:''),r.description||'']],
+   ['Распорядок NPC',data.routines,r=>[r.actor+' · '+r.activity,r.place+' · '+r.start+'–'+r.end+' · дни '+r.weekdays.join(', '),r.status+' · '+(r.window==='scheduled_window_not_actual_presence'?'По расписанию возможно сейчас; присутствие не установлено':r.window==='clock_unknown'?'Точное время неизвестно':'Вне окна или неактивно')]],
+   ['Последнее известное местонахождение',data.last_known_locations,r=>[r.actor,r.location||'Явно неизвестно','Не подтверждает текущее присутствие']],
+   ['События вне кадра',data.offscreen_events,r=>[r.actor||r.actors.join(', ')||'Участник не указан',r.place||'Место не указано',r.description||'']]
+  ];
+  for(const [heading,records,labels] of groups){
+   output.append(title(heading));
+   if(!records.length)output.append(para('В этой выборке нет записей.'));
+   for(const r of records){const [a,b,c]=labels(r),card=add(node('div','rule'),node('strong','',a),para(b),para(c));addSource(card,r);output.append(card);}
+  }
+  if(offset>0)output.append(button('Предыдущая страница',()=>{offset=Math.max(0,offset-20);show();},'btn secondary'));
+  if(data.next_offset!==null)output.append(button('Следующая страница',()=>{offset=data.next_offset;show();},'btn secondary'));
+  if(!complete)output.append(node('div','notice','Загружена часть истории. Для полного состояния прочитай всю действующую ветку.'));
+ };
+ const refresh=button('Читать память всей ветки',()=>busy(async()=>{const m=await fullStructuredMemory(w);scenes=m.scenes;complete=m.complete;verified=true;offset=0;show();}),'btn secondary');
+ add(root,panel(title('Живой мир'),para('Места меняются, у NPC есть привычный распорядок и собственные дела. Записи возникают из сцен, а не из ручной карты. Расписание не доказывает присутствие.'),actor,place,row(button('Найти',()=>{offset=0;show();}),refresh),output));
+ show();
+ const review=panel(title('Разобрать старую сцену'),para('Выбери сцену из загруженной истории. Получишь точные фрагменты для извлечения воспоминаний рассказчиком; оригинальный текст не меняется.'));
+ const choices=node('select','field');for(const s of state.scenes.slice().reverse()){const opt=node('option','', (s.world_time||'Без даты')+' · '+String(s.body||'').slice(0,70));opt.value=s.id;choices.append(opt);}
+ const fragments=node('div');let cursor=0;
+ const read=()=>{const s=state.scenes.find(x=>x.id===choices.value);fragments.replaceChildren();if(!s)return;
+  const page=annotationPassages(s,{offset:cursor,limit:4});
+  for(const item of page.passages)fragments.append(add(node('div','rule'),para('Фрагмент '+item.start+'–'+item.end+' · событий с цитатой: '+item.existing_event_ids.length),node('div','scene-body',item.quote)));
+  if(cursor>0)fragments.append(button('К началу',()=>{cursor=0;read();},'btn secondary'));
+  if(page.next_offset!==null)fragments.append(button('Следующие фрагменты',()=>{cursor=page.next_offset;read();},'btn secondary'));
+ };
+ choices.addEventListener('change',()=>{cursor=0;read();});
+ add(review,choices,fragments);root.append(review);read();
+}
 function renderAgenda(){
  const w=state.world;
  const intro=panel(title('Игровое время и обязательства'),

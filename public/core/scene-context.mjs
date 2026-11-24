@@ -40,7 +40,7 @@ export function focusedSceneContext(projection,focus,{complete=true,maxChars=180
     includesText(entry.item_id,queries)||includesText(entry.name,queries)||includesText(entry.evidence,queries);
    return match(entry.actor)||match(entry.a)||match(entry.b)||
     includesText(entry.fact,queries)||includesText(entry.goal,queries)||includesText(entry.key,queries)||
-    includesText(entry.description,queries)||includesText(entry.evidence,queries);
+    includesText(entry.description,queries)||includesText(entry.name,queries)||includesText(entry.place,queries)||includesText(entry.activity,queries)||includesText(entry.evidence,queries);
   });
  }
  selected.events_replayed=projection.events_replayed;
