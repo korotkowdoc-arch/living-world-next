@@ -1,6 +1,7 @@
 import { classifyDirective,extractLocks } from './directives.mjs';
 import {storyDrivers,storyDriverPrompt} from './story-drivers.mjs';
 import {limitedNarratorMemory,narratorSceneExcerpt} from './narration-budget.mjs';
+import {agendaNarrationGuidance,recordedWorldAgenda} from './world-time.mjs';
 
 export const FOUNDATIONS = Object.freeze([
   {
@@ -43,7 +44,7 @@ export function buildWorldDraft(raw) {
   };
 }
 
-export function promptForNarrator({world, directives = [], history = [], projection = null}={}) {
+export function promptForNarrator({world, directives = [], history = [], projection = null, timeContext = null}={}) {
   if (!world?.seed) throw new Error('Нет описания выбранного мира.');
   const blocks = [
     'Ты — рассказчик интерактивного причинного мира. Художественный текст — на русском от третьего лица.',
@@ -66,6 +67,7 @@ export function promptForNarrator({world, directives = [], history = [], project
       '\nГерои могут действовать по этим намерениям, менять их или ссориться, если обстоятельства позволяют. Не приписывай им действий без сцены, основания, времени и подтверждения. Не заставляй всех искать примирение.');
   }
   if (projection) blocks.push(storyDriverPrompt(storyDrivers(projection,active)));
+  if (timeContext || (projection&&history.length))blocks.push(agendaNarrationGuidance(timeContext||recordedWorldAgenda(history,projection)));
   if (history.length) blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ (большие тексты показываются фрагментами):\n' + history.slice(-3).map(x=>narratorSceneExcerpt(x)).join('\n\n'));
   if(history.length>3)blocks.push('Показаны последние три сцены; более ранние доступны в хронологии и поиске MCP.');
   blocks.push('Не вводи новые подтверждённые факты без сцены. Создавай важных новых NPC постепенно, когда того требует история. Не сглаживай заранее установленные антагонизмы. Не требуй выбора после каждого абзаца. Если точных сведений нет, сохраняй неопределённость.');

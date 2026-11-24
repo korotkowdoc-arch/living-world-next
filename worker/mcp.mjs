@@ -4,7 +4,8 @@
  * protected resource metadata and validates OAuth client-bound user tokens.
  * Client registration, consent URLs and end-to-end ChatGPT setup require deployment.
  */
-import {buildNextContext,validateScene} from '../public/core/continuity.mjs';
+import {buildNextContext,validateScene,replay} from '../public/core/continuity.mjs';
+import {recordedWorldAgenda} from '../public/core/world-time.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
 import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
 import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
@@ -18,6 +19,7 @@ const toolsList=[
   {name:'get_actor_memory',description:'Recall a character from the entire played active branch WITHOUT manual annotation: separately return proven structured events and raw literal mentions with exact source scene IDs. Text mentions are clues, not confirmed facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:2,maxLength:140},limit:{type:'integer',minimum:1,maximum:40},event_offset:{type:'integer',minimum:0},mention_offset:{type:'integer',minimum:0}},required:['world_id','actor']}},
   {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_branch_history',description:'Read exact saved scenes of active branch, newest first, in pages, without other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
+  {name:'get_world_agenda',description:'Read fictional time anchors, dated unresolved commitments and NPC intentions from confirmed active-branch scenes; no real-time progression or automatic offscreen actions.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
   {name:'get_npc_agency',description:'Read evidence-backed independent NPC plans and their statuses across all annotated active-branch scenes. A plan is not a completed action and there is no hidden background simulation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140}},required:['world_id']}},
   {name:'create_world',description:'Create a world from one natural-language premise. No advance NPC forms. Returns new world ID.',inputSchema:{type:'object',properties:{description:{type:'string',minLength:8,maxLength:12000},title:{type:'string'},start_marker:{type:'string'}},required:['description']}},
   {name:'add_world_directive',description:'Save the owner’s plain-language world rule verbatim. Never rewrite it to sound more conciliatory.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},text:{type:'string'}},required:['world_id','text']}},
@@ -127,7 +129,7 @@ async function callTool(name,args,env,token){
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    return {...ctx,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(({id,world_time,body})=>({id,world_time,body})),
-    narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory}),
+    narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
     warning:history.complete?ctx.memory_warning:'Structured memory reached the 50,000-scene safety cap; partial data cannot justify facts about earlier history.'};
   }
   case 'search_story_memories':{
@@ -173,6 +175,19 @@ async function callTool(name,args,env,token){
    const limit=Math.max(1,Math.min(100,Number(args.limit)||40));
    const rows=await rpc(env,token,'nw_actor_history',{p_world_id:args.world_id,p_actor:actor,p_limit:limit,p_offset:Math.max(0,Math.floor(Number(args.offset)||0))});
    return {actor,events:rows,more_may_exist:rows.length===limit,source:'confirmed structured events in active ancestry',unannotated_scenes:'not indexed: use search_story_memories or get_branch_history'};
+  }
+  case 'get_world_agenda':{
+   const world=await ownerWorld(env,token,args.world_id);
+   const before=await branch(env,token,world);
+   const memory=await readStructuredMemory(env,token,world,before.head_scene_id);
+   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const agenda=recordedWorldAgenda(memory.scenes,projection,{maxEntries:100});
+   const current=await ownerWorld(env,token,world.id);
+   const after=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==before.head_scene_id)
+    throw Error('Story changed while reading the agenda; retry.');
+   return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:before.head_scene_id,
+    memory_complete:memory.complete,...agenda,interpretation:'Recorded commitments and dates are not simulated in the background. The current fictional time may be unknown if recent scenes have no date.'};
   }
   case 'get_npc_agency':{
    const world=await ownerWorld(env,token,args.world_id);

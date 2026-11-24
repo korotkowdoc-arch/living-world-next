@@ -4,6 +4,7 @@ import {prepareRevision} from './core/revisions.mjs';
 import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
 import {storyDrivers} from './core/story-drivers.mjs';
+import {recordedWorldAgenda} from './core/world-time.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
@@ -143,9 +144,9 @@ async function checkCloudChanges(){
 }
 
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
-  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
+  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
@@ -357,6 +358,53 @@ function renderArchive(){const w=state.world;
  }));
  add(box,title('Проверить сохранённый архив'),para('Проверка содержимого и контрольной суммы без загрузки файла на сервер.'),upload,inspection);
  root.append(box);
+}
+
+/** Fictional time never ticks in the background: we display only saved scenes. */
+function renderAgenda(){
+ const w=state.world;
+ const intro=panel(title('Игровое время и обязательства'),
+  para('Время определяют только сыгранные сцены. Обещания и планы не выполняются автоматически, пока ты не играешь.'));
+ const output=node('div');
+ const show=(scenes,complete,isVerified)=>{
+  const projection=replay(scenes,[],{evidencePrevalidated:isVerified});
+  const agenda=recordedWorldAgenda(scenes,projection,{maxEntries:80});
+  output.replaceChildren();
+  output.append(para('Последнее указанное время: '+(agenda.latest_recorded_time||'не установлено')+
+   (agenda.anchor_is_latest_scene?'':' · после последней даты есть сцены без точного времени')));
+  if(!agenda.anchor_is_latest_scene&&agenda.latest_recorded_time)
+   output.append(node('div','notice','Последняя указанная дата не обязательно является текущей. Не перескакивай к ней автоматически.'));
+  if(!agenda.items.length)output.append(para('Сроков и активных целей в загруженных подтверждённых событиях не отмечено.'));
+  for(const item of agenda.items){
+   const description=item.kind==='npc_plan'?'Цель NPC':'Обязательство';
+   const line=node('div','rule');
+   add(line,node('strong','',description+' · '+(item.actor||'участник не указан')),
+    para(item.title),para('Срок: '+(item.deadline||'не указан')+' · состояние: '+item.status),
+    para(item.timing==='date_past_status_requires_verification'
+      ?'Дата срока уже раньше последнего известного времени — требуется проверить, было ли исполнение.'
+      :item.timing==='future_date_as_recorded'?'Срок в будущем по записанной дате; никаких действий автоматически не произойдёт.'
+      :item.timing==='same_day_time_uncertain'?'Точное время в пределах суток не установлено.'
+      :'Момент исполнения не установлен; нельзя делать вывод о нарушении.'),
+    para('Источник: '+(item.source?.scene_id||'не указан')));
+   output.append(line);
+  }
+  if(agenda.omitted_items>0)output.append(para('Не показано дополнительных записей: '+agenda.omitted_items));
+  for(const warning of agenda.chronology_to_review.slice(-5))output.append(
+   node('div','notice','Возможный переход назад по времени: '+warning.from+' → '+warning.to+
+    ' (сцены '+warning.from_scene_id+' / '+warning.to_scene_id+'). Это может быть флешбэк.'));
+  if(!complete)output.append(node('div','notice','История загружена не полностью: в старых сценах могут быть другие сроки, цели или изменения статуса.'));
+ };
+ show(state.scenes,state.historyComplete,false);
+ const refresh=button('Просмотреть время во всей действующей истории',()=>busy(async()=>{
+  refresh.disabled=true;
+  try{
+   const memory=await fullStructuredMemory(w);
+   show(memory.scenes,memory.complete,true);
+   toast('Хронология обновлена из подтверждённой памяти.');
+  }finally{refresh.disabled=false;}
+ }),'btn secondary');
+ add(intro,output,row(refresh),para('Сведения о времени не сравниваются с настоящими часами. Срок — лишь зафиксированное условие, а не сигнал немедленного изменения истории.'));
+ root.append(intro);
 }
 
 function renderDirector(){const w=state.world;add(root,panel(title('Состояние памяти'),para('Режиссёрская информация отделена от художественного текста.'),node('div','rule',`Загружено сцен: ${state.scenes.length}${state.hasOlder?' (есть ещё)': ''}`),node('div','rule',`Текущая ветка: ${w.active_branch_id}`)));
