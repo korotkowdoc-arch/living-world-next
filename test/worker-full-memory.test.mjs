@@ -31,7 +31,10 @@ test('MCP reads more than 1000 annotated scenes without large literary bodies',a
   assert.equal(obj.isError,false);assert.ok(pages>=7);
   assert.equal(obj.structuredContent.confirmed_scene_count,length);
   assert.equal(obj.structuredContent.memory_complete,true);
-  assert.equal(obj.structuredContent.memory.plans[0].goal,'Одержать победу');
+  assert.equal(obj.structuredContent.memory.records.plans[0].goal,'Одержать победу');
+  assert.equal(obj.structuredContent.memory_is_sample,true);
+  assert.equal(obj.structuredContent.memory.counts.plans,1);
+  assert.ok(obj.structuredContent.memory_retrieval_tools.includes('get_actor_history'));
   assert.ok(!obj.structuredContent.warning.includes('Only latest 1000'));
   const agency=await worker.fetch(call('get_npc_agency',{world_id:w,actor:'Драко'}),env);
   assert.equal((await agency.json()).result.structuredContent.plans.length,1);

@@ -7,6 +7,7 @@
 import {buildNextContext,validateScene,replay} from '../public/core/continuity.mjs';
 import {recordedWorldAgenda} from '../public/core/world-time.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
+import {limitedNarratorMemory,boundedMcpScene} from '../public/core/narration-budget.mjs';
 import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
 import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
 
@@ -127,8 +128,11 @@ async function callTool(name,args,env,token){
    ]);
    if((lastScenes[0]?.id??null)!==active.head_scene_id)throw Error('Scene head changed while reading recent history; retry');
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
-   return {...ctx,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
-    recent_scenes:lastScenes.slice().reverse().map(({id,world_time,body})=>({id,world_time,body})),
+   const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
+   return {...ctx,memory:compactMemory,memory_is_sample:true,
+    memory_retrieval_tools:['get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda'],
+    head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
+    recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
     warning:history.complete?ctx.memory_warning:'Structured memory reached the 50,000-scene safety cap; partial data cannot justify facts about earlier history.'};
   }

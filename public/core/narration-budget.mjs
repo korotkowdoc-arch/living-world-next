@@ -76,3 +76,18 @@ export function narratorSceneExcerpt(scene,{maxChars=12000}={}){
   '\n[… фрагмент сцены сокращён: '+(text.length-max)+' символов; для полного текста используй get_story_scene('+id+') …]\n'+
   text.slice(-end);
 }
+
+/** Bound MCP scene payloads too, not only the prose prompt. Large scenes remain available
+ * through get_story_scene by exact ID, without overflowing get_world_context.
+ */
+export function boundedMcpScene(scene,{maxChars=12000}={}){
+ const id=String(scene?.id||'');
+ const body=String(scene?.body||'');
+ const max=Math.max(1000,Math.min(16000,Number(maxChars)||12000));
+ if(body.length<=max)return {id,world_time:scene?.world_time??null,body,
+   body_truncated:false,original_body_chars:body.length};
+ const first=Math.floor(max/4),last=max-first;
+ return {id,world_time:scene?.world_time??null,
+  body:body.slice(0,first)+'\n[… '+(body.length-max)+' символов пропущено; полный текст: get_story_scene('+id+') …]\n'+body.slice(-last),
+  body_truncated:true,original_body_chars:body.length};
+}

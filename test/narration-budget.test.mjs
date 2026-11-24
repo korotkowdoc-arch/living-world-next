@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {limitedNarratorMemory,narratorSceneExcerpt} from '../public/core/narration-budget.mjs';
+import {limitedNarratorMemory,narratorSceneExcerpt,boundedMcpScene} from '../public/core/narration-budget.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
 
 const source={scene_id:'a-source',event_id:'a-event',world_time:'1991-09-01'};
@@ -47,4 +47,15 @@ test('explicitly unknown facts do not become invented confirmed events',()=>{
  assert.equal(summary.records.knowledge.length,0);
  assert.equal(summary.memory_is_not_exhaustive,true);
  assert.match(summary.source_rule,/не заменяет первоисточник/);
+});
+
+test('MCP world context scenes are bounded even when individual scenes reach 200k characters',()=>{
+ const record=boundedMcpScene({id:'scene-abc',world_time:'1991-09-01',body:'A'.repeat(198000)});
+ assert.equal(record.body_truncated,true);
+ assert.equal(record.original_body_chars,198000);
+ assert.ok(record.body.length<12500);
+ assert.match(record.body,/get_story_scene\(scene-abc\)/);
+ const short=boundedMcpScene({id:'s',body:'Текст сцены'});
+ assert.equal(short.body_truncated,false);
+ assert.equal(short.body,'Текст сцены');
 });
