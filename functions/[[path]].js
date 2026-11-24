@@ -3,6 +3,7 @@
  * All personal data remains behind Supabase owner JWT + RLS; no service-role secret.
  */
 import worker from '../worker/mcp.mjs';
+import {fictionDraft} from '../worker/fiction-draft.mjs';
 import {PUBLIC_SUPABASE_CONFIG,PUBLIC_OAUTH_CLIENT_ID} from '../public/lib/public-config.mjs';
 
 export const MCP_BASE='https://living-world-next.pages.dev/mcp';
@@ -10,6 +11,7 @@ const ALLOWED=new Set(['/mcp','/health','/.well-known/oauth-protected-resource',
 
 export function onRequest(context){
   const url=new URL(context.request.url);
+  if(url.pathname==='/api/fiction-draft')return fictionDraft(context.request,{SUPABASE_URL:PUBLIC_SUPABASE_CONFIG.url,SUPABASE_ANON_KEY:PUBLIC_SUPABASE_CONFIG.key});
   if(!ALLOWED.has(url.pathname))return context.next();
   // Only public project data is embedded. OAuth client ID is configured in Pages settings,
   // not guessed or copied from the legacy LIVING WORLD integration.

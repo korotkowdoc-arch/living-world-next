@@ -1,7 +1,13 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-24. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## Текущее состояние — v0.21.0 кандидат первой игровой версии
+## Текущее состояние — v0.21.1 main / v0.22.0 candidate
+- [x] v0.21.0 PR #3 merged; Node #154 и PostgreSQL #53 прошли, 011 установлена, rollback E2E прошёл; OAuth MCP чтение подтверждено.
+- [x] v0.21.1 PR #4 merged `2a9037f`, JS/SQL CI success. Прямые ссылки на сохранённые сцены и приватная читалка. Публичное развёртывание и iPhone ещё не проверены.
+- [x] v0.22.0: кандидат отдельной мастерской обычной прозы, два фиксированных Gemini model IDs, явное согласие, ограничение длины, аутентификация, ключ на один запрос, без передачи полной памяти/автозаписи/автоповтора. Тесты mock добавлены.
+- [ ] CI v0.22.0, реальный вызов при наличии бесплатного ключа владельца, мобильная проверка, самостоятельная проверка тарифа провайдером (не реализована).
+
+## Исторические задачи v0.21.0
 - [x] v0.20.0 опубликована; производство и выбор игрока реализованы в PR #3.
 - [ ] Итоговый CI и миграция 011; публикация v0.21.0.
 - [ ] Подключить именно NEXT MCP к ChatGPT, проверить чтение выбранного мира, реальное решение игрока, сохранение и iPhone. Не откладывать игру ради дополнительных механик.
@@ -188,3 +194,4 @@
 ## Private mobile reader — candidate
 - [x] Direct fragment links for already committed scenes; owner authentication, exact scene/world identity, active-ancestry check and alternate-branch warning; standalone read-only reader, font size, copy link in the existing chronicle. MCP save_scene and get_story_scene return read_url. No new SQL, external API calls, credentials or changes to story data. PWA caches the static module only. Added unit tests.
 - [ ] CI, live deployment and authenticated iPhone verification pending. General external narrator/API integration is not part of this change.
+
