@@ -3,7 +3,7 @@
  * this file only limits what is copied into one story-generation prompt.
  */
 const PRIORITY=['plans','obligations','relationships','knowledge','balances','people','worldFacts','items','offscreen'];
-const META=new Set(['source','world_time','event_id','scene_id','id','status','actor','a','b','stance','goal','known','state_fields','name']);
+const META=new Set(['source','world_time','event_id','scene_id','id','status','actor','a','b','stance','goal','known','state_fields','name','topic_id','channel','fact','social_kind','actors','group_id','visibility']);
 function compactValue(value,depth=0){
  if(value===null||typeof value==='boolean'||typeof value==='number')return value;
  if(typeof value==='string'){

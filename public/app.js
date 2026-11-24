@@ -7,13 +7,15 @@ import {storyDrivers} from './core/story-drivers.mjs';
 import {recordedWorldAgenda} from './core/world-time.mjs';
 import {livingWorldView} from './core/living-world.mjs';
 import {annotationPassages} from './core/annotation-passages.mjs';
+import {socialWorldView} from './core/social-world.mjs';
+import {knowledgeView} from './core/knowledge.mjs';
 import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
-import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,cancelArchiveImport,fullStructuredMemory} from './lib/storage.mjs';
+import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,cancelArchiveImport,fullStructuredMemory,readMemoryNotes} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
@@ -149,9 +151,9 @@ async function checkCloudChanges(){
 }
 
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['social','Общество'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
-  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
+  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='social')renderSocialWorld();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
@@ -470,6 +472,41 @@ function renderLivingWorld(){
  };
  choices.addEventListener('change',()=>{cursor=0;read();});
  add(review,choices,fragments);root.append(review);read();
+}
+function renderSocialWorld(){
+ const w=state.world,out=node('div'),actor=node('input','field'),group=node('input','field');
+ actor.placeholder='Имя героя';group.placeholder='Группа или ID';actor.maxLength=140;group.maxLength=140;
+ let scenes=state.scenes,complete=state.historyComplete,verified=false,offset=0;
+ const source=(card,r)=>{if(!r.source?.scene_id)return;const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);};
+ const show=()=>{
+  const p=replay(scenes,[],{evidencePrevalidated:verified}),view=socialWorldView(p,{actor:actor.value,group:group.value,complete,offset,limit:20});
+  out.replaceChildren();
+  for(const [heading,rows] of [['Организации',view.groups],['Членство',view.memberships],['Независимые сюжетные линии',view.threads]]){
+   out.append(title(heading));
+   if(!rows.length)out.append(para('Нет записей в этой выборке.'));
+   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.name||r.title||r.actor),para([r.group_id,r.role,r.status,r.visibility].filter(Boolean).join(' · ')),para(r.purpose||r.description||''),para(r.actors?.join(', ')||''));source(card,r);out.append(card);}
+  }
+  if(actor.value.trim()){
+   const view=knowledgeView(p,{actor:actor.value,complete,offset,limit:20});out.append(title('Что знает или считает герой'));
+   for(const r of view.records){const card=add(node('div','rule'),node('strong','',r.content),para(r.status+' · '+r.channel),para(r.informant||''));source(card,r);out.append(card);}
+   if(!view.records.length)out.append(para('Записанных сведений нет; это не доказывает незнание.'));
+   if(view.next_offset!==null&&out.querySelector('[data-more-knowledge]')===null){const more=button('Ещё сведения',()=>{offset=view.next_offset;show();},'btn secondary');more.dataset.moreKnowledge='1';out.append(more);}
+  }
+  if(offset)out.append(button('Предыдущая страница',()=>{offset=Math.max(0,offset-20);show();},'btn secondary'));
+  if(view.next_offset!==null)out.append(button('Следующая страница',()=>{offset=view.next_offset;show();},'btn secondary'));
+  if(!complete)out.append(node('div','notice','Память загружена частично.'));
+ };
+ const refresh=button('Прочитать всю память',()=>busy(async()=>{const m=await fullStructuredMemory(w);scenes=m.scenes;complete=m.complete;verified=true;offset=0;show();}),'btn secondary');
+ const notesOut=node('div');let notesOffset=0;
+ const getNotes=async(append=false)=>{if(!append){notesOffset=0;notesOut.replaceChildren();}
+  const rows=await readMemoryNotes(w,{actor:actor.value.trim()||null,offset:notesOffset});
+  for(const r of rows){const card=add(node('div','rule'),node('strong','',r.note.summary),para('Предложение памяти · '+r.note.kind),para(r.note.quote));source(card,{source:{scene_id:r.scene_id}});notesOut.append(card);}
+  notesOffset+=rows.length;more.hidden=rows.length<20;
+  if(!append&&!rows.length)notesOut.append(para('Предложений пока нет.'));};
+ const more=button('Ещё предложения',()=>busy(()=>getNotes(true)),'btn secondary');more.hidden=true;
+ root.append(panel(title('Общество и личные знания'),para('Состав групп, личные убеждения и чужие сюжетные линии остаются раздельными. Не каждая запись известна всем героям.'),actor,group,row(button('Найти',()=>{offset=0;show();}),refresh),out),
+  panel(title('Восстановленная память'),para('Отдельные предложения рассказчика по старым сценам. Не меняют канон. Требуется миграция 009.'),button('Читать предложения',()=>busy(()=>getNotes(false)),'btn secondary'),notesOut,more));
+ show();
 }
 function renderAgenda(){
  const w=state.world;
