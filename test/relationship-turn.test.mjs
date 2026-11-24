@@ -275,3 +275,23 @@ test('recurring payments require exact transfers and never repeat closed dates',
  assert.equal(v.pending_occurrences,2);assert.equal(v.first_due_on,'2026-11-03');
  const m=new Map(p.worldFacts.map(x=>[x.key,x]));assert.ok(dynamicsTransitionError(m,paid));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other'}));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other',scheduled_on:'2026-11-02'}));
 });
+
+test('enterprise production consumes exact stock atomically and closes a matching order',()=>{
+ const body='Мастерская получила заказ и изготовила изделия.';
+ const e=(kind,id,fields)=>({id,type:'world',dynamics_version:1,dynamics_kind:kind,record_id:id,key:'dynamics:'+kind+':'+id,description:body,evidence:body,...fields});
+ const group={id:'g',type:'world',social_record_version:1,social_kind:'group',record_id:'shop',key:'social:group:shop',name:'Мастерская',purpose:'Изделия',status:'active',evidence:body};
+ const enterprise=e('enterprise','shop',{actor:'Мастерская',group_id:'shop',title:'Мастерская',place:'Город',business_kind:'Производство',status:'operating'});
+ const count=e('stock_operation','count',{actor:'Мастерская',status:'recorded',stock_action:'count',stock_lines:[{product_id:'wood',unit:'шт',quantity:10},{product_id:'chair',unit:'шт',quantity:0}]});
+ const lines=[{product_id:'wood',unit:'шт',quantity:-4},{product_id:'chair',unit:'шт',quantity:2}];
+ const order=e('production_order','order',{actor:'Мастерская',enterprise_id:'shop',title:'Стулья',status:'planned',stock_lines:lines});
+ const initial={id:'s',body,world_time:'2026-11-24',events:[group,enterprise,count,order]};
+ const before=replay([initial]);assert.equal(before.validation_warnings.length,0);
+ assert.ok(prepareStoryTurn([initial],before,[],{}).candidates.find(x=>x.kind==='production_order').checks.some(x=>x.kind==='stock_available'));
+ const operation=e('stock_operation','batch',{actor:'Мастерская',status:'recorded',stock_action:'produce',stock_lines:lines});
+ const closed={...order,id:'closed',status:'completed',stock_record_id:'batch',outcome:'Готово'};
+ const final=replay([initial,{id:'s2',body,events:[operation,closed]}]);
+ assert.equal(final.validation_warnings.length,0);assert.equal(final.stock.find(x=>x.product_id==='wood').quantity,6);assert.equal(final.stock.find(x=>x.product_id==='chair').quantity,2);
+ const bad=replay([initial,{id:'bad',body,events:[{...operation,stock_lines:[{product_id:'wood',unit:'шт',quantity:-11},lines[1]]}]}]);
+ assert.equal(bad.validation_warnings.length,1);assert.equal(bad.stock.find(x=>x.product_id==='chair').quantity,0);
+ assert.ok(dynamicsTransitionError(new Map(final.worldFacts.map(x=>[x.key,x])),closed));
+});
