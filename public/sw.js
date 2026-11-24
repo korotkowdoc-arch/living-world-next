@@ -1,5 +1,5 @@
 /** Offline app shell only. NEVER cache Supabase, MCP, responses, or personal story data. */
-const CACHE='living-world-next-shell-v31';
+const CACHE='living-world-next-shell-v32';
 const SHELL=['/','/index.html','/style.css','/app.js','/manifest.webmanifest','/icon.svg',
  '/core/narration-budget.mjs','/core/cloud-sync.mjs','/core/reader.mjs','/core/actor-memory.mjs','/core/story-drivers.mjs','/core/world-time.mjs','/core/economy.mjs','/core/character-state.mjs','/core/scene-context.mjs','/core/living-world.mjs','/core/annotation-passages.mjs','/core/staged-import.mjs','/core/social-world.mjs','/core/knowledge.mjs','/core/memory-notes.mjs','/core/relationship-memory.mjs','/core/activities.mjs','/core/consequences.mjs','/core/growth.mjs','/core/world-dynamics.mjs','/core/story-turn.mjs','/core/ancestry-reader.mjs','/core/scene-draft.mjs','/core/world.mjs','/core/continuity.mjs','/core/revisions.mjs','/core/directives.mjs','/core/portable.mjs','/core/literary-review.mjs','/core/request-identity.mjs',
  '/lib/session.mjs','/lib/storage.mjs','/lib/public-config.mjs','/lib/oauth-consent.mjs','/lib/oauth-return.mjs'];
