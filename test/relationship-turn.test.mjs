@@ -310,3 +310,23 @@ test('bulk transfers preserve unknown incoming balances and reject partial debit
  assert.equal(p.stock.some(x=>x.holder==='B'&&x.product_id==='steel'),false);
  assert.equal(validateScene({body,events:[op('x','count',[{...line('wood',1),extra:true}])]}).ok,false);
 });
+
+test('long-form choice stops at the scene boundary, rejects stale answers and preserves branch agency',async()=>{
+ const {playerChoiceView,resolvePlayerChoice}=await import('../public/core/world-dynamics.mjs');
+ const body='Анна ждала его ответа.';
+ const pending={id:'q',type:'world',dynamics_version:1,dynamics_kind:'player_choice',record_id:'q1',key:'dynamics:player_choice:q1',actor:'Борис',description:'Решение героя',status:'pending',question:'Что сказать?',options:[{id:'yes',text:'Согласиться'},{id:'no',text:'Отказаться'}],evidence:body};
+ const first={id:'s1',body,events:[pending]};
+ const p=replay([first]);assert.equal(p.validation_warnings.length,0);
+ const view=playerChoiceView([first],p,{worldId:'w',branchId:'b',rulesVersion:2});
+ const args={world_id:'w',branch_id:'b',expected_head:'s1',expected_rules_version:2,choice_id:'q1',selected_option:'yes'};
+ assert.equal(resolvePlayerChoice(view,args).action_text,'Согласиться');assert.equal(resolvePlayerChoice(view,{...args,selected_option:'custom',action_text:'Спросить подробнее'}).saved,false);
+ assert.throws(()=>resolvePlayerChoice(view,{...args,expected_head:'old'}));
+ assert.throws(()=>resolvePlayerChoice(view,{...args,action_text:'Другая реплика'}));
+ assert.equal(validateScene({body:body+' Потом он ушёл.',events:[pending]}).ok,false);
+ assert.equal(replay([first,{id:'s2',body:'Он ушёл, не ответив.',events:[]}]).validation_warnings.length,1);
+ const answer={...pending,id:'a',status:'answered',selected_option:'no',action_text:'Отказаться',question:undefined,options:undefined,evidence:'Борис отказался.'};
+ const second={id:'s2',body:'Борис отказался. Анна задумалась.',events:[answer]};
+ const final=replay([first,second]);assert.equal(final.validation_warnings.length,0);assert.equal(playerChoiceView([first,second],final).status,'none');
+ assert.equal(playerChoiceView([first],replay([first])).status,'awaiting_player');
+ assert.ok(dynamicsTransitionError(new Map(final.worldFacts.map(x=>[x.key,x])),answer));
+});
