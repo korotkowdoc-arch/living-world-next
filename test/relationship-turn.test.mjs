@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {replay,validateScene} from '../public/core/continuity.mjs';
+import {memoryReviewPage,draftEvidenceCoverage} from '../public/core/annotation-passages.mjs';
 import {relationshipHistory} from '../public/core/relationship-memory.mjs';
 import {reviewSceneDraft} from '../public/core/scene-draft.mjs';
 import {focusedSceneContext} from '../public/core/scene-context.mjs';
@@ -142,4 +143,28 @@ test('actor context has a total size budget and reports every omitted record',()
  assert.ok(JSON.stringify(turn.actor_context).length<=18000);
  for(const ctx of turn.actor_context){assert.equal(ctx.knowledge.length+(ctx.omitted.knowledge||0),10);assert.ok(ctx.knowledge.every(k=>k.holder===ctx.actor));}
  assert.ok(turn.actor_context.every(x=>x.intentions.length===1));
+});
+
+test('memory review pages overlap and preserve explicit ancestry',()=>{
+ const rows=[{id:'c',parent_scene_id:'b',events:[]},{id:'b',parent_scene_id:'a',events:[{id:'e'}]},{id:'a',parent_scene_id:null,events:[]}];
+ const page=memoryReviewPage(rows,{head:'c',limit:2});
+ assert.deepEqual(page.items.map(x=>x.annotation_state),['no_structured_events','has_structured_events']);assert.equal(page.next_offset,2);
+ assert.equal(memoryReviewPage(rows.slice(1),{head:'c',offset:2,limit:2}).items[0].scene_id,'a');
+ assert.throws(()=>memoryReviewPage([rows[0],rows[2]],{head:'c',limit:2}));
+});
+test('draft evidence coverage remains diagnostic',()=>{
+ const body='Анна вошла в дом. '+('Описание комнаты. '.repeat(200));
+ const events=[{id:'a',type:'character',name:'Анна',state_patch:{location:'Дом'},evidence:'Анна вошла в дом.'}];
+ const result=reviewSceneDraft({complete:true,scenes:[]},{body,events});
+ assert.equal(result.ok,true);assert.ok(result.evidence_coverage.passages_without_local_evidence>0);
+ assert.equal(result.saved,false);assert.ok(draftEvidenceCoverage(body,events).uncovered_examples.length<=5);
+});
+test('life transitions do not automatically change occupation or stage',()=>{
+ const body='Анна собирается сменить работу.';
+ const e={id:'job',type:'world',key:'dynamics:life_transition:job',dynamics_version:1,dynamics_kind:'life_transition',record_id:'job',transition_kind:'employment',actor:'Анна',title:'Новая работа',description:body,evidence:body,status:'planned',due_at:'2026-12-01'};
+ const scenes=[{id:'s',body,world_time:'2026-11-24',events:[e]}];const p=replay(scenes);
+ assert.equal(p.worldFacts.length,1);assert.equal(p.people.length,0);
+ assert.equal(prepareStoryTurn(scenes,p,[],{target_time:'2026-12-02'}).candidates.find(x=>x.kind==='life_transition').timing,'reached_requires_story');
+ assert.equal(validateScene({body,events:[{...e,status:'completed'}]}).ok,false);
+ assert.ok(dynamicsTransitionError(new Map([[e.key,e]]),{...e,actor:'Борис'}));
 });
