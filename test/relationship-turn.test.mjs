@@ -227,3 +227,19 @@ test('recorded goals and habits motivate independent choices without inventing n
  assert.equal(v.actor_context[0].actor,'Анна');assert.ok(v.actor_context[0].state_fields.some(x=>x.field==='preference'));
  assert.equal(JSON.stringify(p),snapshot);
 });
+
+test('shared schedules, active groups and recorded teachers create only grounded interaction opportunities',()=>{
+ const source={scene_id:'s',event_id:'x'},routine=(actor,place,key)=>({world_record_version:1,record_kind:'routine',key,actor,activity:'Учёба',place,status:'active',weekdays:[2],start:'09:00',end:'18:00',source});
+ const p={worldFacts:[routine('Анна','Школа','a'),routine('Борис','Школа','b'),routine('Вера','Дом','c'),{social_record_version:1,social_kind:'group',record_id:'club',name:'Клуб',purpose:'Чтение',status:'active',source},
+ ...['Анна','Борис','Вера'].map((actor,i)=>({social_record_version:1,social_kind:'membership',group_id:'club',actor,status:i===2?'left':'member',source})),
+ {growth_version:1,growth_kind:'skill',key:'growth:skill:s',actor:'Борис',teacher:'Вера',name:'Музыка',status:'learning',source}]};
+ const snapshot=JSON.stringify(p),scenes=[{id:'s',world_time:'2026-11-24 12:00'}];
+ const turn=prepareStoryTurn(scenes,p,[],{actors:['Другой'],scope:'background',limit:30});
+ const schedule=turn.candidates.find(x=>x.kind==='shared_schedule');
+ assert.deepEqual(schedule.actors,['Анна','Борис']);assert.equal(schedule.basis.length,2);
+ assert.deepEqual(turn.candidates.find(x=>x.kind==='group_opportunity').actors,['Анна','Борис']);
+ assert.deepEqual(turn.candidates.find(x=>x.kind==='mentorship_opportunity').actors,['Борис','Вера']);
+ assert.ok(turn.candidates.every(x=>x.certainty==='candidate_only_not_performed'));
+ assert.equal(prepareStoryTurn(scenes,p,[],{target_time:'2026-11-24 20:00'}).candidates.some(x=>x.kind==='shared_schedule'),false);
+ assert.equal(JSON.stringify(p),snapshot);
+});
