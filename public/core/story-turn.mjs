@@ -4,6 +4,7 @@
 import {parseStoryDate} from './world-time.mjs';
 import {routineWindow} from './living-world.mjs';
 import {storyDrivers} from './story-drivers.mjs';
+import {relationshipHistory} from './relationship-memory.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 const closed=new Set(['completed','complete','abandoned','resolved','ended','cancelled','canceled','decided','closed','fulfilled','done']);
 const clip=v=>typeof v==='string'?v.slice(0,300):null;
@@ -75,12 +76,26 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const xs of byKind.values())xs.sort((a,b)=>rank(a)-rank(b)||(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
  const categories=[...byKind.values()].sort((a,b)=>rank(a[0])-rank(b[0]));
  const candidates=[];for(let i=0;candidates.length<limit;i++){let added=false;for(const xs of categories){if(xs[i]){candidates.push(xs[i]);added=true;if(candidates.length===limit)break;}}if(!added)break;}
+ const relationship_context=[];
+ if(focus.size){
+  const seen=new Set();
+  for(const actor of focus){
+   const history=relationshipHistory(scenes,projection,{actor,limit:12,complete:opts.complete!==false});
+   for(const entry of history.history){
+    const key=JSON.stringify([entry.source.scene_id,entry.source.event_id]);
+    if(seen.has(key))continue;
+    seen.add(key);relationship_context.push({type:entry.type,kind:entry.kind,a:entry.a,b:entry.b,actors:entry.actors,stance:entry.stance,fields:entry.fields,description:clip(entry.description),outcome:clip(entry.outcome),source:entry.source});
+   }
+  }
+  relationship_context.sort((a,b)=>(positions.get(b.source.scene_id)??-1)-(positions.get(a.source.scene_id)??-1));
+ }
  const warnings=[];
  if(!clock)warnings.push('Последняя сцена не задаёт точное время; длительность перехода неизвестна.');
  if(clock&&proposed&&!comparable)warnings.push('Точность дат различается: длительность перехода неизвестна.');
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
   memory_complete:opts.complete!==false,focus:{actors:[...focus],place:place||null},candidates,omitted_candidates:all.length-candidates.length,
+  relationship_context:relationship_context.slice(0,12),relationship_context_omitted:Math.max(0,relationship_context.length-12),
   drivers:storyDrivers(projection,directives,{max:8}),warnings,
   workflow:['Read the pinned head and rules.','Consult relevant source scenes and each actor’s own knowledge.','Choose only developments compatible with elapsed fictional time, access, motives and player agency; show them in narrative (including offscreen if appropriate).','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
   policy:'This is a read-only turn proposal, not simulation results. No candidate changes world state, completes a deadline, transfers a resource, reveals a secret or proves presence. The player controls their own character.'};
