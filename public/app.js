@@ -13,7 +13,7 @@ import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
-import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,fullStructuredMemory} from './lib/storage.mjs';
+import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,cancelArchiveImport,fullStructuredMemory} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
@@ -87,22 +87,23 @@ function renderRestoreArchive(){
  fileInput.addEventListener('change',()=>busy(async()=>{
   out.replaceChildren();
   const file=fileInput.files?.[0];if(!file)return;
-  if(file.size>30*1024*1024)throw Error('Архив больше 30 МБ: нужен постраничный режим.');
+  if(file.size>101*1024*1024)throw Error('Архив превышает предел пакетного режима (100 МБ данных).');
   const raw=await file.text();
   const info=await inspectArchive(raw);
+  const progress=node('div','notice');progress.hidden=true;
   const save=button('Восстановить как отдельный мир',()=>busy(async()=>{
    if(!confirm(`Восстановить «${info.title}» как НОВЫЙ мир, не удаляя существующие?`))return;
    save.disabled=true;
    try{
-    const result=await restoreWorldArchive(raw);
+    const result=await restoreWorldArchive(raw,{onProgress:p=>{progress.hidden=false;progress.textContent=p.phase==='finalize'?'Все пакеты приняты. Создаётся новый мир…':'Загружено пакетов: '+p.done+' / '+p.total;}});
     toast('Восстановлен новый мир, сцен: '+result.scenes);
     await openWorld(result.world_id);
    }finally{save.disabled=false;}
   }));
   out.replaceChildren(para(`Проверено: «${info.title}», ${info.scene_count} сцен, ${info.branch_count} веток. SHA-256 совпадает.`),
-    row(save),para('При ошибке база отменит всю транзакцию. Никаких частичных миров.'));
+    row(save),progress,para('Большой архив загружается частями. При обрыве выбери тот же файл и повтори: принятые пакеты сохраняются. Мир появляется только после атомарной финальной операции.'),button('Отменить незавершённую загрузку',()=>busy(async()=>{if(confirm('Удалить только временные пакеты этого импорта? Существующие миры останутся.')){await cancelArchiveImport(raw);progress.hidden=true;toast('Незавершённая загрузка отменена.');}}),'text-button'));
  }));
- add(section,fileInput,out,para('Один запрос поддерживает до 5000 сцен / 30 МБ. Большие архивы не теряются и не изменяются.'));
+ add(section,fileInput,out,para('До 5000 сцен / 30 МБ — прежний импорт; крупнее — пакетный режим (до 50 000 записей в разделе и 100 МБ) после установки миграции 008. Реальная производительность большого импорта пока требует проверки.'));
  root.append(section);
 }
 

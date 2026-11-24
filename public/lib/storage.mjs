@@ -4,6 +4,7 @@ import {prependHistoryPage} from '../core/reader.mjs';
 import {buildWorldDraft} from '../core/world.mjs';
 import {classifyDirective} from '../core/directives.mjs';
 import {makeWorldArchive,sealArchive,readVerifiedArchive} from '../core/portable.mjs';
+import {prepareStagedArchive,uploadStagedArchive,IMPORT_MAX_BYTES} from '../core/staged-import.mjs';
 const enc=encodeURIComponent;
 export async function rpc(name,payload){return dbRequest(`/rest/v1/rpc/${name}`,{method:'POST',body:payload});}
 export async function listWorlds(){return dbRequest('/rest/v1/nw_worlds?select=*&order=updated_at.desc');}
@@ -176,15 +177,39 @@ export async function fullStructuredMemory(world,{maxScenes=50000}={}){
 /** Restore an owner-verified archive to a new world, never over existing saves.
  * SQL owns the transaction and remaps every ID. All archive bytes are verified locally.
  */
-export async function restoreWorldArchive(data){
- const a=await readVerifiedArchive(data);
- const bytes=new TextEncoder().encode(JSON.stringify(a)).byteLength;
- if(bytes>30*1024*1024)
-  throw Error('Архив больше 30 МБ. Для такого мира требуется постраничное восстановление.');
- if(a.scenes.length>5000)
-  throw Error('Архив содержит более 5000 сцен; текущий атомарный режим поддерживает до 5000.');
- const result=await rpc('nw_restore_archive',{p_archive:a});
- if(!result?.world_id||result.world_id===a.world.id)
-  throw Error('Сервер не подтвердил создание отдельного мира. Проверь список миров.');
- return result;
+const importAttempts=new Map();
+function importKey(sha){return 'nw_import_resume_'+sha;}
+function readImportId(sha){
+ const key=importKey(sha);let id=importAttempts.get(key);
+ try{id=id||localStorage.getItem(key);}catch{}
+ if(!id||!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id))id=globalThis.crypto.randomUUID();
+ importAttempts.set(key,id);try{localStorage.setItem(key,id);}catch{}
+ return id;
+}
+function clearImportId(sha){const key=importKey(sha);importAttempts.delete(key);try{localStorage.removeItem(key);}catch{}}
+export async function cancelArchiveImport(data){
+ const a=typeof data==='string'?JSON.parse(data):data;await readVerifiedArchive(a);
+ const id=readImportId(a.archive_sha256);
+ const result=await rpc('nw_import_cancel',{p_import_id:id});clearImportId(a.archive_sha256);return result;
+}
+export async function restoreWorldArchive(data,{onProgress=()=>{},request=rpc}={}){
+ const sealed=typeof data==='string'?JSON.parse(data):data;
+ const a=await readVerifiedArchive(sealed);
+ const size=new TextEncoder().encode(JSON.stringify(a)).byteLength;
+ if(size>IMPORT_MAX_BYTES)throw Error('Архив больше 100 МБ — превышен предел пакетного режима.');
+ if(size<=30*1024*1024&&a.scenes.length<=5000){
+  const result=await request('nw_restore_archive',{p_archive:a});
+  if(!result?.world_id||result.world_id===a.world.id)throw Error('Сервер не подтвердил создание отдельного мира.');
+  return result;
+ }
+ const staged=await prepareStagedArchive(a,sealed.archive_sha256);
+ const importId=readImportId(sealed.archive_sha256);
+ try{
+  const result=await uploadStagedArchive(staged,importId,{rpc:request,onProgress});
+  clearImportId(sealed.archive_sha256);return result;
+ }catch(error){
+  if(/Could not find the function|PGRST202|nw_import_begin.*schema cache/i.test(error.message||''))
+   throw Error('Для больших архивов нужна серверная миграция 008. Файл и существующие миры не изменены.');
+  throw error;
+ }
 }

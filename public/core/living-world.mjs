@@ -11,7 +11,7 @@ const short=(v,max=600)=>typeof v==='string'&&!!v.trim()&&v.length<=max;
 export function lifeRecordError(e){
  if(e.type!=='world'||e.world_record_version===undefined)return null;
  if(e.world_record_version!==1)return 'Неизвестная версия записи мира.';
- if(!['place','routine'].includes(e.record_kind)||!idPattern.test(e.record_id||'')||
+ if(!['place','routine'].includes(e.record_kind)||(typeof e.record_id!=='string'||!idPattern.test(e.record_id))||
   e.key!==e.record_kind+':'+e.record_id)return 'Нужны согласованные вид, ID и ключ записи мира.';
  if(!statuses[e.record_kind].has(e.status))return 'Неизвестное состояние записи мира.';
  if(e.record_kind==='place'){
@@ -57,7 +57,8 @@ export function livingWorldView(scenes=[],projection={},opts={}){
  const offscreen=(projection.offscreen||[]).filter(x=>
   (!actor||x.actor===actor||(Array.isArray(x.actors)&&x.actors.includes(actor)))&&
   (!place||names.has(x.place)||x.location_id===place));
- const sortLatest=x=>x.slice().reverse();
+ const position=new Map(scenes.map((s,i)=>[s.id,i]));
+ const sortLatest=x=>x.slice().reverse().sort((a,b)=>(position.get(b.source?.scene_id)??-1)-(position.get(a.source?.scene_id)??-1));
  const page=x=>sortLatest(x).slice(offset,offset+limit);
  return {memory_complete:opts.complete!==false,clock:anchor?.literal??null,clock_source:anchor?last.id:null,
   places:page(places).map(x=>({id:x.record_id,name:x.name,status:x.status,description:clip(x.description),access:clip(x.access),parent_place:clip(x.parent_place),source:sourceOf(x),evidence:clip(x.evidence)})),
