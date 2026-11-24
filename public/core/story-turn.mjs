@@ -65,6 +65,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.consequence_version===1&&r.status!=='resolved')add('consequence',r);
   if(r.growth_version===1&&r.growth_kind==='project'&&['planned','active','paused'].includes(r.status))add('project',r,{timing:timing(r)});
   if(r.dynamics_version===1){
+   if(r.dynamics_kind==='family_event'&&!closed.has(r.status))add('family_event',r,{family_kind:r.family_kind,timing:timing(r)});
    if(r.dynamics_kind==='contest'&&!closed.has(r.status))add('contest',r,{resource:clip(r.resource),timing:timing(r)});
    if(r.dynamics_kind==='institution'&&!closed.has(r.status))add('institution',r,{group_id:r.group_id});
    if(r.dynamics_kind==='development'&&!closed.has(r.status))add('development',r,{timing:timing(r)});
