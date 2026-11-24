@@ -8,7 +8,7 @@ import {buildNextContext,validateScene,replay,needsStatePreflight,validateStateA
 import {revisionStatePreflight} from '../public/core/revisions.mjs';
 import {recordedWorldAgenda} from '../public/core/world-time.mjs';
 import {livingWorldView} from '../public/core/living-world.mjs';
-import {annotationPassages} from '../public/core/annotation-passages.mjs';
+import {annotationPassages,memoryReviewPage} from '../public/core/annotation-passages.mjs';
 import {socialWorldView} from '../public/core/social-world.mjs';
 import {knowledgeView} from '../public/core/knowledge.mjs';
 import {relationshipHistory} from '../public/core/relationship-memory.mjs';
@@ -29,7 +29,7 @@ import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
 import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
 
 const version='2025-06-18';
-const narratorWorkflow='When the user plays or continues a saved world, read get_world_context and prepare_story_turn before writing. Retrieve exact source scenes or focused context when relevant memory is missing. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals.';
+const narratorWorkflow='When the user plays or continues a saved world, read get_world_context and prepare_story_turn before writing. Retrieve exact source scenes or focused context when relevant memory is missing. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals. When an older story has gaps, use get_memory_review_queue to locate sources and get_annotation_passages/get_story_scene to read them. If historical note storage is available, save_memory_notes can record evidence-backed retrieval aids; do not turn them into retroactive canonical events.';
 const toolsList=[
   {name:'list_worlds',description:'List the authenticated owner’s worlds.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes, and narration guidance. Reports incomplete history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
@@ -42,6 +42,7 @@ const toolsList=[
   {name:'get_branch_history',description:'Read exact saved scenes of active branch, newest first, in pages, without other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'get_world_economy',description:'Read recorded balances and unique item custody in the current branch, optionally by actor. Unknown balances and ownership remain unknown. Paginated evidence with scene IDs.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'get_living_world',description:'Read recorded places, access/status, NPC routine windows, last known locations and recorded offscreen events in the active branch. Schedule is not actual presence.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},place:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
+  {name:'get_memory_review_queue',description:'Page through active canonical scene IDs and annotation counts, pinned to expected_head. Select sources for semantic memory review; no writes and no claim of missing facts. Requires reading exact source before saving derived notes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},offset:{type:'integer',minimum:0,maximum:50000},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','expected_head']}},
   {name:'get_annotation_passages',description:'Read exact paged passages of a canonical saved scene for narrator-assisted memory extraction. Returns literal source offsets and existing event IDs, NOT extracted facts; no writes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:8}},required:['world_id','scene_id']}},
   {name:'prepare_story_turn',description:'Read a pinned, read-only next-turn plan combining time, character ages, family duties, NPC routines, commitments, projects, conflicts, institutions and places. Candidates are NOT events. Use before a scene/time jump; write and save actual events separately.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actors:{type:'array',maxItems:8,items:{type:'string',maxLength:140}},place:{type:'string',maxLength:140},target_time:{type:'string',maxLength:16},limit:{type:'integer',minimum:1,maximum:30}},required:['world_id']}},
   {name:'get_world_dynamics',description:'Read social bonds, family milestones, recurring family duties, institutions, competing claims and developments from active ancestry. Does not simulate or transfer property.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},place:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id']}},
@@ -153,11 +154,13 @@ async function callTool(name,args,env,token){
     readHistory(env,token,world.id,3,0)
    ]);
    if((lastScenes[0]?.id??null)!==active.head_scene_id)throw Error('Scene head changed while reading recent history; retry');
+   const finalWorld=await ownerWorld(env,token,world.id),finalBranch=await branch(env,token,finalWorld);
+   if(finalWorld.active_branch_id!==world.active_branch_id||finalBranch.head_scene_id!==active.head_scene_id||finalWorld.directive_version!==world.directive_version)throw Error('Story or rules changed while preparing world context; retry.');
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
    return {...ctx,memory:compactMemory,memory_is_sample:true,
-    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn'],
-    narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
+    memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn'],
+    narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:finalWorld.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
     warning:history.complete?ctx.memory_warning:'Structured memory reached the 50,000-scene safety cap; partial data cannot justify facts about earlier history.'};
@@ -256,6 +259,19 @@ async function callTool(name,args,env,token){
     throw Error('Story changed while reading living world; retry.');
    return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
     ...livingWorldView(memory.scenes,projection,{actor:args.actor,place:args.place,offset:args.offset,limit:args.limit,complete:memory.complete})};
+  }
+  case 'get_memory_review_queue':{
+   const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
+   if(args.expected_head!==null)assertUuid(args.expected_head);
+   if(active.head_scene_id!==args.expected_head)throw Error('Story changed; restart memory review.');
+   const offset=args.offset??0,limit=args.limit??20;
+   if(!Number.isInteger(offset)||offset<0||offset>50000||!Number.isInteger(limit)||limit<1||limit>40)throw Error('Invalid review page');
+   const overlap=Number(offset>0);
+   const rows=await rpc(env,token,'nw_active_memory_page',{p_world_id:world.id,p_expected_head:active.head_scene_id,p_offset:offset-overlap,p_limit:limit+1+overlap});
+   const page=memoryReviewPage(rows,{head:active.head_scene_id,offset,limit});
+   const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)throw Error('Story changed during memory review; retry.');
+   return {world_id:world.id,head_scene_id:active.head_scene_id,auto_save:current.auto_save,...page};
   }
   case 'get_annotation_passages':{
    const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
