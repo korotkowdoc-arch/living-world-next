@@ -29,3 +29,12 @@ test('SQL story shape guard covers recent personal systems inside commit and pro
  assert.match(commit,/relationship_patch'->>'affection'='affectionate'/);
  assert.match(commit,/relationship_patch'->>'respect'='respected'/);
 });
+
+test('SQL transition fold is private, ancestry-bound and runs before insert',()=>{
+ const commit=sql.slice(sql.indexOf('create or replace function public.nw_commit_scene('));
+ assert.ok(commit.indexOf('perform public.nw_assert_story_transitions')>commit.indexOf('current_head is distinct from p_expected_head'));
+ assert.ok(commit.indexOf('perform public.nw_assert_story_transitions')<commit.indexOf('insert into public.nw_scenes'));
+ assert.match(sql,/nw_story_transition_step\(jsonb,jsonb\) from public,anon,authenticated/);
+ assert.match(sql,/nw_assert_story_transitions\(uuid,uuid,jsonb\) from public,anon,authenticated/);
+ for(const m of ['Incomplete story transition ancestry','Terminal dynamics requires new ID','Established causal cycle','Invalid parent rumor','Invalid plan transition'])assert.ok(sql.includes(m));
+});
