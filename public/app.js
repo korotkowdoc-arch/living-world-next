@@ -20,7 +20,7 @@ import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {sceneReaderUrl,parseSceneReaderHash,readLinkedScene} from './core/scene-links.mjs';
-import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
+import {activeToken,readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
 import {rpc,listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,cancelArchiveImport,fullStructuredMemory,readMemoryNotes} from './lib/storage.mjs';
 
@@ -180,9 +180,36 @@ async function checkCloudChanges(){
 }
 
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['social','Общество'],['growth','Развитие'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['draft','Мастерская'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['social','Общество'],['growth','Развитие'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
-  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='social')renderSocialWorld();if(state.tab==='growth')renderGrowth();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
+  if(state.tab==='story')renderStory();if(state.tab==='draft')renderFictionDraft();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='social')renderSocialWorld();if(state.tab==='growth')renderGrowth();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
+}
+function renderFictionDraft(){
+ const box=panel(title('Литературная мастерская'),para('Независимый черновик обычной художественной прозы. Ничего не добавляется в канон автоматически. ChatGPT остаётся основным рассказчиком.'));
+ const model=node('select','field');
+ for(const [id,label] of [['gemini-3.8-flash','Gemini 3.8 Flash'],['gemini-2.5-flash-lite','Gemini 2.5 Flash-Lite']]){const o=node('option','',label);o.value=id;model.append(o);}
+ const key=node('input','field');key.type='password';key.autocomplete='off';key.placeholder='API-ключ Google AI Studio';
+ const outline=field('Опиши обычный художественный эпизод: место, герои, задача, диалоги…','field large-field');outline.maxLength=12000;
+ const free=node('input');free.type='checkbox';
+ const share=node('input');share.type='checkbox';
+ const freeLabel=add(node('label','rule'),free,document.createTextNode(' Подтверждаю: ключ относится к бесплатному проекту без платного биллинга. NEXT не может проверить тариф.'));
+ const shareLabel=add(node('label','rule'),share,document.createTextNode(' Разрешаю передать только введённое описание Google. Бесплатный сервис может использовать данные для улучшения продуктов. Не отправляю личные данные.'));
+ const result=node('div','scene-body');result.hidden=true;
+ const status=para('Генерация не запустится сама. Ключ не сохраняется; лимит ответа — 2048 токенов.');
+ const run=button('Создать черновик',()=>busy(async()=>{
+  if(!free.checked||!share.checked)throw Error('Подтверди тариф и передачу описания.');
+  if(outline.value.trim().length<10)throw Error('Введи описание.');
+  const apiKey=key.value.trim();if(!apiKey)throw Error('Введи ключ.');
+  key.value='';run.disabled=true;status.textContent='Запрос к модели…';result.hidden=true;result.textContent='';
+  try{
+   const token=await activeToken();
+   const response=await fetch('/api/fiction-draft',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({model:model.value,key:apiKey,outline:outline.value,freeProject:true,shareConsent:true})});
+   const data=await response.json();if(!response.ok||typeof data.draft!=='string')throw Error(data.error||'Черновик не получен.');
+   result.textContent=data.draft;result.hidden=false;status.textContent='Черновик получен. История мира не изменена.';updateSceneTypography();
+  }catch(e){status.textContent='Запрос завершился ошибкой; повтор не выполняется.';throw e;}finally{run.disabled=false;}
+ }));
+ add(box,node('label','input-label','Модель'),model,node('label','input-label','API-ключ (на один запрос)'),key,node('label','input-label','Описание эпизода'),outline,freeLabel,shareLabel,run,status,result,button('Скопировать черновик',()=>busy(async()=>{if(!result.textContent)throw Error('Сначала создай черновик.');await copy(result.textContent); }),'btn secondary'));
+ root.append(box);
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
