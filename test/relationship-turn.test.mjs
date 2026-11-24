@@ -261,3 +261,17 @@ test('economic terms are durable without silently changing money or ownership',(
  assert.ok(market.checks.some(x=>x.kind==='insufficient_recorded_funds'));assert.ok(market.checks.some(x=>x.kind==='offer_custody_unconfirmed'));
  assert.equal(turn.candidates.find(x=>x.kind==='employment').amount,50);
 });
+
+test('recurring payments require exact transfers and never repeat closed dates',()=>{
+ const body='Борис должен платить Анне 20 монет каждые два дня. Борис перевёл Анне 20 монет.';
+ const schedule={id:'s',type:'world',dynamics_version:1,dynamics_kind:'payment_schedule',record_id:'rent',key:'dynamics:payment_schedule:rent',actor:'Борис',counterparty:'Анна',title:'Аренда',description:body,evidence:body,status:'active',payment_kind:'rent',amount:20,currency:'coin',starts_on:'2026-11-01',every_days:2};
+ const paid={...schedule,id:'p',record_id:'paid1',key:'dynamics:payment_occurrence:paid1',dynamics_kind:'payment_occurrence',schedule_id:'rent',scheduled_on:'2026-11-01',status:'paid',outcome:'Оплачено',transfer_event_id:'t'};
+ const transfer={id:'t',type:'money',operation:'transfer',actor:'Борис',counterparty:'Анна',currency:'coin',delta:-20,evidence:'Борис перевёл Анне 20 монет.'};
+ assert.equal(validateScene({body,events:[schedule,paid]}).ok,false);
+ assert.equal(validateScene({body,events:[schedule,transfer,paid,{...paid,id:'p2',record_id:'p2',key:'dynamics:payment_occurrence:p2'}]}).ok,false);
+ const scenes=[{id:'s',body,world_time:'2026-11-05',events:[schedule,transfer,paid]}],p=replay(scenes);
+ assert.equal(p.worldFacts.length,2);assert.equal(p.balances.find(x=>x.actor==='Борис').delta,-20);
+ const v=prepareStoryTurn(scenes,p,[],{}).candidates.find(x=>x.kind==='payment_schedule');
+ assert.equal(v.pending_occurrences,2);assert.equal(v.first_due_on,'2026-11-03');
+ const m=new Map(p.worldFacts.map(x=>[x.key,x]));assert.ok(dynamicsTransitionError(m,paid));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other'}));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other',scheduled_on:'2026-11-02'}));
+});
