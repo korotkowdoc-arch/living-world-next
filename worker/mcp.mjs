@@ -203,7 +203,7 @@ async function callTool(name,args,env,token){
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
     throw Error('Story changed while reading character state; retry.');
    return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
-    ...characterStateView(projection,actor,{complete:memory.complete,offset:args.offset,limit:args.limit})};
+    ...characterStateView(projection,actor,{complete:memory.complete,offset:args.offset,limit:args.limit,worldTime:memory.scenes.at(-1)?.world_time})};
   }
   case 'get_actor_memory':{
    const world=await ownerWorld(env,token,args.world_id);
