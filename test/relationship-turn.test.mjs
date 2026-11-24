@@ -180,3 +180,98 @@ test('recorded family duty occurrences close only their exact scheduled dates',(
  const window=familyDutyWindow(duty,parseStoryDate('2026-01-01'),parseStoryDate('2026-01-05'),[e]);
  assert.equal(window.occurrences,2);assert.equal(window.pending_occurrences,1);assert.equal(window.first_due_on,'2026-01-05');
 });
+
+test('turn links independent plans to actual means and possible constraints without performing them',()=>{
+ const src={scene_id:'s',event_id:'x'};
+ const p={people:[{name:'Анна',state_fields:[{field:'location',value:'Дом',source:src}]}],
+ plans:[{actor:'Анна',plan_id:'buy',goal:'Купить книгу',status:'paused',place:'Магазин',obstacle:'Закрыт',source:src}],
+ balances:[{actor:'Анна',currency:'coin',known:false,balance:null,delta:10,source:src},{actor:'Борис',currency:'coin',known:true,balance:20,source:src}],
+ items:[{item_id:'book',name:'Книга',holder:'Борис',custody_status:'held',source:src},{item_id:'key',holder:'Анна',custody_status:'held',source:src}],
+ worldFacts:[{world_record_version:1,record_kind:'place',key:'place:shop',name:'Магазин',status:'closed',source:src},
+ {world_record_version:1,record_kind:'routine',key:'routine:work',actor:'Анна',activity:'Работа',place:'Офис',status:'active',weekdays:[2],start:'09:00',end:'18:00',source:src},
+ {growth_version:1,growth_kind:'skill',actor:'Анна',name:'Письмо',status:'competent',source:src},
+ {consequence_version:1,consequence_kind:'access',actor:'Анна',status:'active',description:'Пропуск ограничен',source:src}]};
+ const snapshot=JSON.stringify(p),turn=prepareStoryTurn([{id:'s',world_time:'2026-11-24 12:00'}],p,[],{actors:['Анна']});
+ const plan=turn.candidates.find(x=>x.key==='buy'),a=turn.actor_context.find(x=>x.actor==='Анна');
+ for(const kind of ['paused_intention','recorded_obstacle','recorded_place_constraint','travel_requires_story','competing_schedule'])assert.ok(plan.checks.some(x=>x.kind===kind),kind);
+ assert.equal(a.resources.find(x=>x.kind==='balance').balance,null);assert.equal(a.resources.find(x=>x.kind==='balance').known,false);
+ assert.deepEqual(a.resources.filter(x=>x.kind==='held_item').map(x=>x.item_id),['key']);
+ assert.equal(a.experience[0].name,'Письмо');assert.equal(a.responsibilities[0].kind,'consequence');
+ assert.equal(JSON.stringify(p),snapshot);assert.ok(JSON.stringify(turn.actor_context).length<=18000);
+});
+
+test('turn candidate pages are stable and independent threads remain accessible',()=>{
+ const p={plans:Array.from({length:13},(_,i)=>({actor:i<5?'Анна':'Борис',plan_id:'p'+i,goal:'Цель '+i,status:'active'}))};
+ const scenes=[{id:'s',world_time:'2026-11-24'}],opts={actors:['Анна'],limit:3};
+ const first=prepareStoryTurn(scenes,p,[],{...opts,scope:'background'});
+ const second=prepareStoryTurn(scenes,p,[],{...opts,scope:'background',offset:first.next_offset});
+ const third=prepareStoryTurn(scenes,p,[],{...opts,scope:'background',offset:second.next_offset});
+ assert.equal(first.total_candidates,8);assert.equal(first.candidate_counts.focus,5);
+ assert.equal(third.next_offset,null);
+ const ids=[...first.candidates,...second.candidates,...third.candidates].map(x=>x.key);
+ assert.equal(new Set(ids).size,8);
+ assert.ok([...first.candidates,...second.candidates,...third.candidates].every(x=>!x.focus_match));
+ assert.equal(prepareStoryTurn(scenes,p,[],{...opts,scope:'focus'}).total_candidates,5);
+ assert.throws(()=>prepareStoryTurn(scenes,p,[],{offset:-1}));
+});
+
+test('recorded goals and habits motivate independent choices without inventing new plans',()=>{
+ const source={scene_id:'s',event_id:'g'};
+ const p={people:[{name:'Анна',state_fields:[{field:'personal_goal',value:'Переехать',source},{field:'family_goal',value:null,source},{field:'career_goal',value:'Учиться',source},{field:'preference',value:'Тишина',source}]}],
+ plans:[{actor:'Анна',plan_id:'p',status:'active',goal:'Переехать',source}],
+ worldFacts:[{activity_version:1,activity_kind:'habit',key:'activity:habit:read',actor:'Анна',name:'Чтение',status:'active',frequency:'По выходным',source},{activity_version:1,activity_kind:'habit',key:'activity:habit:old',actor:'Анна',name:'Старое',status:'abandoned',source}]};
+ const snapshot=JSON.stringify(p);
+ const v=prepareStoryTurn([{id:'s',world_time:'2026-11-24'}],p,[],{actors:['Борис'],scope:'background'});
+ assert.deepEqual(v.candidates.filter(x=>x.kind==='goal_opportunity').map(x=>x.title),['Учиться']);
+ assert.equal(v.candidates.find(x=>x.kind==='habit_opportunity').timing,'frequency_not_a_schedule');
+ assert.equal(v.actor_context[0].actor,'Анна');assert.ok(v.actor_context[0].state_fields.some(x=>x.field==='preference'));
+ assert.equal(JSON.stringify(p),snapshot);
+});
+
+test('shared schedules, active groups and recorded teachers create only grounded interaction opportunities',()=>{
+ const source={scene_id:'s',event_id:'x'},routine=(actor,place,key)=>({world_record_version:1,record_kind:'routine',key,actor,activity:'Учёба',place,status:'active',weekdays:[2],start:'09:00',end:'18:00',source});
+ const p={worldFacts:[routine('Анна','Школа','a'),routine('Борис','Школа','b'),routine('Вера','Дом','c'),{social_record_version:1,social_kind:'group',record_id:'club',name:'Клуб',purpose:'Чтение',status:'active',source},
+ ...['Анна','Борис','Вера'].map((actor,i)=>({social_record_version:1,social_kind:'membership',group_id:'club',actor,status:i===2?'left':'member',source})),
+ {growth_version:1,growth_kind:'skill',key:'growth:skill:s',actor:'Борис',teacher:'Вера',name:'Музыка',status:'learning',source}]};
+ const snapshot=JSON.stringify(p),scenes=[{id:'s',world_time:'2026-11-24 12:00'}];
+ const turn=prepareStoryTurn(scenes,p,[],{actors:['Другой'],scope:'background',limit:30});
+ const schedule=turn.candidates.find(x=>x.kind==='shared_schedule');
+ assert.deepEqual(schedule.actors,['Анна','Борис']);assert.equal(schedule.basis.length,2);
+ assert.deepEqual(turn.candidates.find(x=>x.kind==='group_opportunity').actors,['Анна','Борис']);
+ assert.deepEqual(turn.candidates.find(x=>x.kind==='mentorship_opportunity').actors,['Борис','Вера']);
+ assert.ok(turn.candidates.every(x=>x.certainty==='candidate_only_not_performed'));
+ assert.equal(prepareStoryTurn(scenes,p,[],{target_time:'2026-11-24 20:00'}).candidates.some(x=>x.kind==='shared_schedule'),false);
+ assert.equal(JSON.stringify(p),snapshot);
+});
+
+test('economic terms are durable without silently changing money or ownership',()=>{
+ const body='Анна предложила Борису работу. Борис зарезервировал книгу. Борис должен Анне 20 монет.';
+ const make=(kind,id,extra)=>({id,type:'world',dynamics_version:1,dynamics_kind:kind,record_id:id,key:'dynamics:'+kind+':'+id,title:id,description:body,evidence:body,...extra});
+ const job=make('employment','job',{actor:'Борис',counterparty:'Анна',status:'offered',amount:50,currency:'coin',pay_period:'week'});
+ const offer=make('market_offer','book',{actor:'Анна',counterparty:'Борис',status:'reserved',offer_kind:'goods',item_id:'book',amount:15,currency:'coin'});
+ const debt=make('economic_agreement','debt',{actor:'Борис',counterparty:'Анна',status:'active',agreement_kind:'debt',amount:20,currency:'coin'});
+ assert.equal(validateScene({body,events:[job,offer,debt]}).ok,true);
+ for(const e of [{...job,amount:1.5},{...offer,counterparty:null},{...debt,amount:0},{...debt,status:'settled'}])assert.equal(validateScene({body,events:[e]}).ok,false);
+ const scenes=[{id:'s',body,events:[job,offer,debt],world_time:'2026-11-24'}],p=replay(scenes);
+ assert.equal(p.worldFacts.length,3);assert.equal(p.balances.length,0);assert.equal(p.items.length,0);
+ const records=new Map(p.worldFacts.map(x=>[x.key,x]));assert.ok(dynamicsTransitionError(records,{...debt,amount:21}));assert.ok(dynamicsTransitionError(records,{...offer,status:'sold',counterparty:'Вера',outcome:'Продана'}));
+ p.balances.push({actor:'Борис',currency:'coin',known:true,balance:10});
+ const turn=prepareStoryTurn(scenes,p,[],{actors:['Борис']});
+ const market=turn.candidates.find(x=>x.kind==='market_offer');
+ assert.ok(market.checks.some(x=>x.kind==='insufficient_recorded_funds'));assert.ok(market.checks.some(x=>x.kind==='offer_custody_unconfirmed'));
+ assert.equal(turn.candidates.find(x=>x.kind==='employment').amount,50);
+});
+
+test('recurring payments require exact transfers and never repeat closed dates',()=>{
+ const body='Борис должен платить Анне 20 монет каждые два дня. Борис перевёл Анне 20 монет.';
+ const schedule={id:'s',type:'world',dynamics_version:1,dynamics_kind:'payment_schedule',record_id:'rent',key:'dynamics:payment_schedule:rent',actor:'Борис',counterparty:'Анна',title:'Аренда',description:body,evidence:body,status:'active',payment_kind:'rent',amount:20,currency:'coin',starts_on:'2026-11-01',every_days:2};
+ const paid={...schedule,id:'p',record_id:'paid1',key:'dynamics:payment_occurrence:paid1',dynamics_kind:'payment_occurrence',schedule_id:'rent',scheduled_on:'2026-11-01',status:'paid',outcome:'Оплачено',transfer_event_id:'t'};
+ const transfer={id:'t',type:'money',operation:'transfer',actor:'Борис',counterparty:'Анна',currency:'coin',delta:-20,evidence:'Борис перевёл Анне 20 монет.'};
+ assert.equal(validateScene({body,events:[schedule,paid]}).ok,false);
+ assert.equal(validateScene({body,events:[schedule,transfer,paid,{...paid,id:'p2',record_id:'p2',key:'dynamics:payment_occurrence:p2'}]}).ok,false);
+ const scenes=[{id:'s',body,world_time:'2026-11-05',events:[schedule,transfer,paid]}],p=replay(scenes);
+ assert.equal(p.worldFacts.length,2);assert.equal(p.balances.find(x=>x.actor==='Борис').delta,-20);
+ const v=prepareStoryTurn(scenes,p,[],{}).candidates.find(x=>x.kind==='payment_schedule');
+ assert.equal(v.pending_occurrences,2);assert.equal(v.first_due_on,'2026-11-03');
+ const m=new Map(p.worldFacts.map(x=>[x.key,x]));assert.ok(dynamicsTransitionError(m,paid));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other'}));assert.ok(dynamicsTransitionError(m,{...paid,record_id:'other',key:'dynamics:payment_occurrence:other',scheduled_on:'2026-11-02'}));
+});

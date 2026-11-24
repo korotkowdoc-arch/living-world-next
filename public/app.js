@@ -617,16 +617,23 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  const turnPanel=panel(title('Следующий эпизод'),para('Общий обзор дел, конфликтов, распорядка, сроков и изменений мира. Просмотр не запускает события.'));
  const target=node('input','field'),focus=node('input','field'),place=node('input','field'),turnOut=node('div');
  target.placeholder='Целевая игровая дата (необязательно)';focus.placeholder='Имена через запятую (до 8)';place.placeholder='Место';
- let turnScenes=state.scenes,turnComplete=state.historyComplete,turnVerified=false;
+ let turnScenes=state.scenes,turnComplete=state.historyComplete,turnVerified=false,turnOffset=0,turnFilterKey='';
+ const turnScope=node('select','field');for(const [value,label] of [['all','Все линии'],['focus','Выбранные герои и место'],['background','Независимые линии']]){const option=node('option','',label);option.value=value;turnScope.append(option);}
  const showTurn=()=>{
   const projection=replay(turnScenes,[],{evidencePrevalidated:turnVerified});
-  const v=prepareStoryTurn(turnScenes,projection,state.directives,{actors:focus.value.split(',').map(x=>x.trim()).filter(Boolean),place:place.value,target_time:target.value.trim()||null,complete:turnComplete,limit:20});
+  const filters={actors:focus.value.split(',').map(x=>x.trim()).filter(Boolean),place:place.value,target_time:target.value.trim()||null,complete:turnComplete,limit:20,scope:turnScope.value};
+  const key=JSON.stringify([turnScenes.at(-1)?.id,filters]);if(key!==turnFilterKey){turnOffset=0;turnFilterKey=key;}
+  const v=prepareStoryTurn(turnScenes,projection,state.directives,{...filters,offset:turnOffset});
   turnOut.replaceChildren(para('Игровое время: '+(v.clock||'не установлено')+(v.target_time?' → '+v.target_time:'')+(v.elapsed_story_minutes!==null?' · '+v.elapsed_story_minutes+' мин.':'')));
   for(const warning of v.warnings)turnOut.append(node('div','notice',warning));
-  const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь',personal_bond:'Личная связь',family_event:'Семейное событие',family_duty:'Семейная обязанность',life_transition:'Жизненный переход',age_milestone:'День рождения'};
+  const labels={intention:'Намерение',obligation:'Обязательство',routine:'Распорядок',thread:'Сюжетная линия',activity:'Занятие',consequence:'Последствие',project:'Проект',contest:'Конкуренция',institution:'Учреждение',development:'Изменение мира',strained_bond:'Напряжённая связь',personal_bond:'Личная связь',family_event:'Семейное событие',family_duty:'Семейная обязанность',life_transition:'Жизненный переход',age_milestone:'День рождения',goal_opportunity:'Личная цель — возможность инициативы',habit_opportunity:'Привычное занятие',shared_schedule:'Возможная встреча',group_opportunity:'Дела организации',mentorship_opportunity:'Учёба с наставником',employment:'Работа',market_offer:'Товар или услуга',economic_agreement:'Денежное соглашение',payment_schedule:'Периодическая оплата'};
   for(const person of v.life_context||[])if(person.target_age?.status==='calendar_derived')turnOut.append(para(person.actor+' · возраст '+person.target_age.years+' на '+person.target_age.as_of));
    for(const r of v.candidates){
-   const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource,r.occurrences?('Не закрыто: '+(r.pending_occurrences??r.occurrences)+' из '+r.occurrences+' · '+r.first_due_on+' — '+r.last_due_on):null,r.age_years!=null?('Возраст: '+r.age_years):null].filter(Boolean).join(' · ')));
+   const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource,r.amount!=null?String(r.amount)+' '+r.currency+(r.pay_period?' / '+r.pay_period:''):null,r.occurrences?('Не закрыто: '+(r.pending_occurrences??r.occurrences)+' из '+r.occurrences+' · '+r.first_due_on+' — '+r.last_due_on):null,r.age_years!=null?('Возраст: '+r.age_years):null].filter(Boolean).join(' · ')));
+   const checkLabels={paused_intention:'Отложено — нужна причина возобновления',recorded_obstacle:'Препятствие',ambiguous_place:'Несколько записей места',place_access_unknown:'Доступ неизвестен',recorded_place_constraint:'Ограничение места',travel_requires_story:'Нужно показать перемещение',competing_schedule:'Возможный конфликт расписания',clock_unknown:'Время не установлено',insufficient_recorded_funds:'Записанных средств недостаточно',recorded_funds_cover_price:'Записанных средств достаточно',funds_unknown:'Средства неизвестны',offer_custody_unconfirmed:'Владение предметом не подтверждено'};
+   for(const ch of r.checks||[])card.append(para([checkLabels[ch.kind]||ch.kind,ch.actor,ch.description,ch.from&&ch.to?ch.from+' → '+ch.to:ch.place,ch.status,ch.access,ch.other_places?.join(', ')].filter(Boolean).join(' · ')));
+   if(r.participants_omitted)card.append(para('Других участников: '+r.participants_omitted));
+   if(r.checks_omitted)card.append(para('Других условий: '+r.checks_omitted));
    if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}turnOut.append(card);
   }
   for(const actor of v.actor_context||[]){
@@ -635,21 +642,26 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
     for(const f of actor.state_fields)card.append(para(f.field+': '+(f.value??'не установлено')));
     for(const k of actor.knowledge)card.append(para('Знание '+k.holder+' · '+k.status+': '+k.fact));
     for(const e of actor.recent_offscreen)card.append(para('За кадром: '+e.description));
+    for(const r of actor.resources||[])card.append(para(r.kind==='balance'?'Средства · '+r.currency+': '+(r.known?r.balance:'неизвестно'):'Держит: '+(r.name||r.item_id)));
+    for(const e of actor.experience||[])card.append(para([e.kind==='skill'?'Навык':'Привычка',e.name,e.status,e.frequency].filter(Boolean).join(' · ')));
+    for(const r of actor.responsibilities||[])card.append(para(['Ответственность',r.title||r.description||r.bond_type||r.role||r.group_id,r.status,r.deadline].filter(Boolean).join(' · ')));
     if(Object.keys(actor.omitted).length)card.append(para('Есть дополнительные записи; смотри карточку персонажа.'));
     turnOut.append(card);
    }
-   if(v.omitted_candidates)turnOut.append(para('Других кандидатов: '+v.omitted_candidates+'. Их можно уточнить через MCP.'));
+   turnOut.append(para('Всего: '+v.total_candidates+' · в фокусе: '+v.candidate_counts.focus+' · независимо: '+v.candidate_counts.background));
+   if(v.candidates.length)turnOut.append(para('Показано '+(v.offset+1)+'–'+(v.offset+v.candidates.length)+' из '+v.total_candidates));
+   const nav=row();if(v.offset)nav.append(button('Назад',()=>{turnOffset=Math.max(0,v.offset-20);showTurn();},'btn secondary'));if(v.next_offset!==null)nav.append(button('Далее',()=>{turnOffset=v.next_offset;showTurn();},'btn secondary'));turnOut.append(nav);
   if(!v.candidates.length)turnOut.append(para('Пока нет записанных кандидатов. Это не означает, что персонажи не могут действовать.'));
  };
- add(turnPanel,target,focus,place,row(button('Подготовить эпизод',()=>busy(async()=>showTurn())),button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);turnScenes=m.scenes;turnComplete=m.complete;turnVerified=true;showTurn();}),'btn secondary')),turnOut);root.append(turnPanel);showTurn();
+ add(turnPanel,target,focus,place,turnScope,row(button('Подготовить эпизод',()=>busy(async()=>{turnOffset=0;showTurn();})),button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);turnScenes=m.scenes;turnComplete=m.complete;turnVerified=true;turnOffset=0;showTurn();}),'btn secondary')),turnOut);root.append(turnPanel);showTurn();
  const dynamics=panel(title('Жизнь общества и мира'),para('Текущие связи, учреждения, конкурирующие интересы и изменения. Источник каждого состояния сохраняется.'));
  const dOut=node('div');let dOffset=0;
  const showDynamics=()=>{
   const v=dynamicsView(replay(turnScenes,[],{evidencePrevalidated:turnVerified}),{actor:focus.value.includes(',')?'':focus.value.trim(),place:place.value,complete:turnComplete,offset:dOffset,limit:15});
   dOut.replaceChildren();
-  for(const [heading,rows] of [['Связи',v.bonds],['Учреждения',v.institutions],['Конкуренция',v.contests],['Изменения',v.developments],['Семейные события',v.family_events],['Семейные обязанности',v.family_duties],['Жизненные переходы',v.life_transitions]]){
+  for(const [heading,rows] of [['Связи',v.bonds],['Учреждения',v.institutions],['Конкуренция',v.contests],['Изменения',v.developments],['Семейные события',v.family_events],['Семейные обязанности',v.family_duties],['Жизненные переходы',v.life_transitions],['Работа',v.employment],['Товары и услуги',v.market_offers],['Денежные соглашения',v.economic_agreements],['Расписание оплаты',v.payment_schedules],['Исполнение оплаты',v.payment_occurrences]]){
    dOut.append(title(heading));if(!rows.length)dOut.append(para('Нет записей в выборке.'));
-   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.title||r.name||[r.actor,r.counterparty].join(' — ')),para([r.bond_type,r.transition_kind,r.status,r.resource,r.place,r.every_days?('Период (дней): '+r.every_days):null,r.starts_on,r.ends_on,r.scheduled_on].filter(Boolean).join(' · ')),para(r.description),para(r.outcome||r.terms||''));
+   for(const r of rows){const card=add(node('div','rule'),node('strong','',r.title||r.name||[r.actor,r.counterparty].join(' — ')),para([r.bond_type,r.transition_kind,r.offer_kind,r.agreement_kind,r.payment_kind,r.status,r.resource,r.place,r.amount!=null?String(r.amount)+' '+r.currency+(r.pay_period?' / '+r.pay_period:''):null,r.every_days?('Период (дней): '+r.every_days):null,r.starts_on,r.ends_on,r.scheduled_on].filter(Boolean).join(' · ')),para(r.description),para(r.outcome||r.terms||''));
     if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}dOut.append(card);}
   }
   if(dOffset)dOut.append(button('Назад',()=>{dOffset=Math.max(0,dOffset-15);showDynamics();},'btn secondary'));

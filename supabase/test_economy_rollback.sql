@@ -61,4 +61,28 @@ begin
  bad:=false; begin perform public.nw_story_transition_step(st,e||'{"record_id":"wrong","key":"dynamics:family_event:wrong","scheduled_on":"2026-01-04"}'::jsonb); exception when raise_exception then bad:=true; end;
  if not bad then raise exception 'Off-grid family occurrence accepted'; end if;
 end $family$;
+do $commercial$
+declare st jsonb:='{"plans":{},"records":{}}'; e jsonb; bad boolean;
+begin
+ e:='{"type":"world","dynamics_version":1,"dynamics_kind":"economic_agreement","record_id":"debt","key":"dynamics:economic_agreement:debt","actor":"B","counterparty":"A","title":"Debt","description":"Debt","status":"active","agreement_kind":"debt","amount":20,"currency":"coin"}';
+ st:=public.nw_story_transition_step(st,e);
+ bad:=false;begin perform public.nw_story_transition_step(st,e||'{"amount":21}'::jsonb);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Debt changed identity';end if;
+ bad:=false;begin perform public.nw_story_transition_step(st,e||'{"status":"settled"}'::jsonb);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Debt settled without outcome';end if;
+ st:=public.nw_story_transition_step(st,e||'{"status":"settled","outcome":"Waived"}'::jsonb);
+ bad:=false;begin perform public.nw_story_transition_step(st,e);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Settled agreement reopened';end if;
+end $commercial$;
+do $payment$
+declare st jsonb:='{"plans":{},"records":{}}'; e jsonb; bad boolean;
+begin
+ st:=public.nw_story_transition_step(st,'{"type":"world","dynamics_version":1,"dynamics_kind":"payment_schedule","record_id":"rent","key":"dynamics:payment_schedule:rent","actor":"B","counterparty":"A","title":"Rent","description":"Rent","status":"active","payment_kind":"rent","amount":20,"currency":"coin","starts_on":"2026-11-01","every_days":2}');
+ e:='{"type":"world","dynamics_version":1,"dynamics_kind":"payment_occurrence","record_id":"rent1","key":"dynamics:payment_occurrence:rent1","actor":"B","counterparty":"A","title":"Rent","description":"Rent","status":"paid","amount":20,"currency":"coin","schedule_id":"rent","scheduled_on":"2026-11-01","transfer_event_id":"t","outcome":"Paid"}';
+ st:=public.nw_story_transition_step(st,e);
+ bad:=false;begin perform public.nw_story_transition_step(st,e||'{"record_id":"dup","key":"dynamics:payment_occurrence:dup"}'::jsonb);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Duplicate payment accepted';end if;
+ bad:=false;begin perform public.nw_story_transition_step(st,e||'{"record_id":"bad","key":"dynamics:payment_occurrence:bad","scheduled_on":"2026-11-02"}'::jsonb);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Off-grid payment accepted';end if;
+end $payment$;
 rollback;
