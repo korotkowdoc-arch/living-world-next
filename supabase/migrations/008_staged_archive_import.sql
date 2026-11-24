@@ -216,7 +216,7 @@ begin
  join public.nw_import_rows t on t.owner_id=u and t.job_id=p_import_id and t.section='scenes' and t.old_id=(r.row_data->>'new_scene_id')::uuid
  join public.nw_import_rows b on b.owner_id=u and b.job_id=p_import_id and b.section='branches' and b.old_id=(r.row_data->>'branch_id')::uuid
  where r.owner_id=u and r.job_id=p_import_id and r.section='revisions';
- receipt:=jsonb_build_object('world_id',wid,'original_world_id',w->>'id','import_id',p_import_id)||j.manifest->'counts';
+ receipt:=jsonb_build_object('world_id',wid,'original_world_id',w->>'id','import_id',p_import_id)||(j.manifest->'counts');
  update public.nw_import_jobs set result=receipt,touched_at=now() where owner_id=u and id=p_import_id;
  -- Keep a small idempotent receipt; the temporary row bodies are no longer needed.
  delete from public.nw_import_rows where owner_id=u and job_id=p_import_id;
