@@ -191,3 +191,23 @@ test('world context prepares a focused next turn and historical hints with one a
   const t=r.structuredContent.next_turn;assert.deepEqual(t.focus.actors,['Анна']);assert.equal(t.target_time,'2026-11-25');assert.equal(t.expected_head,head);assert.equal(t.expected_rules_version,3);assert.equal(t.historical_hints.canonical,false);
  }finally{globalThis.fetch=old;}
 });
+
+test('MCP choice validation pins branch and head and performs no writes',async()=>{
+ const old=globalThis.fetch;let currentHead=head;
+ const e={id:'q',type:'world',dynamics_version:1,dynamics_kind:'player_choice',record_id:'q1',key:'dynamics:player_choice:q1',actor:'Борис',status:'pending',description:'Решение',question:'Что делать?',options:[{id:'yes',text:'Согласиться'},{id:'no',text:'Отказаться'}],evidence:'Анна ждала ответа.'};
+ globalThis.fetch=async(url,opt={})=>{
+  const p=new URL(url);
+  if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([{id:wid,active_branch_id:bid,directive_version:3,auto_save:true}]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:bid,head_scene_id:currentHead}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:head,parent_scene_id:null,events:[e]}]);
+  throw Error('Unexpected '+p.pathname);
+ };
+ try{
+  const args={branch_id:bid,expected_head:head,expected_rules_version:3,choice_id:'q1',selected_option:'yes'};
+  const invoke=async(a)=>(await(await worker.fetch(call('validate_player_choice',a),env)).json()).result;
+  const r=await invoke(args);assert.equal(r.isError,false);assert.equal(r.structuredContent.action_text,'Согласиться');assert.equal(r.structuredContent.saved,false);
+  assert.equal((await invoke({...args,selected_option:'wrong'})).isError,true);
+  currentHead=null;assert.equal((await invoke(args)).isError,true);
+ }finally{globalThis.fetch=old;}
+});
