@@ -25,7 +25,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
   if(typeof body==='string'&&body.length>200000)errors.push('Сцена длиннее 200 000 символов.');
   if(!Array.isArray(events)||events.length>100)errors.push('Слишком много событий или неверный формат.');
   const locks=new Map(extractLocks(directives).map(x=>[pairKey(x.a,x.b),x]));
-  const ids=new Set();
+  const ids=new Set(),paymentTransfers=new Set();
   for(const [i,event] of (Array.isArray(events)?events:[]).entries()){
     const prefix=`Событие ${i+1}`;
     if(!event||typeof event!=='object'||Array.isArray(event)){errors.push(`${prefix}: неверный объект.`);continue;}
@@ -60,6 +60,11 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
       if(typeof event.key==='string'&&/^(place|routine):/.test(event.key)&&event.world_record_version!==1)errors.push(prefix+': ключ места или распорядка требует версию.');
       if(typeof event.key==='string'&&event.key.startsWith('social:')&&event.social_record_version!==1)errors.push(prefix+': социальный ключ требует версию.');
       if(typeof event.key==='string'&&event.key.startsWith('consequence:')&&event.consequence_version!==1)errors.push(prefix+': ключ последствия требует версионированной записи.');
+      if(event.dynamics_version===1&&event.dynamics_kind==='payment_occurrence'&&event.status==='paid'){
+        const ref=event.transfer_event_id,transfer=Array.isArray(events)&&events.find(x=>x?.id===ref);
+        if(!transfer||transfer.type!=='money'||transfer.operation!=='transfer'||transfer.actor!==event.actor||transfer.counterparty!==event.counterparty||transfer.currency!==event.currency||transfer.delta!==-event.amount||paymentTransfers.has(ref))errors.push(prefix+': оплата требует отдельного совпадающего денежного перевода этой сцены, без повторного использования.');
+        paymentTransfers.add(ref);
+      }
       if(typeof event.key==='string'&&event.key.startsWith('activity:')&&event.activity_version!==1)errors.push(prefix+': ключ занятия требует версионированной записи.');if(error)errors.push(prefix+': '+error);
     }
     if(event.type==='plan'){
