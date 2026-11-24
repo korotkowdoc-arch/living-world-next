@@ -243,3 +243,21 @@ test('shared schedules, active groups and recorded teachers create only grounded
  assert.equal(prepareStoryTurn(scenes,p,[],{target_time:'2026-11-24 20:00'}).candidates.some(x=>x.kind==='shared_schedule'),false);
  assert.equal(JSON.stringify(p),snapshot);
 });
+
+test('economic terms are durable without silently changing money or ownership',()=>{
+ const body='Анна предложила Борису работу. Борис зарезервировал книгу. Борис должен Анне 20 монет.';
+ const make=(kind,id,extra)=>({id,type:'world',dynamics_version:1,dynamics_kind:kind,record_id:id,key:'dynamics:'+kind+':'+id,title:id,description:body,evidence:body,...extra});
+ const job=make('employment','job',{actor:'Борис',counterparty:'Анна',status:'offered',amount:50,currency:'coin',pay_period:'week'});
+ const offer=make('market_offer','book',{actor:'Анна',counterparty:'Борис',status:'reserved',offer_kind:'goods',item_id:'book',amount:15,currency:'coin'});
+ const debt=make('economic_agreement','debt',{actor:'Борис',counterparty:'Анна',status:'active',agreement_kind:'debt',amount:20,currency:'coin'});
+ assert.equal(validateScene({body,events:[job,offer,debt]}).ok,true);
+ for(const e of [{...job,amount:1.5},{...offer,counterparty:null},{...debt,amount:0},{...debt,status:'settled'}])assert.equal(validateScene({body,events:[e]}).ok,false);
+ const scenes=[{id:'s',body,events:[job,offer,debt],world_time:'2026-11-24'}],p=replay(scenes);
+ assert.equal(p.worldFacts.length,3);assert.equal(p.balances.length,0);assert.equal(p.items.length,0);
+ const records=new Map(p.worldFacts.map(x=>[x.key,x]));assert.ok(dynamicsTransitionError(records,{...debt,amount:21}));assert.ok(dynamicsTransitionError(records,{...offer,status:'sold',counterparty:'Вера',outcome:'Продана'}));
+ p.balances.push({actor:'Борис',currency:'coin',known:true,balance:10});
+ const turn=prepareStoryTurn(scenes,p,[],{actors:['Борис']});
+ const market=turn.candidates.find(x=>x.kind==='market_offer');
+ assert.ok(market.checks.some(x=>x.kind==='insufficient_recorded_funds'));assert.ok(market.checks.some(x=>x.kind==='offer_custody_unconfirmed'));
+ assert.equal(turn.candidates.find(x=>x.kind==='employment').amount,50);
+});
