@@ -9,12 +9,15 @@ const kinds={
  bond:['active','strained','estranged','ended','unknown'],
  institution:['operating','restricted','suspended','closed','unknown'],
  contest:['open','negotiating','decided','abandoned','unknown'],
+ employment:['offered','active','suspended','ended','declined','unknown'],
+ market_offer:['available','reserved','withdrawn','sold','unknown'],
+ economic_agreement:['proposed','active','disputed','settled','cancelled','unknown'],
  life_transition:['planned','ongoing','completed','cancelled','unknown'],
  family_duty:['active','paused','ended','unknown'],
  family_event:['planned','ongoing','completed','cancelled','unknown'],
  development:['scheduled','ongoing','completed','cancelled','unknown']
 };
-const terminal={life_transition:new Set(['completed','cancelled']),family_duty:new Set(['ended']),family_event:new Set(['completed','cancelled']),bond:new Set(['ended']),contest:new Set(['decided','abandoned']),development:new Set(['completed','cancelled'])};
+const terminal={employment:new Set(['ended','declined']),market_offer:new Set(['withdrawn','sold']),economic_agreement:new Set(['settled','cancelled']),life_transition:new Set(['completed','cancelled']),family_duty:new Set(['ended']),family_event:new Set(['completed','cancelled']),bond:new Set(['ended']),contest:new Set(['decided','abandoned']),development:new Set(['completed','cancelled'])};
 const bondTypes=['family','friendship','professional','mentorship','rivalry','community','romantic','marriage','parenthood','cohabitation','other'];
 export function dynamicsRecordError(e){
  if(e?.type!=='world')return null;
@@ -25,6 +28,18 @@ export function dynamicsRecordError(e){
  if(k==='bond'&&e.bond_type==='parenthood'&&e.actor===e.counterparty)return 'Родитель и ребёнок должны различаться.';
  if(k==='institution'&&(!valid(e.name)||!valid(e.function,300)||!valid(e.place)||!id(e.group_id)))return 'Учреждению нужны название, назначение, место и ID группы.';
  if(k==='contest'&&(!valid(e.resource,300)||!list(e.actors,2)||!valid(e.title)))return 'Конкуренции нужны ресурс, название и минимум два участника.';
+ if(['employment','market_offer','economic_agreement'].includes(k)){
+  if(!valid(e.actor)||!valid(e.title))return 'Экономической записи нужны участник и название.';
+  if(k!=='market_offer'&&(!valid(e.counterparty)||e.counterparty===e.actor))return 'Нужна другая сторона соглашения.';
+  if(k==='market_offer'&&e.counterparty!=null&&(!valid(e.counterparty)||e.actor===e.counterparty))return 'Некорректный покупатель.';
+  if((e.amount!=null||e.currency!=null)&&(!Number.isSafeInteger(e.amount)||e.amount<0||!valid(e.currency,80)))return 'Сумма должна быть точной неотрицательной, с валютой.';
+  if(k==='economic_agreement'&&(!Number.isSafeInteger(e.amount)||e.amount<=0||!['debt','rent','service','other'].includes(e.agreement_kind)))return 'Соглашению нужны положительная сумма и вид.';
+  if(k==='employment'&&e.pay_period!=null&&(!['hour','day','week','month','task'].includes(e.pay_period)||e.amount==null))return 'Период оплаты требует установленную сумму.';
+  if(k==='market_offer'&&(!['goods','service'].includes(e.offer_kind)||e.item_id!=null&&(e.offer_kind!=='goods'||!valid(e.item_id,180))))return 'Предложению нужен вид товара или услуги.';
+  if(k==='market_offer'&&e.status==='reserved'&&!valid(e.counterparty))return 'Резерв требует конкретного покупателя.';
+  if(e.group_id!=null&&!id(e.group_id)||e.place!=null&&!valid(e.place))return 'Некорректная организация или место.';
+  if((k==='economic_agreement'&&e.status==='settled'||k==='market_offer'&&e.status==='sold')&&!valid(e.outcome,600))return 'Закрытие требует явно описанного результата.';
+ }
  if(k==='life_transition'&&(!valid(e.actor)||!valid(e.title)||!['education','employment','relocation','retirement','health','other'].includes(e.transition_kind)))return 'Жизненному переходу нужны герой, название и вид.';
  if(k==='family_duty'&&(!valid(e.title)||!list(e.actors,1)||!['care','education','household','other'].includes(e.family_kind)||!/^\d{4}-\d{2}-\d{2}$/.test(e.starts_on)||parseStoryDate(e.starts_on)?.precision!=='day'||!Number.isInteger(e.every_days)||e.every_days<1||e.every_days>366))return 'Обязанности нужны участники, вид, дата начала и период 1–366 дней.';
  if(k==='family_duty'&&e.ends_on!=null&&(!/^\d{4}-\d{2}-\d{2}$/.test(e.ends_on)||parseStoryDate(e.ends_on)?.precision!=='day'||e.ends_on<e.starts_on))return 'Дата окончания обязанности раньше начала или некорректна.';
@@ -43,6 +58,11 @@ export function dynamicsTransitionError(records,e){
   if(old.dynamics_version!==1||old.dynamics_kind!==k||old.record_id!==e.record_id)return 'Нельзя менять идентичность записи динамики.';
   if(k==='bond'&&(old.actor!==e.actor||old.counterparty!==e.counterparty||old.bond_type!==e.bond_type))return 'Нельзя переносить связь на других участников.';
   if(k==='institution'&&old.group_id!==e.group_id)return 'Нельзя переносить учреждение на другую группу.';
+  if(['employment','market_offer','economic_agreement'].includes(k)&&(old.actor!==e.actor||(old.group_id??null)!==(e.group_id??null)
+    ||(k!=='market_offer'&&old.counterparty!==e.counterparty)
+    ||(k==='market_offer'&&(old.offer_kind!==e.offer_kind||(old.item_id??null)!==(e.item_id??null)))
+    ||(k==='economic_agreement'&&(old.agreement_kind!==e.agreement_kind||old.amount!==e.amount||old.currency!==e.currency))))return 'Новая сторона, предмет или сумма соглашения требуют нового ID.';
+  if(k==='market_offer'&&old.status==='reserved'&&e.status==='sold'&&old.counterparty!==e.counterparty)return 'Продажа другому покупателю требует снятия резерва.';
   if(k==='life_transition'&&(old.actor!==e.actor||old.transition_kind!==e.transition_kind))return 'Новый герой или вид жизненного перехода требует нового ID.';
   if(k==='family_duty'&&(old.family_kind!==e.family_kind||old.starts_on!==e.starts_on||old.every_days!==e.every_days||JSON.stringify(old.actors.slice().sort())!==JSON.stringify(e.actors.slice().sort())))return 'Изменение участников или периодичности требует новой обязанности.';
   if(k==='family_event'&&(old.family_kind!==e.family_kind||(old.duty_id??null)!==(e.duty_id??null)||(old.scheduled_on??null)!==(e.scheduled_on??null)))return 'Нельзя менять вид семейного события.';
@@ -55,6 +75,7 @@ export function dynamicsTransitionError(records,e){
     day.order<start.order||duty.ends_on&&e.scheduled_on>duty.ends_on||(day.order-start.order)%(1440*duty.every_days)!==0)return 'Дата или участники не соответствуют расписанию обязанности.';
   for(const x of records.values())if(x.key!==e.key&&x.dynamics_kind==='family_event'&&x.duty_id===e.duty_id&&x.scheduled_on===e.scheduled_on)return 'На эту дату уже есть запись исполнения обязанности.';
  }
+ if(['employment','market_offer','economic_agreement'].includes(k)&&e.group_id!=null&&!records.has('social:group:'+e.group_id))return 'Сначала нужна запись организации.';
  if(k==='institution'&&!records.has('social:group:'+e.group_id))return 'Сначала нужна запись организации.';
  return null;
 }
@@ -64,9 +85,9 @@ export function dynamicsView(projection={},opts={}){
  const limit=Math.max(1,Math.min(40,Math.floor(Number(opts.limit)||20))),offset=Math.max(0,Math.floor(Number(opts.offset)||0));
  const rows=(projection.worldFacts||[]).filter(r=>r.dynamics_version===1&&!dynamicsRecordError(r)&&(!actor||r.actor===actor||r.counterparty===actor||r.actors?.includes(actor))&&(!place||r.place===place));
  const byKind=Object.fromEntries(Object.keys(kinds).map(k=>[k,rows.filter(x=>x.dynamics_kind===k)]));
- const compact=r=>({id:r.record_id,key:r.key,kind:r.dynamics_kind,transition_kind:r.transition_kind,family_kind:r.family_kind,duty_id:r.duty_id,scheduled_on:r.scheduled_on,starts_on:r.starts_on,ends_on:r.ends_on,every_days:r.every_days,status:r.status,actor:r.actor,counterparty:r.counterparty,bond_type:r.bond_type,actors:r.actors,name:r.name,title:r.title,resource:r.resource,group_id:r.group_id,place:r.place,function:r.function,description:r.description,due_at:r.due_at,terms:r.terms,obstacle:r.obstacle,next_step:r.next_step,outcome:r.outcome,source:r.source,evidence:String(r.evidence||'').slice(0,600)});
+ const compact=r=>({id:r.record_id,key:r.key,kind:r.dynamics_kind,offer_kind:r.offer_kind,agreement_kind:r.agreement_kind,amount:r.amount,currency:r.currency,pay_period:r.pay_period,item_id:r.item_id,transition_kind:r.transition_kind,family_kind:r.family_kind,duty_id:r.duty_id,scheduled_on:r.scheduled_on,starts_on:r.starts_on,ends_on:r.ends_on,every_days:r.every_days,status:r.status,actor:r.actor,counterparty:r.counterparty,bond_type:r.bond_type,actors:r.actors,name:r.name,title:r.title,resource:r.resource,group_id:r.group_id,place:r.place,function:r.function,description:r.description,due_at:r.due_at,terms:r.terms,obstacle:r.obstacle,next_step:r.next_step,outcome:r.outcome,source:r.source,evidence:String(r.evidence||'').slice(0,600)});
  const page=k=>byKind[k].slice().reverse().slice(offset,offset+limit).map(compact);
- return {bonds:page('bond'),institutions:page('institution'),contests:page('contest'),developments:page('development'),family_events:page('family_event'),family_duties:page('family_duty'),life_transitions:page('life_transition'),
+ return {bonds:page('bond'),institutions:page('institution'),contests:page('contest'),developments:page('development'),family_events:page('family_event'),family_duties:page('family_duty'),life_transitions:page('life_transition'),employment:page('employment'),market_offers:page('market_offer'),economic_agreements:page('economic_agreement'),
  counts:Object.fromEntries(Object.entries(byKind).map(([k,v])=>[k,v.length])),next_offset:Math.max(...Object.values(byKind).map(x=>x.length))>offset+limit?offset+limit:null,memory_complete:opts.complete!==false,
  policy:'A social bond is not an emotion, consent or knowledge. Institutions are not individual characters. Contests do not transfer resources automatically. Scheduled developments are not completed events.'};
 }
