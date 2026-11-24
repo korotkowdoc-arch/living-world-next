@@ -3,7 +3,7 @@ import {parseStoryDate} from './world-time.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 export const CHARACTER_FIELDS=Object.freeze({
  location:'Последнее известное место',occupation:'Занятие',condition:'Физическое состояние',
- birth_date:'Дата рождения',
+ birth_date:'Дата рождения',life_stage:'Установленный жизненный этап',education:'Образование',career_goal:'Профессиональная цель',
  pregnancy:'Последнее установленное состояние беременности',family_goal:'Семейные намерения',residence:'Место проживания',
  injury:'Травма или ограничение',appearance:'Внешность',mood:'Последнее выраженное настроение',
  habit:'Привычка',preference:'Предпочтение',aversion:'Неприязнь',affiliation:'Принадлежность',
