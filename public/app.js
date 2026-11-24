@@ -629,7 +629,16 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
    const card=add(node('div','rule'),node('strong','',(labels[r.kind]||r.kind)+' · '+(r.title||r.key||'')),para([r.actors.join(', '),r.status,r.place,r.location_status].filter(Boolean).join(' · ')),para([r.next_step,r.obstacle,r.resource,r.occurrences?('По расписанию: '+r.occurrences+' · '+r.first_due_on+' — '+r.last_due_on):null,r.age_years!=null?('Возраст: '+r.age_years):null].filter(Boolean).join(' · ')));
    if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}turnOut.append(card);
   }
-  if(v.omitted_candidates)turnOut.append(para('Других кандидатов: '+v.omitted_candidates+'. Их можно уточнить через MCP.'));
+  for(const actor of v.actor_context||[]){
+    const card=add(node('div','rule'),node('strong','','Контекст: '+actor.actor));
+    for(const p of actor.intentions)card.append(para(p.goal+' · '+p.status+(p.next_step?' → '+p.next_step:'')));
+    for(const f of actor.state_fields)card.append(para(f.field+': '+(f.value??'не установлено')));
+    for(const k of actor.knowledge)card.append(para('Знание '+k.holder+' · '+k.status+': '+k.fact));
+    for(const e of actor.recent_offscreen)card.append(para('За кадром: '+e.description));
+    if(Object.keys(actor.omitted).length)card.append(para('Есть дополнительные записи; смотри карточку персонажа.'));
+    turnOut.append(card);
+   }
+   if(v.omitted_candidates)turnOut.append(para('Других кандидатов: '+v.omitted_candidates+'. Их можно уточнить через MCP.'));
   if(!v.candidates.length)turnOut.append(para('Пока нет записанных кандидатов. Это не означает, что персонажи не могут действовать.'));
  };
  add(turnPanel,target,focus,place,row(button('Подготовить эпизод',()=>busy(async()=>showTurn())),button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);turnScenes=m.scenes;turnComplete=m.complete;turnVerified=true;showTurn();}),'btn secondary')),turnOut);root.append(turnPanel);showTurn();
