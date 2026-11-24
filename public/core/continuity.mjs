@@ -10,7 +10,7 @@ import {relationshipError,relationshipKey,applyRelationship,interactionError} fr
 import {activityError,activityTransitionError,activityView} from './activities.mjs';
 import {consequenceError,consequenceTransitionError,consequenceView} from './consequences.mjs';
 import {growthRecordError,growthTransitionError,growthView} from './growth.mjs';
-import {dynamicsRecordError,dynamicsTransitionError,dynamicsView} from './world-dynamics.mjs';
+import {dynamicsRecordError,dynamicsTransitionError,dynamicsView,playerChoiceView} from './world-dynamics.mjs';
 import {prepareStoryTurn} from './story-turn.mjs';
 
 const TYPES=new Set(['character','relationship','knowledge','money','item','commitment','world','offscreen','plan']);
@@ -25,7 +25,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
   if(typeof body==='string'&&body.length>200000)errors.push('Сцена длиннее 200 000 символов.');
   if(!Array.isArray(events)||events.length>100)errors.push('Слишком много событий или неверный формат.');
   const locks=new Map(extractLocks(directives).map(x=>[pairKey(x.a,x.b),x]));
-  const ids=new Set(),paymentTransfers=new Set();
+  const ids=new Set(),paymentTransfers=new Set();let pendingChoices=0,answeredChoices=0;
   for(const [i,event] of (Array.isArray(events)?events:[]).entries()){
     const prefix=`Событие ${i+1}`;
     if(!event||typeof event!=='object'||Array.isArray(event)){errors.push(`${prefix}: неверный объект.`);continue;}
@@ -60,6 +60,12 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
       if(typeof event.key==='string'&&/^(place|routine):/.test(event.key)&&event.world_record_version!==1)errors.push(prefix+': ключ места или распорядка требует версию.');
       if(typeof event.key==='string'&&event.key.startsWith('social:')&&event.social_record_version!==1)errors.push(prefix+': социальный ключ требует версию.');
       if(typeof event.key==='string'&&event.key.startsWith('consequence:')&&event.consequence_version!==1)errors.push(prefix+': ключ последствия требует версионированной записи.');
+      if(event.dynamics_kind==='player_choice'){
+        if(event.status==='pending'){
+         pendingChoices++;if(i!==events.length-1||!evidencePrevalidated&&!body?.trimEnd().endsWith(event.evidence))errors.push(prefix+': вопрос выбора должен завершать сохранённый эпизод.');
+        }else if(event.status==='answered'){answeredChoices++;if(i!==0)errors.push(prefix+': ответ игрока должен быть первым структурированным событием продолжения.');}
+        if(pendingChoices>1||answeredChoices>1)errors.push(prefix+': не более одного ответа и одного нового выбора в сцене.');
+      }
       if(event.dynamics_version===1&&event.dynamics_kind==='payment_occurrence'&&event.status==='paid'){
         const ref=event.transfer_event_id,transfer=Array.isArray(events)&&events.find(x=>x?.id===ref);
         if(!transfer||transfer.type!=='money'||transfer.operation!=='transfer'||transfer.actor!==event.actor||transfer.counterparty!==event.counterparty||transfer.currency!==event.currency||transfer.delta!==-event.amount||paymentTransfers.has(ref))errors.push(prefix+': оплата требует отдельного совпадающего денежного перевода этой сцены, без повторного использования.');
@@ -95,6 +101,8 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
     // Replay checks the whole saved package once; current user rules NEVER rewrite past facts.
     const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated});
     if(!result.ok){failures.push({scene_id:scene.id,errors:result.errors});continue;}
+    const awaiting=[...worldFacts.values()].find(e=>e.dynamics_kind==='player_choice'&&e.status==='pending');
+    if(awaiting&&!(events[0]?.dynamics_kind==='player_choice'&&events[0].status==='answered'&&events[0].key===awaiting.key&&!dynamicsTransitionError(worldFacts,events[0]))){failures.push({scene_id:scene.id,errors:['Продолжение требует ответа на текущий выбор героя.']});continue;}
     for(const event of events){
       let accepted=true;
       const from={scene_id:scene.id,event_id:event.id,world_time:scene.world_time??null};
@@ -170,6 +178,7 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     confirmed_scene_count:scenes.length,memory_complete:historyComplete,
     directives:directives.filter(d=>d.active!==false).map(({text,category,metadata})=>({text,category,metadata})),
     memory:projection,
+    player_choice:playerChoiceView(scenes,projection,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:historyComplete}),
     active_story_drivers:storyDrivers(projection,directives),
     recorded_agenda:recordedWorldAgenda(scenes,projection),
     living_world:livingWorldView(scenes,projection,{complete:historyComplete,limit:8}),
