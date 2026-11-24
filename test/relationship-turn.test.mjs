@@ -133,3 +133,13 @@ test('turn attaches bounded independent actor context and background NPC motives
  assert.equal(turn.drivers.find(x=>x.kind==='npc_intention').actor,'Анна');
  assert.equal(JSON.stringify(p),snapshot);
 });
+
+test('actor context has a total size budget and reports every omitted record',()=>{
+ const actors=Array.from({length:8},(_,i)=>'Герой '+i);
+ const p={plans:actors.map((actor,i)=>({actor,plan_id:'p'+i,status:'active',goal:'Цель'})),
+ knowledge:actors.flatMap(actor=>Array.from({length:10},(_,i)=>({actor,fact:'Данные '+i+'я'.repeat(800),channel:'Канал'.repeat(80),source:{scene_id:'s'}})))};
+ const turn=prepareStoryTurn([{id:'s',world_time:'2026-01-01'}],p,[],{actors});
+ assert.ok(JSON.stringify(turn.actor_context).length<=18000);
+ for(const ctx of turn.actor_context){assert.equal(ctx.knowledge.length+(ctx.omitted.knowledge||0),10);assert.ok(ctx.knowledge.every(k=>k.holder===ctx.actor));}
+ assert.ok(turn.actor_context.every(x=>x.intentions.length===1));
+});
