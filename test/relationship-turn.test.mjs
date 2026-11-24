@@ -295,3 +295,18 @@ test('enterprise production consumes exact stock atomically and closes a matchin
  assert.equal(bad.validation_warnings.length,1);assert.equal(bad.stock.find(x=>x.product_id==='chair').quantity,0);
  assert.ok(dynamicsTransitionError(new Map(final.worldFacts.map(x=>[x.key,x])),closed));
 });
+
+test('bulk transfers preserve unknown incoming balances and reject partial debit batches',()=>{
+ const body='Склад отправил материалы другому складу.';
+ const op=(id,action,lines,extra={})=>({id,type:'world',dynamics_version:1,dynamics_kind:'stock_operation',record_id:id,key:'dynamics:stock_operation:'+id,description:body,evidence:body,actor:'A',status:'recorded',stock_action:action,stock_lines:lines,...extra});
+ const line=(product_id,quantity)=>({product_id,unit:'kg',quantity});
+ const init={id:'a',body,events:[op('count','count',[line('wood',5),line('steel',2)])]};
+ const good=op('send','transfer',[line('wood',3)],{counterparty:'B'});
+ const bad=op('bad','transfer',[line('wood',1),line('steel',3)],{counterparty:'B'});
+ const p=replay([init,{id:'b',body,events:[good]},{id:'c',body,events:[bad]}]);
+ assert.equal(p.validation_warnings.length,1);
+ assert.equal(p.stock.find(x=>x.holder==='A'&&x.product_id==='wood').quantity,2);
+ const received=p.stock.find(x=>x.holder==='B'&&x.product_id==='wood');assert.equal(received.known,false);assert.equal(received.quantity,null);assert.equal(received.delta,3);
+ assert.equal(p.stock.some(x=>x.holder==='B'&&x.product_id==='steel'),false);
+ assert.equal(validateScene({body,events:[op('x','count',[{...line('wood',1),extra:true}])]}).ok,false);
+});
