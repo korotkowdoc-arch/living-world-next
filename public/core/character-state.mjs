@@ -4,7 +4,8 @@ export const CHARACTER_FIELDS=Object.freeze({
  location:'Последнее известное место',occupation:'Занятие',condition:'Физическое состояние',
  injury:'Травма или ограничение',appearance:'Внешность',mood:'Последнее выраженное настроение',
  habit:'Привычка',preference:'Предпочтение',aversion:'Неприязнь',affiliation:'Принадлежность',
- role:'Роль',availability:'Доступность',personal_goal:'Личная цель'
+ role:'Роль',availability:'Доступность',personal_goal:'Личная цель',
+ speech_style:'Манера речи',register:'Регистр речи',temperament:'Темперамент',values:'Ценности',coping_style:'Реакция на трудности',humor:'Чувство юмора'
 });
 export function characterStateError(event){
  if(event.state_patch===undefined)return null; // keep legacy unstructured character events readable.
@@ -48,7 +49,8 @@ export function characterStateView(projection,actor,{complete=true,offset=0,limi
  const knowledge=(projection.knowledge||[]).filter(x=>identity(x.actor)).map(x=>({kind:'knowledge',...x}));
  const commitments=(projection.obligations||[]).filter(x=>identity(x.actor)).map(x=>({kind:'commitment',...x}));
  const activities=(projection.worldFacts||[]).filter(x=>x.activity_version===1&&(identity(x.actor)||x.actors?.some(identity))).map(x=>({kind:x.activity_kind,...x}));
- const rows=[...relations,...plans,...knowledge,...commitments,...activities];
+ const growth=(projection.worldFacts||[]).filter(x=>x.growth_version===1&&(identity(x.actor)||identity(x.sender)||identity(x.recipient)||identity(x.teacher))).map(x=>({kind:x.growth_kind,...x}));
+ const rows=[...relations,...plans,...knowledge,...commitments,...activities,...growth];
  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
  return {actor:subject,character:character?{name:character.name,description:character.description??null,
   state_fields:character.state_fields||[],latest_event_source:character.source}:null,

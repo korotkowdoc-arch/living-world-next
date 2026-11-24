@@ -12,6 +12,7 @@ import {knowledgeView} from './core/knowledge.mjs';
 import {relationshipHistory} from './core/relationship-memory.mjs';
 import {activityView} from './core/activities.mjs';
 import {consequenceView} from './core/consequences.mjs';
+import {growthView} from './core/growth.mjs';
 import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
@@ -154,9 +155,9 @@ async function checkCloudChanges(){
 }
 
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['social','Общество'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['life','Мир'],['social','Общество'],['growth','Развитие'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
-  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='social')renderSocialWorld();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
+  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='life')renderLivingWorld();if(state.tab==='social')renderSocialWorld();if(state.tab==='growth')renderGrowth();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
@@ -538,6 +539,27 @@ function renderSocialWorld(){
   panel(title('Восстановленная память'),para('Отдельные предложения рассказчика по старым сценам. Не меняют канон. Требуется миграция 009.'),button('Читать предложения',()=>busy(()=>getNotes(false)),'btn secondary'),notesOut,more));
  show();
 }
+function renderGrowth(){
+ const w=state.world,out=node('div'),actor=node('input','field'),topic=node('input','field');
+ actor.placeholder='Имя героя (необязательно)';topic.placeholder='Тема или ID записи';actor.maxLength=140;topic.maxLength=140;
+ let scenes=state.scenes,complete=state.historyComplete,verified=false,offset=0;
+ const show=()=>{
+  const p=replay(scenes,[],{evidencePrevalidated:verified}),v=growthView(p,{actor:actor.value,topic:topic.value,complete,offset,limit:20});
+  out.replaceChildren();
+  for(const [heading,items] of [['Навыки и обучение',v.skills],['Личные проекты',v.projects],['Передача слухов',v.rumors],['Причинные связи',v.causes]]){
+   out.append(title(heading));if(!items.length)out.append(para('Нет записей в этой выборке.'));
+   for(const r of items){
+    const label=r.name||r.title||(r.kind==='rumor'?r.sender+' → '+r.recipient:r.from_key+' → '+r.to_key);
+    const card=add(node('div','rule'),node('strong','',label),para([r.actor,r.status,r.teacher].filter(Boolean).join(' · ')),para(r.description||r.claim||''),para([r.milestone,r.obstacle,r.next_step,r.outcome,r.channel,r.parent_rumor_id].filter(Boolean).join(' · ')),para(r.evidence));
+    if(r.source?.scene_id){const body=node('div','scene-body');body.hidden=true;card.append(button('Источник',()=>busy(async()=>{body.textContent=(await getScene(w.id,r.source.scene_id)).body;body.hidden=false;}),'text-button'),body);}out.append(card);
+   }
+  }
+  if(offset)out.append(button('Назад',()=>{offset=Math.max(0,offset-20);show();},'btn secondary'));
+  if(v.next_offset!==null)out.append(button('Ещё',()=>{offset=v.next_offset;show();},'btn secondary'));
+  if(!complete)out.append(node('div','notice','История загружена частично.'));
+ };
+ root.append(panel(title('Развитие героев и причинность'),para('Навыки, долгие личные проекты, цепочки слухов и явно установленные причины. Переданный слух не означает, что получатель ему поверил.'),actor,topic,row(button('Найти',()=>{offset=0;show();}),button('Прочитать всю ветку',()=>busy(async()=>{const m=await fullStructuredMemory(w);scenes=m.scenes;complete=m.complete;verified=true;offset=0;show();}),'btn secondary')),out));show();
+}
 function renderAgenda(){
  const w=state.world;
  const intro=panel(title('Игровое время и обязательства'),
@@ -599,6 +621,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
    d.kind==='independent_thread'?'Сюжетная линия: '+d.title+' ('+d.status+')':
    d.kind==='shared_activity'?'Совместное занятие: '+d.title+' ('+d.status+')':
    d.kind==='lasting_consequence'?'Последствие: '+d.actor+' · '+d.description:
+   d.kind==='personal_project'?'Проект: '+d.actor+' · '+d.title:
    d.kind==='established_antagonism'?d.actors.join(' → ')+' · '+d.stance:
    d.actors.join(' ↔ ')+' · авторский запрет';
   pressure.append(add(node('div','rule'),node('strong','',label),para(d.guidance+source)));

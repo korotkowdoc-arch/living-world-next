@@ -10,7 +10,7 @@ const open=new Set(['active','open','pending','owed','unfulfilled']);
  */
 export function storyDrivers(projection={},directives=[],{max=16}={}){
  const result=[],locked=new Set();
- const push=entry=>{if(result.length<Math.max(1,Math.min(50,max)))result.push(entry);};
+ const push=entry=>result.push(entry);
  const activeRules=Array.isArray(directives)?directives.filter(d=>d?.active!==false):[];
  const locks=extractLocks(activeRules);
  for(const lock of locks){
@@ -54,6 +54,9 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
  for(const consequence of (projection.worldFacts||[]).filter(x=>x.consequence_version===1&&x.status!=='resolved').slice(-4).reverse()){
   push({kind:'lasting_consequence',actor:consequence.actor,description:consequence.description,status:consequence.status,source:consequence.source,certainty:'recorded_consequence',guidance:'Не отменяй последствие без события. Оспаривание не доказывает вину, разрешение не означает прощения.'});
  }
+ for(const project of (projection.worldFacts||[]).filter(x=>x.growth_version===1&&x.growth_kind==='project'&&['planned','active','paused'].includes(x.status)).slice(-5).reverse()){
+  push({kind:'personal_project',actor:project.actor,title:project.title,status:project.status,next_step:project.next_step||null,obstacle:project.obstacle||null,source:project.source,certainty:'recorded_project_not_completed',guidance:'Проект развивается через реальные попытки, ошибки и достигнутые результаты, не автоматически.'});
+ }
  for(const relationship of (Array.isArray(projection.relationships)?projection.relationships:[])){
   if(!text(relationship?.a)||!text(relationship?.b))continue;
   const remembered=(relationship.relationship_fields||[]).filter(x=>['hatred','resentful','distrusted','disrespected'].includes(x.value));
@@ -64,7 +67,12 @@ export function storyDrivers(projection={},directives=[],{max=16}={}){
     certainty:'last_recorded_directional_relationship',
     guidance:'Вражда может продолжаться. Не навязывать уважение или компромисс; возможны односторонние и разные реакции.'});
  }
- return result;
+ // Binding rules first; round-robin remaining kinds to avoid many plans starving conflicts.
+ const cap=Math.max(1,Math.min(50,Math.floor(Number(max)||16)));
+ const rules=result.filter(x=>x.kind==='author_relationship_boundary'),out=rules.slice(0,cap),groups=new Map();
+ for(const x of result)if(x.kind!=='author_relationship_boundary'){if(!groups.has(x.kind))groups.set(x.kind,[]);groups.get(x.kind).push(x);}
+ for(let i=0;out.length<cap;i++){let added=false;for(const group of groups.values()){if(group[i]){out.push(group[i]);added=true;if(out.length===cap)break;}}if(!added)break;}
+ return out;
 }
 export function storyDriverPrompt(drivers=[]){
  if(!drivers.length)return 'Персонажи не обязаны ждать действий главного героя. Из-за отсутствия разметки нельзя заключать, что у них нет целей: показывай инициативу в рамках реально написанных сцен и правил.';
@@ -76,6 +84,7 @@ export function storyDriverPrompt(drivers=[]){
   if(d.kind==='independent_thread')return '• Независимая линия: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'; '+d.visibility+'. Не раскрывай без причины, не завершай автоматически.';
   if(d.kind==='shared_activity')return '• Совместное занятие: '+d.title+' ('+d.status+'); участники: '+d.actors.join(', ')+'. Не считать выполненным заранее.';
   if(d.kind==='lasting_consequence')return '• Последствие для '+d.actor+': '+d.description+' ('+d.status+'). Не стирай без записанного изменения.';
+  if(d.kind==='personal_project')return '• Личный проект '+d.actor+': '+d.title+' ('+d.status+'). '+(d.next_step?'Возможный шаг: '+d.next_step+'. ':'')+(d.obstacle?'Препятствие: '+d.obstacle+'. ':'')+'Не считать завершённым заранее.';
   if(d.kind==='recorded_commitment')
    return '• Обязательство '+d.commitment_id+'; состояние '+d.status+'; источник '+(d.source?.scene_id||'не указан')+'. Уточни перед признанием исполненным.';
   return '• Направленный конфликт: '+d.actors.join(' → ')+', '+d.stance+'. Не переосмысливай без событий.';
