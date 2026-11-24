@@ -46,7 +46,7 @@ create or replace function public.nw_assert_story_event_shape(e jsonb)
 returns void language plpgsql immutable security invoker set search_path='' as $story$
 declare typ text:=e->>'type'; k text; p jsonb; v jsonb; key_name text; n integer;
  fields constant jsonb:='{"trust":["trusted","distrusted","conditional","unknown"],"respect":["respected","disrespected","unknown"],"affection":["affectionate","indifferent","dislike","hatred","unknown"],"fear":["fearful","unafraid","unknown"],"resentment":["resentful","released","unknown"],"cooperation":["cooperating","refuses","conditional","unknown"],"attraction":["attracted","not_attracted","ambivalent","unknown"],"jealousy":["jealous","not_jealous","unknown"],"commitment":["committed","uncertain","withdrawn","unknown"],"boundary":["open","distance","no_contact","unknown"]}';
- statuses constant jsonb:='{"bond":["active","strained","estranged","ended","unknown"],"institution":["operating","restricted","suspended","closed","unknown"],"contest":["open","negotiating","decided","abandoned","unknown"],"development":["scheduled","ongoing","completed","cancelled","unknown"],"family_event":["planned","ongoing","completed","cancelled","unknown"],"family_duty":["active","paused","ended","unknown"],"life_transition":["planned","ongoing","completed","cancelled","unknown"],"employment":["offered","active","suspended","ended","declined","unknown"],"market_offer":["available","reserved","withdrawn","sold","unknown"],"economic_agreement":["proposed","active","disputed","settled","cancelled","unknown"],"payment_schedule":["active","paused","ended"],"payment_occurrence":["paid","waived"],"enterprise":["planned","operating","suspended","closed"],"production_order":["planned","ongoing","completed","cancelled"],"stock_operation":["recorded"]}';
+ statuses constant jsonb:='{"bond":["active","strained","estranged","ended","unknown"],"institution":["operating","restricted","suspended","closed","unknown"],"contest":["open","negotiating","decided","abandoned","unknown"],"development":["scheduled","ongoing","completed","cancelled","unknown"],"family_event":["planned","ongoing","completed","cancelled","unknown"],"family_duty":["active","paused","ended","unknown"],"life_transition":["planned","ongoing","completed","cancelled","unknown"],"employment":["offered","active","suspended","ended","declined","unknown"],"market_offer":["available","reserved","withdrawn","sold","unknown"],"economic_agreement":["proposed","active","disputed","settled","cancelled","unknown"],"payment_schedule":["active","paused","ended"],"payment_occurrence":["paid","waived"],"enterprise":["planned","operating","suspended","closed"],"production_order":["planned","ongoing","completed","cancelled"],"stock_operation":["recorded"],"player_choice":["pending","answered"]}';
 begin
  if typ='character' and e?'state_patch' then
   p:=e->'state_patch';
@@ -98,6 +98,18 @@ begin
     or jsonb_typeof(e->'group_id') is distinct from 'string' or coalesce(e->>'group_id','') !~ '^[A-Za-z0-9_-]{1,80}$') then raise exception 'Invalid institution'; end if;
    if k='contest' and (not public.nw_story_text_valid(e->'resource',300) or not public.nw_story_actors_valid(e->'actors',2) or not public.nw_story_text_valid(e->'title',140)) then raise exception 'Invalid contest'; end if;
    if k='development' and (not public.nw_story_text_valid(e->'title',140) or not public.nw_story_text_valid(e->'place',140) or not public.nw_story_actors_valid(e->'actors',0)) then raise exception 'Invalid development'; end if;
+   if k='player_choice' then
+    if not public.nw_story_text_valid(e->'actor',140) then raise exception 'Missing player character'; end if;
+    if e->>'status'='pending' then
+     if not public.nw_story_text_valid(e->'question',600) or jsonb_typeof(e->'options') is distinct from 'array' or e->>'selected_option' is not null or e->>'action_text' is not null then raise exception 'Invalid pending choice'; end if;
+     if jsonb_array_length(e->'options') not between 2 and 5 then raise exception 'Invalid number of choices'; end if;
+     for v in select value from jsonb_array_elements(e->'options') loop
+      if jsonb_typeof(v) is distinct from 'object' then raise exception 'Invalid option'; end if;
+      if (select count(*) from jsonb_object_keys(v))<>2 or jsonb_typeof(v->'id') is distinct from 'string' or coalesce(v->>'id','') !~ '^[A-Za-z0-9_-]{1,80}$' or v->>'id'='custom' or not public.nw_story_text_valid(v->'text',600) then raise exception 'Invalid option'; end if;
+     end loop;
+     if exists(select 1 from jsonb_array_elements(e->'options') o group by o->>'id' having count(*)>1) or exists(select 1 from jsonb_array_elements(e->'options') o group by btrim(o->>'text') having count(*)>1) then raise exception 'Duplicate options'; end if;
+    elsif jsonb_typeof(e->'selected_option') is distinct from 'string' or coalesce(e->>'selected_option','') !~ '^[A-Za-z0-9_-]{1,80}$' or not public.nw_story_text_valid(e->'action_text',5000) or e->>'options' is not null or e->>'question' is not null then raise exception 'Invalid player answer'; end if;
+   end if;
    if k='enterprise' and (not public.nw_story_text_valid(e->'actor',140) or not public.nw_story_text_valid(e->'title',140) or not public.nw_story_text_valid(e->'place',140) or not public.nw_story_text_valid(e->'business_kind',140) or coalesce(e->>'group_id','') !~ '^[A-Za-z0-9_-]{1,80}$') then raise exception 'Invalid enterprise'; end if;
    if k='stock_operation' then
     if not public.nw_story_text_valid(e->'actor',140) or e->>'actor'<>btrim(e->>'actor') or coalesce(e->>'stock_action','') not in ('count','receive','consume','transfer','produce') then raise exception 'Invalid stock holder or action'; end if;
@@ -186,6 +198,14 @@ begin
  perform public.nw_assert_story_event_shape(e);
  if e->'dynamics_version'='1'::jsonb then
   kind:=e->>'dynamics_kind';
+  if kind='player_choice' then
+   if e->>'status'='pending' then
+    if old is not null or exists(select 1 from jsonb_each(st->'records') r where r.value->>'dynamics_kind'='player_choice' and r.value->>'status'='pending') then raise exception 'Current choice unresolved or reused'; end if;
+   else
+    if old is null or old->>'dynamics_kind'<>'player_choice' or old->>'status'<>'pending' or old->'actor' is distinct from e->'actor' then raise exception 'No matching pending choice'; end if;
+    if e->>'selected_option'<>'custom' and not exists(select 1 from jsonb_array_elements(old->'options') o where o->>'id'=e->>'selected_option' and o->>'text'=e->>'action_text') then raise exception 'Altered choice answer'; end if;
+   end if;
+  end if;
   if old is not null then
    foreach field in array array['dynamics_version','dynamics_kind','record_id'] loop
     if old->field is distinct from e->field then raise exception 'Changed dynamics identity'; end if;
@@ -289,8 +309,14 @@ revoke all on function public.nw_story_transition_step(jsonb,jsonb) from public,
 
 create or replace function public.nw_assert_story_transitions(p_world uuid,p_head uuid,p_events jsonb)
 returns void language plpgsql security invoker set search_path='' as $transition$
-declare u uuid:=auth.uid(); st jsonb:='{"plans":{},"records":{}}'; rec record; e jsonb; seen integer:=0;
+declare u uuid:=auth.uid(); st jsonb:='{"plans":{},"records":{}}'; rec record; e jsonb; seen integer:=0; previous_choice jsonb;
 begin
+ -- Pending choice is always the final event of the saved head. No silent bypass even with empty events.
+ select s.events->-1 into previous_choice from public.nw_scenes s where s.id=p_head and s.world_id=p_world and s.owner_id=u;
+ if previous_choice->>'dynamics_kind'='player_choice' and previous_choice->>'status'='pending' and
+  (p_events->0->>'dynamics_kind' is distinct from 'player_choice' or p_events->0->>'status' is distinct from 'answered' or p_events->0->>'key' is distinct from previous_choice->>'key') then raise exception 'Pending player choice requires answer'; end if;
+ if exists(select 1 from jsonb_array_elements(p_events) with ordinality x(e,i) where x.e->>'dynamics_kind'='player_choice' and
+  ((x.e->>'status'='pending' and x.i<>jsonb_array_length(p_events)) or (x.e->>'status'='answered' and x.i<>1))) then raise exception 'Invalid player choice position'; end if;
  if not exists(select 1 from jsonb_array_elements(p_events) x where x->>'type'='plan' or (x->>'type'='world' and (x?'dynamics_version' or x?'social_record_version' or x?'activity_version' or x?'consequence_version' or x?'growth_version'))) then return; end if;
  if u is null or not exists(select 1 from public.nw_worlds where id=p_world and owner_id=u) then raise exception 'World not found'; end if;
  for rec in with recursive chain as (
