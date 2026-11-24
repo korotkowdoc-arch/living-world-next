@@ -45,3 +45,14 @@ test('draft preview includes keyless interaction without committing it',()=>{
  assert.deepEqual(review.changes[0].actors,['Анна','Борис']);
  assert.deepEqual(memory.scenes,[]);
 });
+
+test('personal feelings and family bonds remain independent',()=>{
+ const body='Анна ревнует Бориса. Анна и Борис состоят в браке.';
+ const feeling={id:'f',type:'relationship',a:'Анна',b:'Борис',relationship_version:1,relationship_patch:{jealousy:'jealous',attraction:'ambivalent'},evidence:'Анна ревнует Бориса'};
+ const bond={id:'b',type:'world',dynamics_version:1,dynamics_kind:'bond',record_id:'marriage1',key:'dynamics:bond:marriage1',actor:'Анна',counterparty:'Борис',bond_type:'marriage',status:'active',description:'Брак',evidence:'состоят в браке'};
+ const scenes=[{id:'s',body,events:[feeling,bond]}];
+ assert.equal(validateScene({body,events:[feeling,bond]}).ok,true);
+ const p=replay(scenes);assert.equal(p.relationships.length,1);assert.equal(p.relationships[0].relationship_fields.length,2);
+ assert.equal(prepareStoryTurn(scenes,p,[],{actors:['Борис']}).candidates.find(x=>x.kind==='personal_bond').bond_type,'marriage');
+ assert.equal(prepareStoryTurn(scenes,p,[],{actors:['Вера']}).candidates.some(x=>x.kind==='personal_bond'),false);
+});
