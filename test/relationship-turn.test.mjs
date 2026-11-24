@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {replay,validateScene} from '../public/core/continuity.mjs';
 import {relationshipHistory} from '../public/core/relationship-memory.mjs';
 import {reviewSceneDraft} from '../public/core/scene-draft.mjs';
+import {characterAge,characterStateView} from '../public/core/character-state.mjs';
+import {familyDutyWindow,dynamicsTransitionError} from '../public/core/world-dynamics.mjs';
+import {parseStoryDate} from '../public/core/world-time.mjs';
 import {prepareStoryTurn} from '../public/core/story-turn.mjs';
 const body='Анна и Борис сходили на свидание. Позднее они расстались.';
 const event={id:'date1',type:'world',interaction_version:1,interaction_kind:'date',actors:['Анна','Борис'],description:'Свидание',evidence:'сходили на свидание'};
@@ -72,4 +75,34 @@ test('family milestones become due candidates without completing themselves',()=
  const p=replay(scenes);const turn=prepareStoryTurn(scenes,p,[],{target_time:'2026-12-02'});
  assert.equal(turn.candidates.find(x=>x.kind==='family_event').timing,'reached_requires_story');
  assert.equal(p.worldFacts[0].status,'planned');
+});
+
+test('calendar age and birthdays follow fictional time without overwriting state',()=>{
+ const body='Анна родилась 29 февраля 2000 года.';
+ const e={id:'birth',type:'character',name:'Анна',state_patch:{birth_date:'2000-02-29'},evidence:body};
+ assert.equal(validateScene({body,events:[e]}).ok,true);
+ assert.equal(validateScene({body,events:[{...e,state_patch:{birth_date:'2001-02-29'}}]}).ok,false);
+ const scenes=[{id:'s',body,world_time:'2023-02-28',events:[e]}],p=replay(scenes),snapshot=JSON.stringify(p);
+ assert.equal(characterAge(p.people[0],'2023-02-28').years,22);
+ assert.equal(characterStateView(p,'Анна',{worldTime:'2023-03-01'}).character.age.years,23);
+ assert.equal(characterAge(p.people[0],'1999-01-01').status,'before_recorded_birth');
+ assert.equal(characterAge(p.people[0],null),null);
+ const turn=prepareStoryTurn(scenes,p,[],{actors:['Анна'],target_time:'2025-03-01'});
+ assert.equal(turn.life_context[0].target_age.years,25);
+ assert.equal(turn.candidates.find(x=>x.kind==='age_milestone').birthdays_crossed,3);
+ assert.equal(JSON.stringify(p),snapshot);
+});
+test('recurring duties count elapsed calendar days, not performed actions',()=>{
+ const body='Анна забирает ребёнка каждые два дня.';
+ const e={id:'d',type:'world',dynamics_version:1,dynamics_kind:'family_duty',record_id:'care',key:'dynamics:family_duty:care',family_kind:'care',title:'Забрать ребёнка',actors:['Анна'],description:body,evidence:body,status:'active',starts_on:'2026-01-01',every_days:2,ends_on:'2026-01-09'};
+ assert.equal(validateScene({body,events:[e]}).ok,true);
+ assert.equal(validateScene({body,events:[{...e,every_days:0}]}).ok,false);
+ assert.ok(dynamicsTransitionError(new Map([[e.key,e]]),{...e,every_days:3}));
+ const scenes=[{id:'s',body,world_time:'2026-01-02',events:[e]}],p=replay(scenes);
+ const turn=prepareStoryTurn(scenes,p,[],{target_time:'2026-01-15'});
+ const duty=turn.candidates.find(x=>x.kind==='family_duty');
+ assert.equal(duty.occurrences,4);assert.equal(duty.first_due_on,'2026-01-03');assert.equal(duty.last_due_on,'2026-01-09');
+ assert.equal(p.worldFacts[0].status,'active');
+ assert.equal(familyDutyWindow({...e,status:'paused'},null,parseStoryDate('2026-01-03')),null);
+ assert.equal(familyDutyWindow(e,null,parseStoryDate('2026-01-04')),null);
 });
