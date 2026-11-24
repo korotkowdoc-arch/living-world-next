@@ -123,6 +123,32 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  // A recorded active habit can motivate leisure without assuming that it is due today.
  for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active')
   add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),guidance:'Optional established tendency, not a scheduled or completed action.'});
+ // Shared circumstances offer interaction without asserting a meeting or shared knowledge.
+ // Aggregate by place/group instead of generating quadratic pairs.
+ const byPlace=new Map(),groups=new Map(),members=new Map();
+ for(const [actor,routines] of currentRoutines)for(const r of routines){
+  if(!byPlace.has(r.place))byPlace.set(r.place,new Map());
+  const at=byPlace.get(r.place);if(!at.has(actor))at.set(actor,r);
+ }
+ for(const [name,at] of byPlace)if(at.size>=2){
+  const rows=[...at.values()].sort((a,b)=>Number(focus.has(b.actor))-Number(focus.has(a.actor)));
+  add('shared_schedule',{key:JSON.stringify(['shared_schedule',name]),title:'Совпадение распорядка: '+name,place:name,actors:rows.slice(0,12).map(r=>r.actor),status:'opportunity',source:rows[0].source},{timing:'scheduled_window_not_presence',participants_omitted:rows.length-12>0?rows.length-12:0,basis:rows.slice(0,12).map(r=>({actor:r.actor,key:r.key,source:source(r)})),guidance:'Participants may meet or miss each other. No established presence, conversation or knowledge.'});
+ }
+ for(const r of records){
+  if(r.social_record_version===1&&r.social_kind==='group'&&r.status==='active')groups.set(r.record_id,r);
+  if(r.social_record_version===1&&r.social_kind==='membership'&&r.status==='member'){
+   if(!members.has(r.group_id))members.set(r.group_id,new Map());
+   members.get(r.group_id).set(r.actor,r);
+  }
+ }
+ for(const [id,group] of groups){
+  const rows=[...(members.get(id)?.values()||[])].sort((a,b)=>Number(focus.has(b.actor))-Number(focus.has(a.actor)));
+  if(rows.length<2)continue;
+  add('group_opportunity',{key:JSON.stringify(['group_opportunity',id]),title:group.name,actors:rows.slice(0,12).map(r=>r.actor),status:'opportunity',source:group.source},{visibility:group.visibility||'unknown',purpose:clip(group.purpose),participants_omitted:Math.max(0,rows.length-12),basis:rows.slice(0,12).map(r=>({actor:r.actor,role:clip(r.role),source:source(r)})),guidance:'An active organization with members can create independent activity or disagreement. Membership is not loyalty, access or shared knowledge.'});
+ }
+ for(const r of records)if(r.growth_version===1&&r.growth_kind==='skill'&&['learning','practicing'].includes(r.status)&&text(r.teacher)&&r.teacher!==r.actor){
+  add('mentorship_opportunity',{key:JSON.stringify(['mentorship_opportunity',r.key]),title:r.name,actor:r.actor,counterparty:r.teacher,status:'opportunity',source:r.source},{skill_status:r.status,guidance:'Recorded learner and teacher may practice, disagree or reschedule. Do not grant progress or assume a lesson happened.'});
+ }
  const life_context=[];
  for(const person of projection.people||[]){
   const before=characterAge(person,clock?.literal),after=characterAge(person,anchor?.literal);
