@@ -29,6 +29,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
   for(const [i,event] of (Array.isArray(events)?events:[]).entries()){
     const prefix=`Событие ${i+1}`;
     if(!event||typeof event!=='object'||Array.isArray(event)){errors.push(`${prefix}: неверный объект.`);continue;}
+    if(event.dynamics_kind==='player_choice'&&(event.type!=='world'||event.dynamics_version!==1))errors.push(prefix+': выбор должен быть версионированной записью world.');
     if(!TYPES.has(event.type))errors.push(`${prefix}: неизвестный тип.`);
     if(!asText(event.id)||ids.has(event.id))errors.push(`${prefix}: требуется уникальный ID.`);
     ids.add(event.id);
@@ -84,7 +85,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
           errors.push(prefix+': неверное изменение цели, срока, следующего шага или препятствия.');
       }
       if(event.action==='complete'){
-        const actual=Array.isArray(events)&&events.find(x=>x?.id===event.performed_event_id&&x!==event&&['world','offscreen'].includes(x.type));
+        const actual=Array.isArray(events)&&events.find(x=>x?.id===event.performed_event_id&&x!==event&&['world','offscreen'].includes(x.type)&&x.dynamics_kind!=='player_choice');
         if(!actual)errors.push(`${prefix}: завершённый план требует ID доказанного действия world/offscreen из этой сцены.`);
       }
     }
@@ -95,13 +96,12 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
 /** Replay only the actual ancestry of one branch, oldest first. No other branch can leak in. */
 export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) {
   const people=new Map(), relationships=new Map(), knowledge=new Map(), balances=new Map(), items=new Map(), stock=new Map(), obligations=new Map(), worldFacts=new Map(), plans=new Map(), offscreen=[];
-  const evidence=[]; const failures=[]; const relationshipHistory=[];
+  const evidence=[]; const failures=[]; const relationshipHistory=[];let awaiting=null;
   for(const scene of scenes){
     const events=Array.isArray(scene.events)?scene.events:[];
     // Replay checks the whole saved package once; current user rules NEVER rewrite past facts.
     const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated});
     if(!result.ok){failures.push({scene_id:scene.id,errors:result.errors});continue;}
-    const awaiting=[...worldFacts.values()].find(e=>e.dynamics_kind==='player_choice'&&e.status==='pending');
     if(awaiting&&!(events[0]?.dynamics_kind==='player_choice'&&events[0].status==='answered'&&events[0].key===awaiting.key&&!dynamicsTransitionError(worldFacts,events[0]))){failures.push({scene_id:scene.id,errors:['Продолжение требует ответа на текущий выбор героя.']});continue;}
     for(const event of events){
       let accepted=true;
@@ -124,7 +124,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         case 'world': if(asText(event.key)){
           const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
-          else worldFacts.set(event.key,value);
+          else {worldFacts.set(event.key,value);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
         }break;
         case 'offscreen': offscreen.push(value);break;
         case 'plan': {
