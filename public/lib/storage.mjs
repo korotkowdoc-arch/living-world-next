@@ -1,5 +1,5 @@
 import {dbRequest} from './session.mjs';
-import {requestIdentity} from '../core/request-identity.mjs';
+import {requestIdentity,sameJson} from '../core/request-identity.mjs';
 import {needsStatePreflight,validateStateAppend,validateScene} from '../core/continuity.mjs';
 import {revisionStatePreflight} from '../core/revisions.mjs';
 import {prependHistoryPage} from '../core/reader.mjs';
@@ -53,7 +53,7 @@ export async function reviseScene({world,sourceSceneId,prefix,continuation,event
   const rows=await dbRequest(`/rest/v1/nw_revisions?select=branch_id,new_scene_id,source_scene_id,kept_prefix,continuation,new_events,requested_world_time&world_id=eq.${enc(world.id)}&request_id=eq.${enc(id)}&limit=1`).catch(()=>[]);
   const previous=rows?.[0];
   if(previous?.source_scene_id===sourceSceneId&&previous.kept_prefix===prefix&&previous.continuation===continuation&&
-     JSON.stringify(previous.new_events)===JSON.stringify(events)&&previous.requested_world_time===worldTime)
+     sameJson(previous.new_events,events)&&previous.requested_world_time===worldTime)
    return {scene_id:previous.new_scene_id,branch_id:previous.branch_id,reused:true,recovered_after_error:true};
   throw Error(`${error.message} Если сеть пропала, проверь ветки: запись не подтверждена (ID ${id}).`);
  }
@@ -109,7 +109,7 @@ export async function saveScene({world,body,worldTime=null,events=[],requestId=n
   const receipt=await sceneReceipt(world.id,id).catch(()=>null);
   if(receipt?.saved&&receipt.branch_id===payload.p_branch_id){
    const saved=await getScene(world.id,receipt.scene_id).catch(()=>null);
-   if(saved?.body===body&&saved.parent_scene_id===payload.p_expected_head&&JSON.stringify(saved.events)===JSON.stringify(events)&&(saved.world_time??null)===worldTime)return receipt.scene_id;
+   if(saved?.body===body&&saved.parent_scene_id===payload.p_expected_head&&sameJson(saved.events,events)&&(saved.world_time??null)===worldTime)return receipt.scene_id;
   }
   throw Error(`${error.message} Запись не подтверждена. Не создавай новое продолжение до проверки; ID запроса: ${id}.`);
  }

@@ -14,3 +14,11 @@ test('browser request identity is deterministic for the SAME draft, branch and e
 test('request identity rejects unavailable cryptography rather than claiming safe retry',async()=>{
  await assert.rejects(requestIdentity('scene',{a:1},{}),/HTTPS/);
 });
+
+test('receipt JSON comparison ignores object key order but not event order or changed values',async()=>{
+ const {sameJson}=await import('../public/core/request-identity.mjs');
+ assert.equal(sameJson([{id:'a',data:{x:1,y:2}},{id:'b'}],[{data:{y:2,x:1},id:'a'},{id:'b'}]),true);
+ assert.equal(sameJson([{id:'a'},{id:'b'}],[{id:'b'},{id:'a'}]),false);
+ assert.equal(sameJson({a:1},{a:'1'}),false);
+ assert.equal(sameJson(null,{}),false);
+});

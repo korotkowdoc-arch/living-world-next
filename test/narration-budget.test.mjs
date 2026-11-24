@@ -59,3 +59,17 @@ test('MCP world context scenes are bounded even when individual scenes reach 200
  assert.equal(short.body_truncated,false);
  assert.equal(short.body,'Текст сцены');
 });
+
+test('tight context includes multiple categories rather than only plans and fits final JSON',()=>{
+ const projection={plans:Array.from({length:1000},(_,i)=>({actor:'Герой '+i,goal:'Цель '+i+'x'.repeat(200),status:'active',source})),
+  relationships:[{a:'А',b:'Б',stance:'enemies',source}],knowledge:[{actor:'А',fact:'Секрет',source}],items:[{item_id:'letter',holder:'Б',source}],events_replayed:1000};
+ const summary=limitedNarratorMemory(projection,{maxChars:2500,maxEntriesPerCategory:40});
+ assert.ok(JSON.stringify(summary).length<=2500);
+ for(const k of ['plans','relationships','knowledge','items'])assert.ok(summary.records[k].length>0,k);
+ assert.equal(summary.counts.plans,1000);assert.equal(summary.omitted.plans,1000-summary.records.plans.length);
+});
+test('all recorded participants survive context compaction',()=>{
+ const actors=Array.from({length:12},(_,i)=>'Герой '+i);
+ const summary=limitedNarratorMemory({worldFacts:[{actors,title:'Собрание',source}]});
+ assert.deepEqual(summary.records.worldFacts[0].actors,actors);
+});

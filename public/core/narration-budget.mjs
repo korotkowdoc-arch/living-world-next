@@ -26,6 +26,11 @@ function compactValue(value,depth=0){
     if(value[k].length>fields.length)out[k+'_omitted']=value[k].length-fields.length;
     continue;
    }
+   if(k==='actors'&&Array.isArray(value[k])){
+    out.actors=value[k].slice(0,12).map(x=>compactValue(x,depth+1));
+    if(value[k].length>12)out.actors_omitted=value[k].length-12;
+    continue;
+   }
    if(k==='history'&&Array.isArray(value[k])){
     out.history_events=value[k].length;
     out.latest_history=value[k].slice(-3).map(v=>compactValue(v,depth+1));
@@ -45,31 +50,36 @@ export function limitedNarratorMemory(projection,{maxChars=18000,maxEntriesPerCa
  const summary={status:'partial_context_sample',memory_is_not_exhaustive:true,
   source_rule:'Для новых фактов открой конкретную сцену в MCP; сокращённый список не заменяет первоисточник.',
   records:{},omitted:{},counts:{}};
- const limit=Math.max(1,Math.min(40,Number(maxEntriesPerCategory)||12));
+ const limit=Math.max(1,Math.min(40,Math.floor(Number(maxEntriesPerCategory)||12)));
+ const queues=new Map();
+ // Reserve all count/omission metadata BEFORE adding records. Metadata may
+ // otherwise push the final JSON over the advertised character budget.
  for(const category of PRIORITY){
   const rows=Array.isArray(projection[category])?projection[category]:[];
-  summary.records[category]=[];
-  summary.counts[category]=rows.length;
-  let omitted=0;
-  // Last known state for entities is near the end; existing unsolved plans
-  // are prioritized over already completed records.
+  summary.records[category]=[];summary.counts[category]=rows.length;
+  if(rows.length)summary.omitted[category]=rows.length;
+  const newest=rows.slice().reverse();
   const candidates=category==='plans'
-   ?[...rows.filter(x=>!['completed','abandoned'].includes(x?.status)),
-     ...rows.filter(x=>['completed','abandoned'].includes(x?.status))]
-   :rows.slice().reverse();
-  for(const candidate of candidates){
-   if(summary.records[category].length>=limit){omitted++;continue;}
+    ?[...newest.filter(x=>!['completed','abandoned'].includes(x?.status)),...newest.filter(x=>['completed','abandoned'].includes(x?.status))]
+    :newest;
+  queues.set(category,candidates.slice(0,limit));
+ }
+ if(Number.isSafeInteger(projection.events_replayed))summary.events_replayed=projection.events_replayed;
+ if(Array.isArray(projection.validation_warnings)&&projection.validation_warnings.length)summary.warning_count=projection.validation_warnings.length;
+ // One candidate per category per round. All categories get a chance to
+ // contribute before a second plan or obligation occupies the budget.
+ for(let index=0;index<limit;index++){
+  for(const category of PRIORITY){
+   const candidate=queues.get(category)[index];if(!candidate)continue;
    const compact=compactValue(candidate);
+   const omitted=summary.omitted[category];
    summary.records[category].push(compact);
+   if(omitted===1)delete summary.omitted[category];else summary.omitted[category]=omitted-1;
    if(JSON.stringify(summary).length>max){
-    summary.records[category].pop();omitted++;
+    summary.records[category].pop();summary.omitted[category]=omitted;
    }
   }
-  if(omitted)summary.omitted[category]=omitted;
  }
- if(projection.events_replayed!==undefined)summary.events_replayed=projection.events_replayed;
- if(Array.isArray(projection.validation_warnings)&&projection.validation_warnings.length)
-  summary.warning_count=projection.validation_warnings.length;
  return summary;
 }
 export function narratorSceneExcerpt(scene,{maxChars=12000}={}){

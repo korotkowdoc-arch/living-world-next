@@ -12,3 +12,14 @@ export async function requestIdentity(kind,payload,cryptoProvider=globalThis.cry
  const h=[...b].map(v=>v.toString(16).padStart(2,'0')).join('');
  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
 }
+
+/** JSONB may return object keys in a different order. Compare semantic JSON
+ * without changing existing deterministic request IDs or array order.
+ */
+export function sameJson(a,b){
+ if(a===b)return true;
+ if(a===null||b===null||typeof a!==typeof b||typeof a!=='object')return false;
+ if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>sameJson(v,b[i]));
+ const keys=Object.keys(a),other=Object.keys(b);
+ return keys.length===other.length&&keys.every(k=>Object.hasOwn(b,k)&&sameJson(a[k],b[k]));
+}
