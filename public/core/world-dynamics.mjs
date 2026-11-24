@@ -9,11 +9,12 @@ const kinds={
  bond:['active','strained','estranged','ended','unknown'],
  institution:['operating','restricted','suspended','closed','unknown'],
  contest:['open','negotiating','decided','abandoned','unknown'],
+ life_transition:['planned','ongoing','completed','cancelled','unknown'],
  family_duty:['active','paused','ended','unknown'],
  family_event:['planned','ongoing','completed','cancelled','unknown'],
  development:['scheduled','ongoing','completed','cancelled','unknown']
 };
-const terminal={family_duty:new Set(['ended']),family_event:new Set(['completed','cancelled']),bond:new Set(['ended']),contest:new Set(['decided','abandoned']),development:new Set(['completed','cancelled'])};
+const terminal={life_transition:new Set(['completed','cancelled']),family_duty:new Set(['ended']),family_event:new Set(['completed','cancelled']),bond:new Set(['ended']),contest:new Set(['decided','abandoned']),development:new Set(['completed','cancelled'])};
 const bondTypes=['family','friendship','professional','mentorship','rivalry','community','romantic','marriage','parenthood','cohabitation','other'];
 export function dynamicsRecordError(e){
  if(e?.type!=='world')return null;
@@ -24,13 +25,14 @@ export function dynamicsRecordError(e){
  if(k==='bond'&&e.bond_type==='parenthood'&&e.actor===e.counterparty)return 'Родитель и ребёнок должны различаться.';
  if(k==='institution'&&(!valid(e.name)||!valid(e.function,300)||!valid(e.place)||!id(e.group_id)))return 'Учреждению нужны название, назначение, место и ID группы.';
  if(k==='contest'&&(!valid(e.resource,300)||!list(e.actors,2)||!valid(e.title)))return 'Конкуренции нужны ресурс, название и минимум два участника.';
+ if(k==='life_transition'&&(!valid(e.actor)||!valid(e.title)||!['education','employment','relocation','retirement','health','other'].includes(e.transition_kind)))return 'Жизненному переходу нужны герой, название и вид.';
  if(k==='family_duty'&&(!valid(e.title)||!list(e.actors,1)||!['care','education','household','other'].includes(e.family_kind)||!/^\d{4}-\d{2}-\d{2}$/.test(e.starts_on)||parseStoryDate(e.starts_on)?.precision!=='day'||!Number.isInteger(e.every_days)||e.every_days<1||e.every_days>366))return 'Обязанности нужны участники, вид, дата начала и период 1–366 дней.';
  if(k==='family_duty'&&e.ends_on!=null&&(!/^\d{4}-\d{2}-\d{2}$/.test(e.ends_on)||parseStoryDate(e.ends_on)?.precision!=='day'||e.ends_on<e.starts_on))return 'Дата окончания обязанности раньше начала или некорректна.';
  if(k==='family_event'&&(!valid(e.title)||!list(e.actors,1)||!['birth','care','education','birthday','household','other'].includes(e.family_kind)))return 'Семейному событию нужны название, участники и вид.';
  if(k==='development'&&(!valid(e.title)||!valid(e.place)||!list(e.actors,0)))return 'Изменению мира нужны название, место и список участников (может быть пустым).';
  if(e.due_at!=null&&!parseStoryDate(e.due_at))return 'Срок изменения должен быть точной игровой датой.';
  for(const field of ['outcome','obstacle','next_step','terms'])if(e[field]!=null&&!valid(e[field],600))return 'Неверное поле: '+field;
- if((k==='contest'&&e.status==='decided'||['development','family_event'].includes(k)&&e.status==='completed')&&!valid(e.outcome,600))return 'Завершённой записи требуется результат.';
+ if((k==='contest'&&e.status==='decided'||['development','family_event','life_transition'].includes(k)&&e.status==='completed')&&!valid(e.outcome,600))return 'Завершённой записи требуется результат.';
  return null;
 }
 export function dynamicsTransitionError(records,e){
@@ -40,6 +42,7 @@ export function dynamicsTransitionError(records,e){
   if(old.dynamics_version!==1||old.dynamics_kind!==k||old.record_id!==e.record_id)return 'Нельзя менять идентичность записи динамики.';
   if(k==='bond'&&(old.actor!==e.actor||old.counterparty!==e.counterparty||old.bond_type!==e.bond_type))return 'Нельзя переносить связь на других участников.';
   if(k==='institution'&&old.group_id!==e.group_id)return 'Нельзя переносить учреждение на другую группу.';
+  if(k==='life_transition'&&(old.actor!==e.actor||old.transition_kind!==e.transition_kind))return 'Новый герой или вид жизненного перехода требует нового ID.';
   if(k==='family_duty'&&(old.family_kind!==e.family_kind||old.starts_on!==e.starts_on||old.every_days!==e.every_days||JSON.stringify(old.actors.slice().sort())!==JSON.stringify(e.actors.slice().sort())))return 'Изменение участников или периодичности требует новой обязанности.';
   if(k==='family_event'&&old.family_kind!==e.family_kind)return 'Нельзя менять вид семейного события.';
   if(k==='contest'&&old.resource!==e.resource)return 'Новый ресурс требует новой записи конкуренции.';
@@ -54,9 +57,9 @@ export function dynamicsView(projection={},opts={}){
  const limit=Math.max(1,Math.min(40,Math.floor(Number(opts.limit)||20))),offset=Math.max(0,Math.floor(Number(opts.offset)||0));
  const rows=(projection.worldFacts||[]).filter(r=>r.dynamics_version===1&&!dynamicsRecordError(r)&&(!actor||r.actor===actor||r.counterparty===actor||r.actors?.includes(actor))&&(!place||r.place===place));
  const byKind=Object.fromEntries(Object.keys(kinds).map(k=>[k,rows.filter(x=>x.dynamics_kind===k)]));
- const compact=r=>({id:r.record_id,key:r.key,kind:r.dynamics_kind,family_kind:r.family_kind,starts_on:r.starts_on,ends_on:r.ends_on,every_days:r.every_days,status:r.status,actor:r.actor,counterparty:r.counterparty,bond_type:r.bond_type,actors:r.actors,name:r.name,title:r.title,resource:r.resource,group_id:r.group_id,place:r.place,function:r.function,description:r.description,due_at:r.due_at,terms:r.terms,obstacle:r.obstacle,next_step:r.next_step,outcome:r.outcome,source:r.source,evidence:String(r.evidence||'').slice(0,600)});
+ const compact=r=>({id:r.record_id,key:r.key,kind:r.dynamics_kind,transition_kind:r.transition_kind,family_kind:r.family_kind,starts_on:r.starts_on,ends_on:r.ends_on,every_days:r.every_days,status:r.status,actor:r.actor,counterparty:r.counterparty,bond_type:r.bond_type,actors:r.actors,name:r.name,title:r.title,resource:r.resource,group_id:r.group_id,place:r.place,function:r.function,description:r.description,due_at:r.due_at,terms:r.terms,obstacle:r.obstacle,next_step:r.next_step,outcome:r.outcome,source:r.source,evidence:String(r.evidence||'').slice(0,600)});
  const page=k=>byKind[k].slice().reverse().slice(offset,offset+limit).map(compact);
- return {bonds:page('bond'),institutions:page('institution'),contests:page('contest'),developments:page('development'),family_events:page('family_event'),family_duties:page('family_duty'),
+ return {bonds:page('bond'),institutions:page('institution'),contests:page('contest'),developments:page('development'),family_events:page('family_event'),family_duties:page('family_duty'),life_transitions:page('life_transition'),
  counts:Object.fromEntries(Object.entries(byKind).map(([k,v])=>[k,v.length])),next_offset:Math.max(...Object.values(byKind).map(x=>x.length))>offset+limit?offset+limit:null,memory_complete:opts.complete!==false,
  policy:'A social bond is not an emotion, consent or knowledge. Institutions are not individual characters. Contests do not transfer resources automatically. Scheduled developments are not completed events.'};
 }
