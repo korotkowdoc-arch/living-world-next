@@ -3,6 +3,8 @@
  * Nothing advances merely because the user opens a context. */
 import {parseStoryDate} from './world-time.mjs';
 import {routineWindow} from './living-world.mjs';
+import {characterAge} from './character-state.mjs';
+import {familyDutyWindow} from './world-dynamics.mjs';
 import {storyDrivers} from './story-drivers.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 const closed=new Set(['completed','complete','abandoned','resolved','ended','cancelled','canceled','decided','closed','fulfilled','done']);
@@ -65,6 +67,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.consequence_version===1&&r.status!=='resolved')add('consequence',r);
   if(r.growth_version===1&&r.growth_kind==='project'&&['planned','active','paused'].includes(r.status))add('project',r,{timing:timing(r)});
   if(r.dynamics_version===1){
+   if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor);if(window)add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
    if(r.dynamics_kind==='family_event'&&!closed.has(r.status))add('family_event',r,{family_kind:r.family_kind,timing:timing(r)});
    if(r.dynamics_kind==='contest'&&!closed.has(r.status))add('contest',r,{resource:clip(r.resource),timing:timing(r)});
    if(r.dynamics_kind==='institution'&&!closed.has(r.status))add('institution',r,{group_id:r.group_id});
@@ -72,6 +75,13 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
    if(r.dynamics_kind==='bond'&&r.status==='strained')add('strained_bond',r,{bond_type:r.bond_type});
    else if(r.dynamics_kind==='bond'&&['active','estranged'].includes(r.status)&&['family','romantic','marriage','parenthood','cohabitation'].includes(r.bond_type)&&(focus.has(r.actor)||focus.has(r.counterparty)))add('personal_bond',r,{bond_type:r.bond_type});
   }
+ }
+ const life_context=[];
+ for(const person of projection.people||[]){
+  const before=characterAge(person,clock?.literal),after=characterAge(person,anchor?.literal);
+  if(focus.has(person.name)&&after)life_context.push({actor:person.name,current_age:before,target_age:after});
+  if(before?.status==='calendar_derived'&&after?.status==='calendar_derived'&&after.years>before.years)
+   add('age_milestone',{actor:person.name,title:'День рождения: '+person.name,source:after.source,status:'calendar_derived'},{timing:'reached_requires_story',previous_age:before.years,age_years:after.years,birthdays_crossed:after.years-before.years});
  }
  const rank=x=>x.timing==='reached_requires_story'?0:x.focus_match?1:x.timing==='future'?3:2;
  for(const xs of byKind.values())xs.sort((a,b)=>rank(a)-rank(b)||(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
@@ -99,7 +109,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
   memory_complete:opts.complete!==false,focus:{actors:[...focus],place:place||null},candidates,omitted_candidates:all.length-candidates.length,
-  relationship_context,relationship_context_omitted,
+  relationship_context,relationship_context_omitted,life_context,
   drivers:storyDrivers(projection,directives,{max:8}),warnings,
   workflow:['Read the pinned head and rules.','Consult relevant source scenes and each actor’s own knowledge.','Choose only developments compatible with elapsed fictional time, access, motives and player agency; show them in narrative (including offscreen if appropriate).','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
   policy:'This is a read-only turn proposal, not simulation results. No candidate changes world state, completes a deadline, transfers a resource, reveals a secret or proves presence. The player controls their own character.'};
