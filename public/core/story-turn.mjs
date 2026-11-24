@@ -23,7 +23,9 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(comparable&&proposed.order<clock.order)throw Error('Для возврата в прошлое используй альтернативную ветку, а не продвижение времени.');
  const anchor=proposed||clock;
  const interval=comparable?proposed.order-clock.order:null;
- const records=projection.worldFacts||[],positions=new Map(scenes.map((s,i)=>[s.id,i]));
+ const records=projection.worldFacts||[],dutyOccurrences=new Map();
+ for(const r of records)if(r.dynamics_kind==='family_event'&&r.duty_id){if(!dutyOccurrences.has(r.duty_id))dutyOccurrences.set(r.duty_id,[]);dutyOccurrences.get(r.duty_id).push(r);}
+ const positions=new Map(scenes.map((s,i)=>[s.id,i]));
  const placeRecords=new Map(records.filter(x=>x.world_record_version===1&&x.record_kind==='place').map(x=>[x.name,x]));
  const location=new Map((projection.people||[]).map(x=>[x.name,x.state_fields?.find(y=>y.field==='location')]));
  const byKind=new Map(),all=[];
@@ -67,7 +69,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.consequence_version===1&&r.status!=='resolved')add('consequence',r);
   if(r.growth_version===1&&r.growth_kind==='project'&&['planned','active','paused'].includes(r.status))add('project',r,{timing:timing(r)});
   if(r.dynamics_version===1){
-   if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor);if(window)add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
+   if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor,dutyOccurrences.get(r.record_id)||[]);if(window)add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
    if(r.dynamics_kind==='life_transition'&&!closed.has(r.status))add('life_transition',r,{transition_kind:r.transition_kind,timing:timing(r)});
    if(r.dynamics_kind==='family_event'&&!closed.has(r.status))add('family_event',r,{family_kind:r.family_kind,timing:timing(r)});
    if(r.dynamics_kind==='contest'&&!closed.has(r.status))add('contest',r,{resource:clip(r.resource),timing:timing(r)});
