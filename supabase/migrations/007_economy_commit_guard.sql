@@ -243,7 +243,7 @@ begin
     or (kind='contest' and old->'resource' is distinct from e->'resource')
     or (kind='life_transition' and (old->'actor' is distinct from e->'actor' or old->'transition_kind' is distinct from e->'transition_kind'))
     or (kind='family_event' and old->'family_kind' is distinct from e->'family_kind')
-    or (kind='family_duty' and (old->'family_kind' is distinct from e->'family_kind' or old->'starts_on' is distinct from e->'starts_on' or old->'every_days' is distinct from e->'every_days' or not coalesce(old->'actors' @> e->'actors' and e->'actors' @> old->'actors',false)))
+    or (kind='family_duty' and (old->'family_kind' is distinct from e->'family_kind' or old->'starts_on' is distinct from e->'starts_on' or old->'every_days' is distinct from e->'every_days' or not coalesce((old->'actors') @> (e->'actors') and (e->'actors') @> (old->'actors'),false)))
     then raise exception 'Changed dynamics identity'; end if;
    if old->'status' is distinct from e->'status' and
     ((kind in ('bond','family_duty') and old->>'status'='ended') or
