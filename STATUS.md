@@ -183,3 +183,8 @@
 - [x] PR #3 Node #143/SQL #42 зелёные до расширения выбора. Интерактивное повествование: ориентир 1500–2500 слов, значимые остановки, свободный ответ, 2–5 вариантов. Pending/answered player_choice как отдельные метаданные сохранённой сцены; варианты не события, проверка текущего head/ветки/правил read-only validate_player_choice, ответ первым в следующей сцене, SQL запрет обхода pending пустым append. iPhone показывает вопрос и копирует ответ для чата. ChatGPT-кнопки зависят от клиента и возможности модели рендерить интерфейс; fallback номера/текст. Реальный OAuth и интерактивный сеанс не проверены. CI нового пакета ожидается.
 
 - [x] Выбор игрока: direct SQL commit также требует точную завершающую цитату и правильный тип события, не позволяет считать меню выполнением NPC-плана; тесты stale/forged/duplicate/bypass, альтернативной ветки и MCP read-only. Последняя CI ожидается. Автоматическое доказательство того, что ответ действительно отправил пользователь, не обеспечивается: рассказчик обязан не фабриковать ввод; direct revision RPC остаётся отдельной проверкой.
+
+
+## Private mobile reader — candidate
+- [x] Direct fragment links for already committed scenes; owner authentication, exact scene/world identity, active-ancestry check and alternate-branch warning; standalone read-only reader, font size, copy link in the existing chronicle. MCP save_scene and get_story_scene return read_url. No new SQL, external API calls, credentials or changes to story data. PWA caches the static module only. Added unit tests.
+- [ ] CI, live deployment and authenticated iPhone verification pending. General external narrator/API integration is not part of this change.
