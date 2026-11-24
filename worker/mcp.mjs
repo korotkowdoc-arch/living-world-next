@@ -4,8 +4,9 @@
  * protected resource metadata and validates OAuth client-bound user tokens.
  * Client registration, consent URLs and end-to-end ChatGPT setup require deployment.
  */
-import {buildNextContext,validateScene,replay} from '../public/core/continuity.mjs';
+import {buildNextContext,validateScene,replay,validateEconomyAppend} from '../public/core/continuity.mjs';
 import {recordedWorldAgenda} from '../public/core/world-time.mjs';
+import {economyView} from '../public/core/economy.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
 import {limitedNarratorMemory,boundedMcpScene} from '../public/core/narration-budget.mjs';
 import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
@@ -20,6 +21,7 @@ const toolsList=[
   {name:'get_actor_memory',description:'Recall a character from the entire played active branch WITHOUT manual annotation: separately return proven structured events and raw literal mentions with exact source scene IDs. Text mentions are clues, not confirmed facts.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:2,maxLength:140},limit:{type:'integer',minimum:1,maximum:40},event_offset:{type:'integer',minimum:0},mention_offset:{type:'integer',minimum:0}},required:['world_id','actor']}},
   {name:'get_actor_history',description:'Read an individual character’s proven events with source scene IDs in current valid branch. Long histories can be paged; the output does not prove lack of unmarked events.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',minLength:1,maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id','actor']}},
   {name:'get_branch_history',description:'Read exact saved scenes of active branch, newest first, in pages, without other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
+  {name:'get_world_economy',description:'Read recorded balances and unique item custody in the current branch, optionally by actor. Unknown balances and ownership remain unknown. Paginated evidence with scene IDs.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id']}},
   {name:'get_world_agenda',description:'Read fictional time anchors, dated unresolved commitments and NPC intentions from confirmed active-branch scenes; no real-time progression or automatic offscreen actions.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'}},required:['world_id']}},
   {name:'get_npc_agency',description:'Read evidence-backed independent NPC plans and their statuses across all annotated active-branch scenes. A plan is not a completed action and there is no hidden background simulation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140}},required:['world_id']}},
   {name:'create_world',description:'Create a world from one natural-language premise. No advance NPC forms. Returns new world ID.',inputSchema:{type:'object',properties:{description:{type:'string',minLength:8,maxLength:12000},title:{type:'string'},start_marker:{type:'string'}},required:['description']}},
@@ -130,7 +132,7 @@ async function callTool(name,args,env,token){
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete});
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
    return {...ctx,memory:compactMemory,memory_is_sample:true,
-    memory_retrieval_tools:['get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda'],
+    memory_retrieval_tools:['get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy'],
     head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:world.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
@@ -179,6 +181,18 @@ async function callTool(name,args,env,token){
    const limit=Math.max(1,Math.min(100,Number(args.limit)||40));
    const rows=await rpc(env,token,'nw_actor_history',{p_world_id:args.world_id,p_actor:actor,p_limit:limit,p_offset:Math.max(0,Math.floor(Number(args.offset)||0))});
    return {actor,events:rows,more_may_exist:rows.length===limit,source:'confirmed structured events in active ancestry',unannotated_scenes:'not indexed: use search_story_memories or get_branch_history'};
+  }
+  case 'get_world_economy':{
+   const world=await ownerWorld(env,token,args.world_id);
+   const active=await branch(env,token,world);
+   const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
+   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const current=await ownerWorld(env,token,world.id);
+   const after=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
+    throw Error('Story changed during economy read; retry.');
+   return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
+    ...economyView(projection,{actor:args.actor,offset:args.offset,limit:args.limit,complete:memory.complete})};
   }
   case 'get_world_agenda':{
    const world=await ownerWorld(env,token,args.world_id);
@@ -236,6 +250,14 @@ async function callTool(name,args,env,token){
     const rules=await directives(env,token,world.id);
     const validation=validateScene({body:args.body,events:args.events||[],directives:rules});
     if(!validation.ok)throw Error(validation.errors.join(' '));
+    if((args.events||[]).some(e=>e.type==='money'||e.type==='item')){
+     const active=await branch(env,token,world);
+     if(active.head_scene_id!==args.expected_head)throw Error('Head changed: refresh story before committing');
+     const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
+     if(!memory.complete)throw Error('Economy preflight requires complete structured history; retrieve and verify sources before saving.');
+     const checked=validateEconomyAppend(memory.scenes,args.events,args.body);
+     if(!checked.ok)throw Error(checked.errors.join(' '));
+    }
    }
    const sceneId=await rpc(env,token,'nw_commit_scene',{
       p_world_id:world.id,p_branch_id:args.branch_id,p_expected_head:args.expected_head,

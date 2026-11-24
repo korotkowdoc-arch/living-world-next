@@ -5,6 +5,7 @@ import {inspectArchive} from './core/portable.mjs';
 import {literaryReview} from './core/literary-review.mjs';
 import {storyDrivers} from './core/story-drivers.mjs';
 import {recordedWorldAgenda} from './core/world-time.mjs';
+import {economyView} from './core/economy.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
@@ -144,9 +145,9 @@ async function checkCloudChanges(){
 }
 
 function renderWorld(){if(!state.world)return openWorlds();const w=state.world;state.screen='world';clear();add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('↻ Синхронизировать',()=>busy(()=>refreshFromCloud(w.id)),'btn secondary')),node('div','eyebrow',w.start_marker||'Начало не установлено'),node('h1','hero-title',w.title),para(w.seed,'subtitle'));
-  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
+  const tabs=node('div','tabs');for(const [id,name] of [['story','История'],['search','Поиск'],['people','Персонажи'],['directives','Настройки словами'],['branches','Ветки'],['agenda','Время'],['economy','Имущество'],['archive','Архив'],['director','Режиссёр']])tabs.append(button(name,()=>{state.tab=id;renderWorld();},'tab'+(state.tab===id?' active':'')));
   root.append(tabs);
-  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
+  if(state.tab==='story')renderStory();if(state.tab==='search')renderSearch();if(state.tab==='people')renderPeople();if(state.tab==='directives')renderDirectives();if(state.tab==='branches')renderBranches();if(state.tab==='agenda')renderAgenda();if(state.tab==='economy')renderEconomy();if(state.tab==='archive')renderArchive();if(state.tab==='director')renderDirector();
 }
 function renderStory(){const w=state.world;
   add(root,panel(node('div','eyebrow','Игра в ChatGPT'),title('Продолжить историю'),para('История пишется в ChatGPT. После подключения нового MCP-моста сохранённые сцены будут появляться здесь автоматически. До этого доступен резервный импорт текста.'),row(button('Скопировать запрос для рассказчика',()=>busy(()=>copy(promptForNarrator({world:w,directives:state.directives,history:state.scenes.slice(-2),projection:state.historyComplete?replay(state.scenes,state.directives):{incomplete:true,reason:'Не вся история загружена. Понадобится восстановить её через историю и MCP.'}})))))));
@@ -361,6 +362,41 @@ function renderArchive(){const w=state.world;
 }
 
 /** Fictional time never ticks in the background: we display only saved scenes. */
+function renderEconomy(){
+ const w=state.world, output=node('div'), actor=node('input','field');
+ actor.placeholder='Имя персонажа (необязательно)';
+ let projection=replay(state.scenes,[]), complete=state.historyComplete,offset=0;
+ const show=()=>{
+  const result=economyView(projection,{actor:actor.value,offset,limit:40,complete});
+  output.replaceChildren();
+  if(!complete)output.append(node('div','notice','Показана часть истории. Остатки и владение могут быть неполными; загрузи всю память.'));
+  if(!result.records.length)output.append(para('Подтверждённых записей нет. Это не означает отсутствие денег или вещей.'));
+  for(const e of result.records){
+   const card=node('div','rule');
+   if(e.kind==='money')add(card,node('strong','',e.actor+' · '+e.currency),
+    para(e.known?'Записанный остаток: '+e.balance:'Остаток неизвестен · записанное изменение: '+e.delta));
+   else add(card,node('strong','',e.name||e.item_id),para(e.custody_status==='held'?'Владелец по записи: '+e.holder:
+    e.custody_status==='lost'?'Потерян':e.custody_status==='destroyed'?'Уничтожен':'Владение не установлено'),
+    para('Последнее действие: '+e.action));
+   if(e.source?.scene_id)card.append(button('Открыть источник',()=>busy(async()=>{
+    const scene=await getScene(w.id,e.source.scene_id);
+    const body=node('div','scene-body',scene.body);card.append(body);
+   }),'text-button'));
+   output.append(card);
+  }
+  if(offset>0)output.append(button('Предыдущие записи',()=>{offset=Math.max(0,offset-40);show();},'btn secondary'));
+  if(result.next_offset!==null)output.append(button('Следующие записи',()=>{offset=result.next_offset;show();},'btn secondary'));
+ };
+ actor.addEventListener('input',()=>{offset=0;show();});
+ const load=button('Прочитать имущество по всей ветке',()=>busy(async()=>{
+  load.disabled=true;
+  try{const memory=await fullStructuredMemory(w);projection=replay(memory.scenes,[],{evidencePrevalidated:true});complete=memory.complete;offset=0;show();}
+  finally{load.disabled=false;}
+ }),'btn secondary');
+ root.append(panel(title('Деньги и имущество'),para('Учёт только подтверждённых событий. Неизвестный остаток не равен нулю. Предметы не появляются и не исчезают автоматически.'),actor,row(load),output));
+ show();
+}
+
 function renderAgenda(){
  const w=state.world;
  const intro=panel(title('Игровое время и обязательства'),

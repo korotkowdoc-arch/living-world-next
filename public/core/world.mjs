@@ -70,6 +70,7 @@ export function promptForNarrator({world, directives = [], history = [], project
   if (timeContext || (projection&&history.length))blocks.push(agendaNarrationGuidance(timeContext||recordedWorldAgenda(history,projection)));
   if (history.length) blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ (большие тексты показываются фрагментами):\n' + history.slice(-3).map(x=>narratorSceneExcerpt(x)).join('\n\n'));
   if(history.length>3)blocks.push('Показаны последние три сцены; более ранние доступны в хронологии и поиске MCP.');
+  blocks.push('ИМУЩЕСТВО И ДЕНЬГИ: перед покупкой или передачей значимой вещи запроси get_world_economy. Не считай неизвестные деньги нулём, не выдумывай доходы, цены и имущество. Для одного денежного перевода используй один money event: operation=transfer, actor=отправитель, counterparty=получатель, currency, delta=отрицательная сумма; не дублируй зачисление. Для уникальной вещи используй item_id, custody_version=1, actor, action=acquire/transfer/drop/destroy/recover/observe, counterparty при transfer. Подтверждай каждое событие точной цитатой. Не исправляй старый сюжет задним числом.');
   blocks.push('Не вводи новые подтверждённые факты без сцены. Создавай важных новых NPC постепенно, когда того требует история. Не сглаживай заранее установленные антагонизмы. Не требуй выбора после каждого абзаца. Если точных сведений нет, сохраняй неопределённость.');
   return blocks.join('\n\n');
 }

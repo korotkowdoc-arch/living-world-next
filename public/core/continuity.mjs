@@ -1,6 +1,7 @@
 import {extractLocks,pairKey} from './directives.mjs';
 import {storyDrivers} from './story-drivers.mjs';
 import {recordedWorldAgenda} from './world-time.mjs';
+import {economyShapeError,applyMoney,applyItem} from './economy.mjs';
 
 const TYPES=new Set(['character','relationship','knowledge','money','item','commitment','world','offscreen','plan']);
 const PLAN_ACTIONS=new Set(['start','advance','pause','resume','complete','abandon']);
@@ -30,13 +31,11 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
       if(lock?.forbid_respect&&(event.stance==='respect'||event.stance==='admiration'||event.respect===true))
         errors.push(`${prefix}: противоречит закреплённому запрету на уважение.`);
     }
-    if(event.type==='money'){
-      if(!asText(event.actor)||!asText(event.currency)||!Number.isSafeInteger(event.delta))
-        errors.push(`${prefix}: нужны владелец, валюта и точное целое изменение.`);
+    if(['money','item'].includes(event.type)){
+      const error=economyShapeError(event);if(error)errors.push(prefix+': '+error);
     }
     if(event.type==='knowledge'&&(!asText(event.actor)||!asText(event.fact)||!asText(event.channel)))
       errors.push(`${prefix}: нужны знающий, факт и канал знания.`);
-    if(event.type==='item'&&(!asText(event.item_id)||!asText(event.action)))errors.push(`${prefix}: нужны ID предмета и действие.`);
     if(event.type==='plan'){
       if(!asText(event.actor)||!asText(event.plan_id)||!PLAN_ACTIONS.has(event.action))errors.push(`${prefix}: для плана нужны герой, ID и действие.`);
       if(event.action==='start'&&!asText(event.goal))errors.push(`${prefix}: начальный план требует собственную цель героя.`);
@@ -69,20 +68,12 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
           const key=`${event.actor}::${event.fact}`;
           knowledge.set(key,value); break;
         }
-        case 'money': {
-          const key=`${event.actor}::${event.currency}`;
-          const current=balances.get(key)||{actor:event.actor,currency:event.currency,known:false,delta:0};
-          if(event.operation==='reconcile'){
-            if(!Number.isSafeInteger(event.balance)||event.balance<0){failures.push({scene_id:scene.id,event_id:event.id,errors:['Некорректная сверка баланса.']});accepted=false;break;}
-            balances.set(key,{...current,known:true,balance:event.balance,delta:0,source:from});
-          }else{
-            const next=current.known?current.balance+event.delta:null;
-            if(current.known&&next<0){failures.push({scene_id:scene.id,event_id:event.id,errors:['Недостаточно подтверждённых средств.']});accepted=false;break;}
-            balances.set(key,{...current,balance:next,delta:current.delta+event.delta,source:from});
-          }
+        case 'money':
+        case 'item': {
+          const error=event.type==='money'?applyMoney(balances,event,from):applyItem(items,event,from);
+          if(error){failures.push({scene_id:scene.id,event_id:event.id,errors:[error]});accepted=false;}
           break;
         }
-        case 'item': items.set(event.item_id,value);break;
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key))worldFacts.set(event.key,value);break;
         case 'offscreen': offscreen.push(value);break;
@@ -135,4 +126,16 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,
     memory_warning:(historyComplete?'':'История загружена не полностью. Результаты памяти НЕ полны. ')+'События проецируются только из размеченных фактов. Неразмеченные сцены необходимо читать, а не считать, будто событий в них не было.'};
+}
+
+/** Preflight only NEW economy events against the recorded active branch. SQL still
+ * owns the expected-head transaction; direct SQL/revision parity is a separate step.
+ */
+export function validateEconomyAppend(scenes,events,body){
+ const relevant=events.filter(e=>e?.type==='money'||e?.type==='item');
+ if(!relevant.length)return {ok:true,errors:[]};
+ const draftId='__pending_economy_scene__';
+ const projection=replay([...scenes,{id:draftId,body,events}],[],{evidencePrevalidated:true});
+ const warnings=projection.validation_warnings.filter(w=>w.scene_id===draftId);
+ return {ok:warnings.length===0,errors:warnings.flatMap(w=>w.errors)};
 }
