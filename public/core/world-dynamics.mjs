@@ -12,6 +12,7 @@ const kinds={
  bond:['active','strained','estranged','ended','unknown'],
  institution:['operating','restricted','suspended','closed','unknown'],
  contest:['open','negotiating','decided','abandoned','unknown'],
+ player_choice:['pending','answered'],
  enterprise:['planned','operating','suspended','closed'],
  production_order:['planned','ongoing','completed','cancelled'],
  stock_operation:['recorded'],
@@ -36,6 +37,18 @@ export function dynamicsRecordError(e){
  if(k==='bond'&&e.bond_type==='parenthood'&&e.actor===e.counterparty)return 'Родитель и ребёнок должны различаться.';
  if(k==='institution'&&(!valid(e.name)||!valid(e.function,300)||!valid(e.place)||!id(e.group_id)))return 'Учреждению нужны название, назначение, место и ID группы.';
  if(k==='contest'&&(!valid(e.resource,300)||!list(e.actors,2)||!valid(e.title)))return 'Конкуренции нужны ресурс, название и минимум два участника.';
+ if(k==='player_choice'){
+  if(!valid(e.actor)||!valid(e.description,600))return 'Выбор требует имя героя и описание ситуации.';
+  if(e.status==='pending'){
+   if(!valid(e.question,600)||!Array.isArray(e.options)||e.options.length<2||e.options.length>5)return 'Нужны вопрос и 2–5 вариантов.';
+   const ids=new Set(),labels=new Set();
+   for(const o of e.options){
+    if(!o||typeof o!=='object'||Array.isArray(o)||Object.keys(o).length!==2||!id(o.id)||o.id==='custom'||!valid(o.text,600)||ids.has(o.id)||labels.has(o.text.trim()))return 'Варианты выбора должны быть различными.';
+    ids.add(o.id);labels.add(o.text.trim());
+   }
+   if(e.selected_option!=null||e.action_text!=null)return 'Нельзя отвечать за игрока заранее.';
+  }else if(!id(e.selected_option)||!valid(e.action_text,5000)||e.options!=null||e.question!=null)return 'Ответ требует выбранный вариант и действие без нового меню.';
+ }
  if(k==='stock_operation')return stockOperationError(e);
  if(k==='enterprise'&&(!valid(e.actor)||!valid(e.title)||!valid(e.place)||!id(e.group_id)||!valid(e.business_kind,140)))return 'Предприятию нужны держатель запасов, организация, место и вид деятельности.';
  if(k==='production_order'){
@@ -74,6 +87,14 @@ export function dynamicsRecordError(e){
 export function dynamicsTransitionError(records,e){
  if(e.dynamics_version!==1)return null;
  const old=records.get(e.key),k=e.dynamics_kind;
+ if(k==='player_choice'){
+  if(e.status==='pending'){
+   if(old||[...records.values()].some(x=>x.dynamics_kind==='player_choice'&&x.status==='pending'))return 'Сначала разреши текущий выбор; ID не используется повторно.';
+  }else{
+   if(old?.dynamics_kind!=='player_choice'||old.status!=='pending'||old.actor!==e.actor)return 'Ответ не относится к ожидающему выбору героя.';
+   if(e.selected_option!=='custom'&&!old.options.some(o=>o.id===e.selected_option&&o.text===e.action_text))return 'Ответ не соответствует сохранённому варианту.';
+  }
+ }
  if(old){
   if(old.dynamics_version!==1||old.dynamics_kind!==k||old.record_id!==e.record_id)return 'Нельзя менять идентичность записи динамики.';
   if(k==='bond'&&(old.actor!==e.actor||old.counterparty!==e.counterparty||old.bond_type!==e.bond_type))return 'Нельзя переносить связь на других участников.';
@@ -173,4 +194,28 @@ export function paymentScheduleWindow(schedule,to,occurrences=[]){
  let first=0,final=last;while(closed.has(first))first++;while(closed.has(final))final--;
  const day=i=>new Date((start+i*step)*86400000).toISOString().slice(0,10);
  return {occurrences:last+1,pending_occurrences:pending,first_due_on:day(first),last_due_on:day(final),window:'unreviewed_schedule_dates_not_debt'};
+}
+
+/** Menu metadata is not a performed action; return only the current saved decision. */
+export function playerChoiceView(scenes,projection,{worldId,branchId,rulesVersion,complete=true}={}){
+ const head=scenes.at(-1)?.id??null;
+ if(!complete)return {status:'unknown_incomplete',pending:null};
+ const rows=(projection.worldFacts||[]).filter(e=>e.dynamics_kind==='player_choice'&&e.status==='pending');
+ if(!rows.length)return {status:'none',pending:null};
+ if(rows.length!==1||rows[0].source?.scene_id!==head)return {status:'inconsistent',pending:null};
+ const e=rows[0];
+ return {status:'awaiting_player',pending:{choice_id:e.record_id,actor:e.actor,question:e.question,options:e.options,allow_custom:true,source:e.source,world_id:worldId,branch_id:branchId,expected_head:head,expected_rules_version:rulesVersion},policy:'Options are proposals only. Do not decide for the player. A clicked option or typed action is input, not a guaranteed outcome.'};
+}
+export function resolvePlayerChoice(view,input){
+ const p=view?.pending;
+ if(view?.status!=='awaiting_player'||!p)throw Error('No current saved player choice');
+ for(const k of ['world_id','branch_id','expected_head','expected_rules_version','choice_id'])if(input[k]!==p[k])throw Error('Stale choice: refresh the current scene');
+ const selected=input.selected_option;
+ if(selected==='custom'){
+  if(!valid(input.action_text,5000))throw Error('Enter your own action');
+  return {choice_id:p.choice_id,actor:p.actor,selected_option:selected,action_text:input.action_text.trim(),saved:false,policy:'Intent only; narrate actual outcome and save an answered event with literal evidence.'};
+ }
+ const option=p.options.find(o=>o.id===selected);
+ if(!option||input.action_text!=null&&input.action_text!==option.text)throw Error('Unknown or altered choice option');
+ return {choice_id:p.choice_id,actor:p.actor,selected_option:selected,action_text:option.text,saved:false,policy:'Intent only; narrate actual outcome and save an answered event with literal evidence.'};
 }
