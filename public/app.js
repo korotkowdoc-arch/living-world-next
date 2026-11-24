@@ -19,9 +19,10 @@ import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
 import {detectWorldChange} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
+import {sceneReaderUrl,parseSceneReaderHash,readLinkedScene} from './core/scene-links.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
 import {getReturnId,consentPath} from './lib/oauth-return.mjs';
-import {listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,cancelArchiveImport,fullStructuredMemory,readMemoryNotes} from './lib/storage.mjs';
+import {rpc,listWorlds,getWorld,createWorld,listDirectives,addDirective,editDirective,setDirectiveActive,directiveHistory,reviseScene,listBranches,activeHistory,allActiveHistory,loadEarlierHistory,saveScene,forkBefore,switchBranch,setAutosave,deleteWorld,searchActiveScenes,actorHistory,getScene,exportWorldArchive,restoreWorldArchive,cancelArchiveImport,fullStructuredMemory,readMemoryNotes} from './lib/storage.mjs';
 
 const root=document.querySelector('#app');
 const accountButton=document.querySelector('#accountButton');
@@ -69,12 +70,33 @@ function showConnect(){state.screen='connect';clear();add(root,node('div','eyebr
 function showAuth(mode='signin'){if(!readConfig())return showConnect();state.screen='auth';clear();add(root,node('div','eyebrow','Защищённое пространство'),node('h1','hero-title','Твои миры. Твоя история.'),para('Войди в Supabase-аккаунт, чтобы открыть свои сохранения.','subtitle'));
   const form=node('form');const email=node('input','field');email.type='email';email.autocomplete='email';email.placeholder='Email';email.required=true;
   const password=node('input','field');password.type='password';password.autocomplete=mode==='signin'?'current-password':'new-password';password.placeholder='Пароль';password.required=true;
-  const submit=button(mode==='signin'?'Войти':'Зарегистрироваться',()=>busy(async()=>{if(!email.value||!password.value)return toast('Заполни email и пароль.',true);if(mode==='signin'){await signIn(email.value,password.value);password.value='';if(!resumeOAuth())await openWorlds();}else{await signUp(email.value,password.value);toast('Проверь почту, если Supabase требует подтверждение.');showAuth();}}));
+  const submit=button(mode==='signin'?'Войти':'Зарегистрироваться',()=>busy(async()=>{if(!email.value||!password.value)return toast('Заполни email и пароль.',true);if(mode==='signin'){await signIn(email.value,password.value);password.value='';if(!resumeOAuth())await openLanding();}else{await signUp(email.value,password.value);toast('Проверь почту, если Supabase требует подтверждение.');showAuth();}}));
   add(form,node('label','input-label','Email'),email,node('label','input-label','Пароль'),password,row(submit,button(mode==='signin'?'Создать аккаунт':'У меня уже есть аккаунт',()=>showAuth(mode==='signin'?'signup':'signin'),'btn ghost')));
   add(root,panel(form),button('Изменить подключение Supabase',showConnect,'text-button'));
   if(oauthReturnId){const back=node('a','btn secondary','К мирам без ChatGPT');back.href='/';add(root,panel(para('После входа вернёмся к авторизации ChatGPT. Нужен пароль аккаунта NEXT, а не панели Supabase.'),back));}
 }
-async function openWorlds(){if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
+function clearReaderHash(){if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
+async function openLanding(){
+ if(!readConfig())return showConnect();if(!readSession())return showAuth();
+ let link;try{link=parseSceneReaderHash(location.hash);}catch(e){clear();add(root,title('Ссылка недействительна'),para(e.message),button('Все миры',()=>busy(openWorlds)));return;}
+ return link?openLinkedScene(link):openWorlds();
+}
+async function openLinkedScene(link){
+ state.screen='reader';state.world=null;state.scenes=[];state.revision=null;loading();
+ try{
+  const result=await readLinkedScene(link,{getWorld,getScene,rpc});
+  if(!readSession())return showAuth();
+  const {world,scene,inActiveBranch}=result;clear();
+  add(root,row(button('← Все миры',()=>busy(openWorlds),'back'),button('Открыть мир',()=>busy(()=>openWorld(world.id)),'btn secondary')),
+   node('div','eyebrow','Чтение сохранённой сцены'),node('h1','hero-title',world.title));
+  if(!inActiveBranch)root.append(node('div','notice','Альтернативная ветка. Этот эпизод не относится к текущему канону.'));
+  const body=node('div','scene-body',scene.body);
+  add(root,add(node('article','scene'),title(scene.world_time||'Сохранённый эпизод'),body),
+   panel(row(button('A−',()=>changeReaderPrefs({fontSize:readerPrefs.fontSize-2}),'btn secondary'),button('A+',()=>changeReaderPrefs({fontSize:readerPrefs.fontSize+2}),'btn secondary'),button('Скопировать ссылку',()=>busy(()=>copy(sceneReaderUrl(world.id,scene.id))),'btn secondary')),para('Ссылка открывает только уже сохранённый текст. Она не меняет историю или ветку.')));
+  updateSceneTypography();
+ }catch(e){clear();add(root,title('Не удалось открыть сцену'),para(e.message||'Сцена недоступна.'),row(button('Повторить',()=>busy(openLanding)),button('Все миры',()=>busy(openWorlds),'btn secondary')));}
+}
+async function openWorlds(){clearReaderHash();if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
 function renderWorlds(){state.screen='worlds';clear();add(root,node('div','eyebrow','Интерактивные вселенные'),add(node('h1','hero-title'),document.createTextNode('Придумай мир. '),node('em','','Он оживёт.')),para('Никаких анкет и обязательных биографий. Опиши идею своими словами — детали мира сформируются по мере истории.','subtitle'));
   const prompt=field('Например: Гарри Поттер, 1991 год. Начинаем с Хогвартса. Гарри и Малфой — непримиримые враги. Никакого взаимного уважения.','field large-field');
   const preview=para('Сначала создаём основу, не придумывая за тебя скрытые события.','helper');
@@ -115,7 +137,7 @@ function renderRestoreArchive(){
  root.append(section);
 }
 
-async function openWorld(id){state.screen='world';state.tab='story';state.revision=null;loading();await reloadWorld(id);renderWorld();}
+async function openWorld(id){clearReaderHash();state.screen='world';state.tab='story';state.revision=null;loading();await reloadWorld(id);renderWorld();}
 async function reloadWorld(id){const [world,branches,directives,history]=await Promise.all([getWorld(id),listBranches(id),listDirectives(id),activeHistory(id,{limit:50,offset:0})]);
   const branch=branches.find(b=>b.id===world.active_branch_id);
   state.world={...world,head_scene_id:branch?.head_scene_id||null};state.branches=branches;state.directives=directives;state.scenes=history.slice().reverse();state.hasOlder=history.length===50;state.historyComplete=!state.hasOlder;
@@ -189,7 +211,7 @@ function renderStory(){const w=state.world;
   const container=node('div','story');state.scenes.forEach((s,i)=>{
     const card=node('article','scene');const chapter=node('h3','',`${state.historyComplete?'Сцена '+(i+1):'Сцена из действующей ветки'}${s.world_time?' · '+s.world_time:''}`);const details=node('details','scene-details');if(i===state.scenes.length-1)details.open=true;
     const summary=node('summary','',details.open?'Текст сцены':'Читать сцену');const body=node('div','scene-body',s.body);body.style.fontSize=readerPrefs.fontSize+'px';body.style.lineHeight=String(readerPrefs.lineHeight);add(details,summary,body);
-    const actions=add(node('div','scene-actions'),button('На это: новая ветка',()=>{state.revision={scene_id:s.id,source_scene:s};renderWorld();document.querySelector('#sceneEditor')?.focus();},'text-button'));
+    const actions=add(node('div','scene-actions'),button('Ссылка на сцену',()=>busy(()=>copy(sceneReaderUrl(w.id,s.id))),'text-button'),button('На это: новая ветка',()=>{state.revision={scene_id:s.id,source_scene:s};renderWorld();document.querySelector('#sceneEditor')?.focus();},'text-button'));
     add(card,chapter,details,actions);container.append(card);
   });root.append(container);
   const changing=!!state.revision;
@@ -711,6 +733,11 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 window.addEventListener('focus',()=>void checkCloudChanges());
 // While visible, check only inexpensive owner/branch metadata; never download scenes automatically.
 setInterval(()=>{if(document.visibilityState==='visible')void checkCloudChanges();},90000);
-if(!(readSession()&&resumeOAuth()))openWorlds();
+if(!(readSession()&&resumeOAuth()))openLanding();
+window.addEventListener('hashchange',()=>{
+ if(state.pending){toast('Дождись завершения операции и обнови страницу для открытия ссылки.',true);return;}
+ if(!confirmLeaveDraft()){clearReaderHash();return;}
+ void busy(openLanding);
+});
 
 if('serviceWorker' in navigator && window.isSecureContext)navigator.serviceWorker.register('/sw.js').catch(()=>{});
