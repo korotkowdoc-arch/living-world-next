@@ -57,6 +57,33 @@ begin
  exception when raise_exception then bad:=true; end;
  if not bad then raise exception 'Notes RPC leaks another owner'; end if;
 end $verify$;
+-- Real commit path: a paid date must have a distinct exact money transfer.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $payments$
+declare wid uuid; bid uuid; root uuid; paid_head uuid; req uuid:=gen_random_uuid(); bad boolean;
+ body text:='Boris transferred 20 coins to Anna for rent.';
+ schedule jsonb:='{"id":"schedule","type":"world","dynamics_version":1,"dynamics_kind":"payment_schedule","record_id":"rent","key":"dynamics:payment_schedule:rent","actor":"Boris","counterparty":"Anna","title":"Rent","description":"Rent every two days","status":"active","payment_kind":"rent","amount":20,"currency":"coin","starts_on":"2026-11-01","every_days":2,"evidence":"Rent every two days."}';
+ paid jsonb:='{"id":"paid","type":"world","dynamics_version":1,"dynamics_kind":"payment_occurrence","record_id":"rent1","key":"dynamics:payment_occurrence:rent1","actor":"Boris","counterparty":"Anna","title":"Rent","description":"Rent payment","status":"paid","amount":20,"currency":"coin","schedule_id":"rent","scheduled_on":"2026-11-01","transfer_event_id":"t","outcome":"Paid","evidence":"Boris transferred 20 coins to Anna for rent."}';
+ transfer jsonb:='{"id":"t","type":"money","operation":"transfer","actor":"Boris","counterparty":"Anna","currency":"coin","delta":-20,"evidence":"Boris transferred 20 coins to Anna for rent."}';
+begin
+ wid:=public.nw_create_world('Payment test','Synthetic payment schedule','2026-11-01');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ root:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),'Rent every two days. Boris has 50 coins.','2026-11-01',jsonb_build_array(schedule,'{"id":"balance","type":"money","operation":"reconcile","actor":"Boris","currency":"coin","delta":0,"balance":50,"evidence":"Boris has 50 coins."}'::jsonb),0);
+ bad:=false; begin perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),body,'2026-11-01',jsonb_build_array(paid),0); exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Paid date without transfer accepted';end if;
+ bad:=false; begin perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),body,'2026-11-01',jsonb_build_array(transfer||'{"delta":-19}'::jsonb,paid),0); exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Wrong amount accepted';end if;
+ paid_head:=public.nw_commit_scene(wid,bid,root,req,body,'2026-11-01',jsonb_build_array(transfer,paid),0);
+ if public.nw_commit_scene(wid,bid,root,req,body,'2026-11-01',jsonb_build_array(transfer,paid),0) is distinct from paid_head then raise exception 'Payment retry receipt differs';end if;
+ bad:=false; begin perform public.nw_commit_scene(wid,bid,paid_head,gen_random_uuid(),body,'2026-11-03',jsonb_build_array(transfer,paid),0); exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Duplicate date accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,paid_head,gen_random_uuid(),body,'2026-11-03',jsonb_build_array(transfer,paid||'{"record_id":"rent2","key":"dynamics:payment_occurrence:rent2","scheduled_on":"2026-11-03"}'::jsonb,paid||'{"id":"paid2","record_id":"rent3","key":"dynamics:payment_occurrence:rent3","scheduled_on":"2026-11-05"}'::jsonb),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Transfer reused for two dates';end if;
+ if (select head_scene_id from public.nw_branches where id=bid) is distinct from paid_head then raise exception 'Rejected payment changed head';end if;
+ -- A second valid transfer remains possible, proving rejected attempts did not debit.
+ perform public.nw_commit_scene(wid,bid,paid_head,gen_random_uuid(),body,'2026-11-03',jsonb_build_array(transfer,paid||'{"record_id":"rent2","key":"dynamics:payment_occurrence:rent2","scheduled_on":"2026-11-03"}'::jsonb),0);
+end $payments$;
 -- A staged archive round trip; the original world and source IDs are never reused.
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
