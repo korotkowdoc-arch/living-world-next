@@ -4,7 +4,7 @@
 import {parseStoryDate} from './world-time.mjs';
 import {routineWindow} from './living-world.mjs';
 import {characterAge} from './character-state.mjs';
-import {familyDutyWindow} from './world-dynamics.mjs';
+import {familyDutyWindow,paymentScheduleWindow} from './world-dynamics.mjs';
 import {storyDrivers} from './story-drivers.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 const closed=new Set(['completed','complete','abandoned','resolved','ended','cancelled','canceled','decided','closed','fulfilled','done']);
@@ -25,7 +25,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(comparable&&proposed.order<clock.order)throw Error('Для возврата в прошлое используй альтернативную ветку, а не продвижение времени.');
  const anchor=proposed||clock;
  const interval=comparable?proposed.order-clock.order:null;
- const records=projection.worldFacts||[],dutyOccurrences=new Map();
+ const records=projection.worldFacts||[],dutyOccurrences=new Map(),paymentOccurrences=new Map();
+ for(const r of records)if(r.dynamics_kind==='payment_occurrence'&&r.schedule_id){if(!paymentOccurrences.has(r.schedule_id))paymentOccurrences.set(r.schedule_id,[]);paymentOccurrences.get(r.schedule_id).push(r);}
  for(const r of records)if(r.dynamics_kind==='family_event'&&r.duty_id){if(!dutyOccurrences.has(r.duty_id))dutyOccurrences.set(r.duty_id,[]);dutyOccurrences.get(r.duty_id).push(r);}
  const positions=new Map(scenes.map((s,i)=>[s.id,i]));
  const placeRecords=new Map(records.filter(x=>x.world_record_version===1&&x.record_kind==='place').map(x=>[x.name,x]));
@@ -58,7 +59,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
     if(overlaps.length)checks.push({kind:'competing_schedule',actor,other_places:[...new Set(overlaps.map(r=>r.place))].slice(0,3),sources:overlaps.slice(0,3).map(source),policy:'Possible scheduling conflict, not proof of actual presence.'});
    }
   }
-  if(row.dynamics_kind==='market_offer'||row.dynamics_kind==='economic_agreement'){
+  if(row.dynamics_kind==='market_offer'||row.dynamics_kind==='economic_agreement'||row.dynamics_kind==='payment_schedule'){
    const payer=row.dynamics_kind==='market_offer'?row.counterparty:row.actor;
    if(payer&&row.amount!=null){const b=balancesByActor.get(JSON.stringify([payer,row.currency]));checks.push({kind:b?.known?(b.balance<row.amount?'insufficient_recorded_funds':'recorded_funds_cover_price'):'funds_unknown',actor:payer,amount:row.amount,currency:row.currency,balance:b?.known?b.balance:null,source:source(b)});}
    if(row.dynamics_kind==='market_offer'&&row.item_id){const item=itemsById.get(row.item_id);if(item?.custody_status!=='held'||item.holder!==row.actor)checks.push({kind:'offer_custody_unconfirmed',actor:row.actor,item_id:row.item_id,holder:item?.holder||null,status:item?.custody_status||'unknown',source:source(item)});}
@@ -107,6 +108,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.growth_version===1&&r.growth_kind==='project'&&['planned','active','paused'].includes(r.status))add('project',r,{timing:timing(r)});
   if(r.dynamics_version===1){
    if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor,dutyOccurrences.get(r.record_id)||[]);if(window)add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
+   if(r.dynamics_kind==='payment_schedule'){const window=paymentScheduleWindow(r,anchor,paymentOccurrences.get(r.record_id)||[]);if(window)add('payment_schedule',r,{...window,amount:r.amount,currency:r.currency,payment_kind:r.payment_kind,timing:'reached_requires_story'});}
    if(r.dynamics_kind==='employment'&&['offered','active','suspended'].includes(r.status))add('employment',r,{amount:r.amount,currency:r.currency,pay_period:r.pay_period,timing:timing(r)});
    if(r.dynamics_kind==='market_offer'&&['available','reserved'].includes(r.status))add('market_offer',r,{offer_kind:r.offer_kind,amount:r.amount,currency:r.currency,item_id:r.item_id,timing:timing(r)});
    if(r.dynamics_kind==='economic_agreement'&&['proposed','active','disputed'].includes(r.status))add('economic_agreement',r,{agreement_kind:r.agreement_kind,amount:r.amount,currency:r.currency,timing:timing(r)});
@@ -209,7 +211,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.activity_version===1&&r.activity_kind==='habit')actorRows(r.actor,'experience',{kind:'habit',name:clip(r.name),status:r.status,frequency:clip(r.frequency),description:clip(r.description),source:source(r)},5);
   if(r.social_record_version===1&&r.social_kind==='membership')actorRows(r.actor,'responsibilities',{kind:'membership',group_id:r.group_id,status:r.status,role:clip(r.role),source:source(r)},6);
   if(r.consequence_version===1&&r.status!=='resolved')actorRows(r.actor,'responsibilities',{kind:'consequence',category:r.consequence_kind,status:r.status,description:clip(r.description),source:source(r)},6);
-  if(r.dynamics_version===1&&['employment','economic_agreement'].includes(r.dynamics_kind)&&!['ended','declined','settled','cancelled','unknown'].includes(r.status))for(const actor of new Set([r.actor,r.counterparty]))actorRows(actor,'responsibilities',{kind:r.dynamics_kind,title:clip(r.title),actor:r.actor,counterparty:r.counterparty,status:r.status,amount:r.amount,currency:r.currency,pay_period:r.pay_period,source:source(r)},6);
+  if(r.dynamics_version===1&&['employment','economic_agreement','payment_schedule'].includes(r.dynamics_kind)&&!['ended','declined','settled','cancelled','unknown'].includes(r.status))for(const actor of new Set([r.actor,r.counterparty]))actorRows(actor,'responsibilities',{kind:r.dynamics_kind,title:clip(r.title),actor:r.actor,counterparty:r.counterparty,status:r.status,amount:r.amount,currency:r.currency,pay_period:r.pay_period,source:source(r)},6);
   if(r.dynamics_version===1&&r.dynamics_kind==='bond'&&!closed.has(r.status)){
    for(const actor of new Set([r.actor,r.counterparty]))actorRows(actor,'responsibilities',{kind:'bond',bond_type:r.bond_type,actor:r.actor,counterparty:r.counterparty,status:r.status,source:source(r)},6);
   }
