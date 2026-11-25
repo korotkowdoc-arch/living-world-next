@@ -190,7 +190,7 @@ async function checkCloudChanges(){
   if(!change||state.world?.id!==snapshot.id||state.screen!=='world')return;
   if(document.querySelector('#cloud-change-banner'))return;
   const buttonReload=button('Загрузить изменения',()=>busy(()=>refreshFromCloud(snapshot.id)),'btn secondary');
-  const banner=panel(title('Есть изменения в облаке'),para(changmenuError(e)),
+  const banner=panel(title('Есть изменения в облаке'),para(menuError(change.message)),
    para('Текст и место чтения сохранены. Новые данные загрузятся только по твоему нажатию.'),
    row(buttonReload));
   banner.id='cloud-change-banner';

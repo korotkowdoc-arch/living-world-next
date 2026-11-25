@@ -6,7 +6,7 @@ test('current world data labels and enumerations are Russian',()=>{
   if(isMenuMetadata(k))continue;
   assert.match(menuLabel(k),/[А-Яа-яЁё]/,k);
  }
- assert.equal(menuLabel('birth_date'),'Дата рождения');assert.equal(menuValue('knows','status'),'Знает');
+ assert.equal(menuLabel('birth_date'),'Дата рождения');assert.equal(menuLabel('interaction'),'Взаимодействие');assert.equal(menuValue('knows','status'),'Знает');
  assert.equal(menuValue('requires_scene_check','availability'),'Требует проверки в сцене');
  assert.equal(menuValue('unmapped_future_enum','status'),'Не уточнено');
  assert.equal(menuLabel('unmapped_future_field'),'Дополнительные сведения');
