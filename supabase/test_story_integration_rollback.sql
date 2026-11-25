@@ -166,4 +166,40 @@ begin
  if new_head is null or new_head=old_scene or active=old_branch then raise exception 'Archive IDs not remapped'; end if;
  if (select body from public.nw_scenes where id=new_head) is distinct from 'A fictional archive source scene.' then raise exception 'Archive body lost'; end if;
 end $archive$;
+-- Menu preference edits never consume a saved player choice, move time, or fork.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $menu$
+declare wid uuid; bid uuid; h uuid; next_bid uuid; receipt jsonb; did uuid; bad boolean;
+ settings jsonb:='{"kind":"settings","settings":{"pace":"fast","detail":"high","agency":"normal","events":"normal","choices":"important","visibility":"immersive","hud":true,"skip_routine":true}}';
+ q jsonb:='{"id":"q","type":"world","dynamics_version":1,"dynamics_kind":"player_choice","record_id":"menu-q","key":"dynamics:player_choice:menu-q","actor":"Anna","status":"pending","description":"Decision","question":"Choose?","options":[{"id":"yes","text":"Agree"},{"id":"no","text":"Decline"}],"evidence":"Anna had a choice."}';
+begin
+ wid:=public.nw_create_world('Menu test','Synthetic menu integration','1994-08-01');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),'Anna had a choice.','1994-08-01',jsonb_build_array(q),0);
+ receipt:=public.nw_save_menu_preferences(wid,bid,h,0,settings);
+ did:=(receipt->>'directive_id')::uuid;
+ if receipt->>'directive_version' is distinct from '1' or did is null then raise exception 'Menu receipt wrong';end if;
+ if public.nw_save_menu_preferences(wid,bid,h,1,settings) is distinct from receipt then raise exception 'Identical preferences incremented version';end if;
+ bad:=false;begin perform public.nw_save_menu_preferences(wid,bid,h,0,settings);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Stale menu accepted';end if;
+ bad:=false;begin perform public.nw_save_menu_preferences(wid,bid,null,1,settings);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Stale head accepted';end if;
+ receipt:=public.nw_save_menu_preferences(wid,bid,h,1,jsonb_set(settings,'{settings,pace}','"slow"'));
+ if receipt->>'directive_id' is distinct from did::text or receipt->>'directive_version' is distinct from '2' then raise exception 'Menu edit not in place';end if;
+ if (select count(*) from public.nw_directive_edits where world_id=wid and directive_id=did)<>1 then raise exception 'Menu audit missing';end if;
+ perform public.nw_save_menu_preferences(wid,bid,h,2,jsonb_build_object('kind','focus','branch_id',bid,'priorities',jsonb_build_array('Work')));
+ if (select head_scene_id from public.nw_branches where id=bid) is distinct from h then raise exception 'Menu changed head';end if;
+ if (select count(*) from public.nw_scenes where world_id=wid)<>1 then raise exception 'Menu created scene';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),'Anna walked away.','1994-08-01','[]',3);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Menu consumed pending choice';end if;
+ perform public.nw_fork_before(wid,h,'Other menu branch');
+ select active_branch_id into next_bid from public.nw_worlds where id=wid;
+ bad:=false;begin perform public.nw_save_menu_preferences(wid,bid,h,3,settings);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Inactive branch accepted';end if;
+ perform set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+ perform set_config('request.jwt.claims','{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}',true);
+ bad:=false;begin perform public.nw_save_menu_preferences(wid,next_bid,null,3,settings);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Menu owner isolation failed';end if;
+end $menu$;
 rollback;
