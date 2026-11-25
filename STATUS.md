@@ -1,10 +1,15 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## Historical memory search — candidate
+## v0.50.0 — native application game menu (candidate)
+- [x] Grouped home directory, search across all 47 sections, favorites, direct section screens with back navigation, icon tiles and responsive style. No browser reload or hash routing for internal menu navigation. In-place source reader, journal, historical memory reader, direct settings and priorities. Automatically loads complete pinned structured memory when needed; one active snapshot cache. No automatic choice, fictional time or gameplay write.
+- [x] Optional narrative intent forms separated from reading; duplicate action selectors removed. Lazy section galleries and CSP blob image support. Existing actual narrator remains ChatGPT; no paid API.
+- [ ] CI, published app verification, actual device/browser visual test. Narrative actions still require ChatGPT, not a standalone narrator.
+
+## Historical memory search
 - [x] Actual active story historical review: 23/23 scenes, 120 separate unique evidence-backed historical notes saved and re-read. Live v0.49 projection confirmed: 9 recovered knowledge records; current head and pending choice unchanged. No canonical edits or retroactive payments.
 - [x] Bounded thematic search of historical notes independent of actor, separate coverage counts, explicit partial/unavailable status and unverified short-name alias candidates; no inferred identity merges. Regression tests added.
-- [ ] CI and deployment confirmation; real gameplay extraction test; verified canonical backfill and semantic contradiction review remain open. Existing v0.49 is playable without waiting for this candidate.
+- [x] PR #44 merged; Node and SQL CI passed. [ ] Deployment confirmation; real gameplay extraction test; verified canonical backfill and semantic contradiction review remain open. Existing v0.49 is playable without waiting for this candidate.
 
 ## v0.49.0 — смысловое сохранение и адресная память
 - [x] Scene extraction protocol: full-scene semantic extraction by narrator, existing canonical domain schemas, supplemental isolated evidence-backed scene memory for claims/intentions/descriptions/uncertainty. Receipt and preflight domain routing, unclassified records and lexical review cues (not facts), coverage counts, focused old-source recall by actors/place/topic. No external AI API and no automatic inference into canon. Atomic note events stored with scene; no state or plan-completion effects.
