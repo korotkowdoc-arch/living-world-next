@@ -1,3 +1,4 @@
+import {MENU_LABELS,menuLabel,menuValue,isMenuMetadata,menuError} from './core/menu-ru.mjs';
 import {MENU_GROUPS,MENU_DESCRIPTIONS,directorySections,menuSnapshotKey,menuSectionTransition} from './core/native-menu.mjs';
 import {ROOM_ACTIONS} from './core/room-layout.mjs';
 import {COMMUNITY_ACTIONS,communityTargets} from './core/community-life.mjs';
@@ -57,7 +58,7 @@ const row=(...children)=>add(node('div','btn-row'),...children);
 const panel=(...children)=>add(node('section','panel'),...children);
 const title=(text)=>node('h2','',text);
 const para=(text,cls='small')=>node('p',cls,text);
-const busy=async(action)=>{if(state.pending)return;state.pending=true;try{await action();}catch(e){console.error(e);toast(e.message||'Ошибка операции',true);}finally{state.pending=false;}};
+const busy=async(action)=>{if(state.pending)return;state.pending=true;try{await action();}catch(e){console.error(e);toast(menuError(e)||'Ошибка операции',true);}finally{state.pending=false;}};
 const readerStorage=(()=>{try{return window.localStorage;}catch{return null;}})();
 let readerPrefs=readReaderPrefs(readerStorage),uiPrefs=readUI(readerStorage);
 function applyUI(){document.documentElement.dataset.theme=uiPrefs.theme;document.documentElement.dataset.density=uiPrefs.density;document.documentElement.dataset.textScale=uiPrefs.textScale;}
@@ -99,7 +100,7 @@ function clearReaderHash(){if(location.hash)history.replaceState(null,'',locatio
 async function openLanding(){
  if(!readConfig())return showConnect();if(!readSession())return showAuth();
  const visual=parseVisualHash(location.hash);if(visual){await openWorld(visual.worldId);state.tab='menu';menuUiState.set(state.world.id+':'+state.world.active_branch_id,{section:'illustrations',actor:'',offset:0,visualFocus:visual.assetId});renderWorld();return;}
- let link;try{link=parseSceneReaderHash(location.hash);}catch(e){clear();add(root,title('Ссылка недействительна'),para(e.message),button('Все миры',()=>busy(openWorlds)));return;}
+ let link;try{link=parseSceneReaderHash(location.hash);}catch(e){clear();add(root,title('Ссылка недействительна'),para(menuError(e)),button('Все миры',()=>busy(openWorlds)));return;}
  return link?openLinkedScene(link):openWorlds();
 }
 async function openLinkedScene(link){
@@ -115,9 +116,9 @@ async function openLinkedScene(link){
   add(root,add(node('article','scene'),title(scene.world_time||'Сохранённый эпизод'),body),
    panel(row(button('A−',()=>changeReaderPrefs({fontSize:readerPrefs.fontSize-2}),'btn secondary'),button('A+',()=>changeReaderPrefs({fontSize:readerPrefs.fontSize+2}),'btn secondary'),button('Скопировать ссылку',()=>busy(()=>copy(sceneReaderUrl(world.id,scene.id))),'btn secondary')),para('Ссылка открывает только уже сохранённый текст. Она не меняет историю или ветку.')));
   updateSceneTypography();
- }catch(e){clear();add(root,title('Не удалось открыть сцену'),para(e.message||'Сцена недоступна.'),row(button('Повторить',()=>busy(openLanding)),button('Все миры',()=>busy(openWorlds),'btn secondary')));}
+ }catch(e){clear();add(root,title('Не удалось открыть сцену'),para(menuError(e)||'Сцена недоступна.'),row(button('Повторить',()=>busy(openLanding)),button('Все миры',()=>busy(openWorlds),'btn secondary')));}
 }
-async function openWorlds(){menuMemoryCache=null;menuMemoryJob=null;clearReaderHash();if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
+async function openWorlds(){menuMemoryCache=null;menuMemoryJob=null;clearReaderHash();if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',menuError(e)||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
 function renderWorlds(){state.screen='worlds';clear();add(root,node('div','eyebrow','Интерактивные вселенные'),add(node('h1','hero-title'),document.createTextNode('Придумай мир. '),node('em','','Он оживёт.')),para('Никаких анкет и обязательных биографий. Опиши идею своими словами — детали мира сформируются по мере истории.','subtitle'));
   const prompt=field('Например: Гарри Поттер, 1991 год. Начинаем с Хогвартса. Гарри и Малфой — непримиримые враги. Никакого взаимного уважения.','field large-field');
   const preview=para('Сначала создаём основу, не придумывая за тебя скрытые события.','helper');
@@ -189,7 +190,7 @@ async function checkCloudChanges(){
   if(!change||state.world?.id!==snapshot.id||state.screen!=='world')return;
   if(document.querySelector('#cloud-change-banner'))return;
   const buttonReload=button('Загрузить изменения',()=>busy(()=>refreshFromCloud(snapshot.id)),'btn secondary');
-  const banner=panel(title('Есть изменения в облаке'),para(change.message),
+  const banner=panel(title('Есть изменения в облаке'),para(changmenuError(e)),
    para('Текст и место чтения сохранены. Новые данные загрузятся только по твоему нажатию.'),
    row(buttonReload));
   banner.id='cloud-change-banner';
@@ -227,21 +228,18 @@ function renderWorld(){if(!state.world)return openWorlds();const w=state.world;s
  root.append(tabs);worldSectionContent(tabs);
 }
 
-const MENU_LABELS={community:'Клубы, спорт и культура',campus_events:'Студенческие мероприятия',organized:'Организуемые мероприятия',participation:'Приглашения и участие',standings:'Статистика известных матчей',recorded_matches:'Известных матчей',score_for:'Очки за',score_against:'Очки против',series:'Серия',civic:'Общественные дела и правосудие',offices:'Должности',managed_cases:'Дела в производстве',submissions:'Заявления и показания',decisions:'Решения',motions:'Предложения совета',ballots:'Собственные голоса',notices:'Уведомления',tally:'Подсчёт голосов',quorum:'Кворум',required_yes:'Требуется голосов за',rooms:'Комнаты и интерьер',flooring:'Пол',walls:'Стены',lighting:'Освещение',purpose:'Назначение',furnishings:'Предметы в комнате',maintenance:'Состояние и ремонт',payroll_review:'Расчёты за выполненные смены',material_review:'Потребность в запасах',academic_review:'Учебные дела преподавателя',program_progress:'Прогресс программы',total_modules:'Всего модулей',passed:'Пройдено',shortfall:'Возможная нехватка',inspection_needed:'Требуется осмотр',omitted_entries:'Дополнительные записи',illustrations:'Иллюстрации',portraits:'Портреты',inheritance:'Наследство',treasury:'Семейное казначейство',cases:'Наследственные дела',beneficiaries:'Наследники',bequests:'Распределение активов',accounts:'Общие счета',library:'Библиотека',documents:'Документы',archives:'Архив',publishing:'Рукописи и публикации',newspapers:'Газеты',books:'Книги',bookmarks:'Закладки',notes:'Заметки',reviews:'Рецензии',royalties:'Авторские выплаты',contents:'Оглавление',rituals:'Ритуалистика',protocols:'Ритуальные протоколы',sessions:'Ритуальные сеансы',participants:'Участники',stages:'Этапы',completed_stages:'Выполнено этапов',alchemy:'Алхимия',ingredients:'Реагенты',formulas:'Формулы',batches:'Партии зелий',enchantments:'Работы с артефактами',ecology:'Экология',species:'Виды существ',habitats:'Места обитания',populations:'Наблюдения популяций',encounters:'Встречи',clinics:'Лечебницы',credentials:'Допуски целителей',admissions:'Госпитализации',visits:'Процедуры',science:'Наука',laboratories:'Лаборатории',memberships:'Членства',patents:'Патенты',licenses:'Лицензии',occupied:'Занятые места',magic:'Магия',magical_medicine:'Магическая медицина',traditions:'Школы магии',techniques:'Техники и заклинания',training:'Владение техникой',research:'Исследования',reserves:'Магический ресурс',casts:'Применение магии',artifacts:'Артефакты',laws:'Магические законы',conditions:'Магические болезни',diagnoses:'Диагнозы',therapies:'Методы лечения',courses:'Курсы лечения',treatments:'Проведённые процедуры',requirements:'Требования',limits:'Ограничения',risks:'Риски',effect:'Эффект',hypothesis:'Гипотеза',findings:'Наблюдения',remaining:'Остаток',capacity:'Ёмкость',interests:'Интересы',habits:'Привычки и увлечения',activities:'Занятия',goals:'Жизненные цели',projects:'Проекты',circles:'Сообщества',contacts:'Знакомые',character:'Персонаж',fields:'Состояние',needs:'Потребности',episodes:'Эпизоды',care:'Забота',care_plans:'Планы заботы',quick_actions:'Быстрые действия',wardrobe:'Одежда',outfit:'Комплект',presets:'Сохранённые комплекты',households:'Семья и хозяйство',household_tasks:'Домашние обязанности',children:'Дети',shared_goals:'Совместные цели',balances:'Средства',budgets:'Бюджеты',observed_prices:'Известные цены',housing:'Жильё',estates:'Недвижимость',sales:'Сделки',furnishing:'Обстановка',employment:'Работа',businesses:'Предприятия',shifts:'Смены',recipes:'Рецепты',services:'Услуги',price_changes:'Изменения цен',supply_contracts:'Поставки',job_eligibility:'Требования',career_history:'Карьера',enrollment:'Обучение',assessments:'Испытания',practice:'Практика',lessons:'Уроки',assignments:'Задания',programs:'Программы',qualifications:'Квалификации',entries:'Сроки',travel:'Поездки',transport:'Транспорт',reservations:'Бронирования',tickets:'Билеты',payments:'Платежи',incoming:'Входящие',outgoing:'Исходящие',tasks:'Дела',consequences:'Последствия',consequence_responses:'Решение проблем',threads:'Сюжетные линии',experience:'Жизненный опыт',causes:'Причинные связи',personality_history:'Изменения личности',due:'На ближайший этап',later:'Позднее',recurring:'Повторяющиеся дела',optional:'Дополнительные инициативы',segment_until:'До даты',remaining_minutes:'Осталось минут',minimum_remaining_segments:'Минимум следующих этапов',from:'От',target:'Цель',status:'Статус',title:'Название',name:'Имя',actor:'Персонаж',description:'Описание',frequency:'Частота',next_step:'Следующий шаг',obstacle:'Препятствие',outcome:'Результат',before:'Раньше',after:'Теперь',field:'Свойство',value:'Значение',role:'Роль',due_at:'Срок',place:'Место',amount:'Сумма',currency:'Валюта',balance:'Остаток',known:'Подтверждено',estimated_status:'Прогноз',recorded_status:'Записано',forecast:'Прогноз',need:'Потребность',preference:'Предпочтение',aversion:'Антипатия',habit:'Привычка',personal_goal:'Личная цель',family_goal:'Семейная цель',career_goal:'Карьерная цель',active:'Активно',paused:'Приостановлено',abandoned:'Оставлено',completed:'Завершено',unknown:'Не установлено',planned:'Запланировано',member:'Участник',left:'Вышел',candidate:'Кандидат',comfortable:'В норме',noticeable:'Заметно',urgent:'Срочно',critical:'Критично'};
-const menuLabel=k=>MENU_LABELS[k]||String(k).replaceAll('_',' ');
-const menuValue=v=>typeof v==='boolean'?(v?'Да':'Нет'):v==null?'Не установлено':menuLabel(String(v));
 function visualLibrary(w,overview,section='illustrations',focus=null){
  const out=node('div','menu-data'),list=node('div','menu-data'),controls=node('div','menu-data');
  const subjects=visualSubjects(overview,w.head_scene_id),primary=section==='illustrations'||section==='portraits';
  let assets=[],prefs,offset=0;
  const chooser=(choices)=>{const s=node('select','field');for(const [v,label] of Object.entries(choices)){const o=node('option','',label);o.value=v;s.append(o);}return s;};
  const showAsset=a=>{
-  const card=node('details','rule');card.append(node('summary','',a.title+' · '+(VISUAL_KINDS[a.kind]||a.kind)+' · '+(a.status==='ready'?'Готово':'Ожидает файл')));
+  const card=node('details','rule');card.append(node('summary','',a.title+' · '+(VISUAL_KINDS[a.kind]||menuValue(a.kind,'kind'))+' · '+(a.status==='ready'?'Готово':'Ожидает файл')));
   const body=node('div','menu-data');card.append(body);
-  body.append(para('Объект: '+a.subject_id),para(a.identity_notes||''));
+  body.append(para('Объект: '+(subjects.find(s=>s.subject_id===a.subject_id)?.title||a.title)),para(a.identity_notes||''));
   if(a.status==='ready'){
    const img=node('img');img.alt=a.title;img.loading='lazy';img.style.maxWidth='100%';img.style.borderRadius='12px';img.style.height='auto';
-   let loaded=false;const open=()=>{if(loaded)return;loaded=true;loadVisualBlob(a).then(blob=>{if(!card.isConnected)return;const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;}).catch(e=>{loaded=false;body.append(para(e.message));});};
+   let loaded=false;const open=()=>{if(loaded)return;loaded=true;loadVisualBlob(a).then(blob=>{if(!card.isConnected)return;const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;}).catch(e=>{loaded=false;body.append(para(menuError(e)));});};
    card.addEventListener('toggle',()=>{if(card.open)open();});body.append(img);
   }else{
    const file=node('input','field');file.type='file';file.accept='image/png,image/jpeg,image/webp';
@@ -283,8 +281,8 @@ function visualLibrary(w,overview,section='illustrations',focus=null){
   })));
  };
  out.append(para('Иллюстрации не меняют канон и не расходуют игровое время. Файлы хранятся в приватной галерее.'),list);
- if(primary){out.append(controls);getVisualPreferences(w.id).then(v=>{prefs=v;form();}).catch(e=>controls.append(para(e.message)));}
- refresh().then(()=>{if(primary&&prefs)form();}).catch(e=>list.append(para('Галерея недоступна: '+e.message)));
+ if(primary){out.append(controls);getVisualPreferences(w.id).then(v=>{prefs=v;form();}).catch(e=>controls.append(para(menuError(e))));}
+ refresh().then(()=>{if(primary&&prefs)form();}).catch(e=>list.append(para('Галерея недоступна: '+menuError(e))));
  return out;
 }
 function readableMaterials(section,overview,index,w,actor){
@@ -300,7 +298,7 @@ function readableMaterials(section,overview,index,w,actor){
    out.append(title(heading));if(!rows.records.length)out.append(para('Пока нет писем.'));
    for(const r of rows.records){
     const card=node('details','rule');card.append(node('summary','', (r.status==='delivered'?'● ':'')+(r.from||r.to||'')+' · '+(r.subject||'Непрочитанное письмо')));
-    card.append(para(r.source?.world_time||r.status));
+    card.append(para(r.source?.world_time||menuValue(r.status,'status')));
     if(r.message!=null)card.append(body(r.message));
     else card.append(para('Первое чтение происходит в истории.'),button('Прочитать в истории',()=>intent('read_letter','Прочитать письмо от '+r.from,{letter_id:r.id}),'btn secondary'));
     if(r.from&&r.status==='read'){
@@ -330,7 +328,7 @@ function readableMaterials(section,overview,index,w,actor){
    const chapters=node('select','field');
    for(const ch of r.contents){const o=node('option','',(ch.bookmark?'★ ':'')+(ch.read?'✓ ':'')+ch.title);o.value=ch.id;chapters.append(o);}
    const show=()=>{reader.replaceChildren();const ch=r.contents.find(x=>x.id===chapters.value);if(!ch)return;
-    let data;try{data=index.read(actor,r.id,ch.id);}catch(e){reader.append(para(String(e.message||e)));return;}
+    let data;try{data=index.read(actor,r.id,ch.id);}catch(e){reader.append(para(String(menuError(e)||e)));return;}
     reader.append(node('h3','',data.title));
     if(data.body!=null)reader.append(body(data.body));
     else reader.append(para(data.text_available?'Текст сохранён, но герой ещё не прочитал главу.':'Полный текст ещё не записан в мире. Он появится при реально сыгранном чтении.'));
@@ -426,7 +424,7 @@ async function openMenuSource(worldId,sceneId){
   if(state.screen!=='world'||state.tab!=='menu'||menuSnapshotKey(state.world)!==key){dialog.close();return;}
   heading.textContent=source.world_time||'Сохранённая сцена';
   body.replaceChildren(node('div','scene-body',source.body));
- }catch(e){if(dialog.open)body.replaceChildren(para('Не удалось прочитать источник: '+e.message));}
+ }catch(e){if(dialog.open)body.replaceChildren(para('Не удалось прочитать источник: '+menuError(e)));}
 }
 function menuJournal(w,scenes){
  const out=node('div','menu-journal'),list=node('div'),search=node('input','field');search.type='search';search.placeholder='Дата или номер сцены';
@@ -449,7 +447,7 @@ function menuMemories(w,overview,projection){
   list.replaceChildren();const q=search.value.trim().toLocaleLowerCase('ru'),matches=v=>!q||String(v??'').toLocaleLowerCase('ru').includes(q);
   const notes=rows.filter(r=>matches([r.note?.summary,r.note?.quote,r.note_key].join(' ')));
   for(const r of notes){
-   const card=node('details','menu-record');card.append(node('summary','',r.note.summary),para('Историческая заметка · '+(MENU_LABELS[r.note.kind]||r.note.kind)),node('blockquote','memory-quote',r.note.quote),sceneLink(w.id,r.scene_id,'Прочитать сцену'));list.append(card);
+   const card=node('details','menu-record');card.append(node('summary','',r.note.summary),para('Историческая заметка · '+menuValue(r.note.kind,'kind')),node('blockquote','memory-quote',r.note.quote),sceneLink(w.id,r.scene_id,'Прочитать сцену'));list.append(card);
   }
   const facts=known.filter(r=>matches(r.fact||r.description));if(facts.length){list.append(node('h3','menu-label','Подтверждённые знания героя'));for(const f of facts)list.append(renderMenuData([f]));}
   status.textContent=failed?'Не удалось загрузить воспоминания. Можно повторить.':loading?'Загружаю воспоминания…':rows.length+' заметок загружено'+(more?' · есть дополнительные':'')+'.';
@@ -469,11 +467,11 @@ function renderMenuData(value,depth=0,w=state.world){
  if(Array.isArray(value)){if(!value.length)out.append(para('Пока нет записей.'));for(const r of value.slice(0,40)){
   if(r&&typeof r==='object'){
    const card=node('div','menu-record'),label=r.label||r.title||r.name||r.actor||r.field||r.kind||'Запись';
-   if(label)card.append(node('strong','',menuValue(label)));
+   if(label)card.append(node('strong','',menuValue(label,r.label!=null?'label':r.title!=null?'title':r.name!=null?'name':r.actor!=null?'actor':r.field!=null?'field':r.kind!=null?'kind':'title')));
    for(const [k,v] of Object.entries(r)){
-    if(['source','evidence','policy','id','key','record_key','title','name','label','certainty','memory_complete'].includes(k)||k.endsWith('_id')||v==null||v==='')continue;
+    if(isMenuMetadata(k)||['title','name','label'].includes(k)||v==null||v==='')continue;
     if(typeof v==='object')card.append(node('h4','menu-label',menuLabel(k)),renderMenuData(v,depth+1,w));
-    else card.append(para(menuLabel(k)+': '+menuValue(v)));
+    else card.append(para(menuLabel(k)+': '+menuValue(v,k)));
    }
    if(r.source?.scene_id&&w)card.append(sceneLink(w.id,r.source.scene_id,'Источник'));
    out.append(card);
@@ -484,11 +482,11 @@ function renderMenuData(value,depth=0,w=state.world){
   out.append(renderMenuData(value.records,depth+1,w));if(value.omitted>0)out.append(para('Дополнительных записей: '+value.omitted));return out;
  }
  for(const [k,v] of Object.entries(value)){
-  if(['policy','source','certainty','read','memory_complete','total','omitted','records','evidence'].includes(k)||v==null)continue;
+  if(isMenuMetadata(k)||v==null)continue;
   if(typeof v==='object'){
    const empty=Array.isArray(v)?v.length===0:Array.isArray(v.records)?v.records.length===0:false;
    const group=node('details','menu-data-group');group.append(node('summary','',menuLabel(k)+(Array.isArray(v.records)?' · '+(v.total??v.records.length):Array.isArray(v)?' · '+v.length:'')),renderMenuData(v,depth+1,w));group.open=!empty&&depth===0;out.append(group);
-  }else out.append(add(node('div','menu-data-line'),node('span','',menuLabel(k)),node('strong','',menuValue(v))));
+  }else out.append(add(node('div','menu-data-line'),node('span','',menuLabel(k)),node('strong','',menuValue(v,k))));
  }
  if(value.source?.scene_id&&w)out.append(sceneLink(w.id,value.source.scene_id,'Источник'));
  return out;
@@ -599,7 +597,7 @@ function renderGameMenu(){
    if(!alive())return;
    scenes=m.scenes;complete=m.complete;projection=replay(scenes,[],{evidencePrevalidated:true});
    menuMemoryCache={key:snap,scenes,complete,projection};selectActor();show();
-  }catch(e){if(alive())status.replaceChildren(para('Не удалось загрузить память: '+e.message),button('Повторить',()=>void loadMemory(),'btn secondary'));}
+  }catch(e){if(alive())status.replaceChildren(para('Не удалось загрузить память: '+menuError(e)),button('Повторить',()=>void loadMemory(),'btn secondary'));}
   finally{loadingMemory=false;}
  }
  const selectActor=()=>{
@@ -635,7 +633,7 @@ function renderGameMenu(){
   const out=node('div'),selected=[...prefs.priorities],choices=node('div');
   const draw=()=>{choices.replaceChildren();for(const t of overview.tasks.records){
    const on=selected.includes(t.id),check=node('input');check.type='checkbox';check.checked=on;check.disabled=!on&&selected.length>=3;check.addEventListener('change',()=>{if(check.checked&&selected.length<3)selected.push(t.id);else if(!check.checked){const at=selected.indexOf(t.id);if(at>=0)selected.splice(at,1);}draw();});choices.append(add(node('label','menu-check'),check,document.createTextNode((on?selected.indexOf(t.id)+1+'. ':'')+t.title)));
-  }for(const id of selected.filter(id=>!overview.tasks.records.some(x=>x.id===id)))choices.append(add(node('div','rule'),para(id),button('Убрать',()=>{selected.splice(selected.indexOf(id),1);draw();},'text-button')));};
+  }for(const id of selected.filter(id=>!overview.tasks.records.some(x=>x.id===id)))choices.append(add(node('div','rule'),para('Ранее выбранное дело'),button('Убрать',()=>{selected.splice(selected.indexOf(id),1);draw();},'text-button')));};
   draw();out.append(node('h3','','Приоритеты (до трёх в порядке выбора)'),choices,row(button('Сохранить приоритеты',()=>busy(()=>savePreference({kind:'focus',priorities:selected}))),button('Очистить',()=>busy(()=>savePreference({kind:'focus',priorities:[]})),'btn secondary')));return out;
  }
  function personalActions(section,overview){
@@ -664,7 +662,7 @@ function renderGameMenu(){
   if(!home){const current=sections.find(s=>s.id===saved.section);breadcrumb.append(back,node('span','menu-breadcrumb-label',current.label));}
   const drawNav=()=>{
    tiles.replaceChildren();
-   const query=search.value.trim(),visible=directorySections(sections.map(s=>({...s,actions:(s.actions||[]).flatMap(a=>[a,MENU_ACTION_LABELS[a]||a])})),{group:saved.group||'quick',query,favorites:uiPrefs.favorites});
+   const query=search.value.trim(),visible=directorySections(sections.map(s=>({...s,actions:(s.actions||[]).flatMap(a=>[a,MENU_ACTION_LABELS[a]||'Действие героя'])})),{group:saved.group||'quick',query,favorites:uiPrefs.favorites});
    for(const s of visible){
     const tile=node('div','menu-tile'),b=button('',()=>go(s),'menu-tile-button');b.append(menuGlyph(s.icon),add(node('span','menu-tile-text'),node('strong','',s.label),node('small','',MENU_DESCRIPTIONS[s.id]||'Открыть раздел')),node('span','menu-chevron','›'));
     const star=button(uiPrefs.favorites.includes(s.id)?'★':'☆',()=>{const on=uiPrefs.favorites.includes(s.id);if(!on&&uiPrefs.favorites.length>=8){toast('До восьми избранных разделов.',true);return;}updateUI({favorites:on?uiPrefs.favorites.filter(x=>x!==s.id):[...uiPrefs.favorites,s.id]});drawNav();},'menu-tile-star');star.setAttribute('aria-label','Избранное: '+s.label);star.setAttribute('aria-pressed',String(uiPrefs.favorites.includes(s.id)));tile.append(b,star);tiles.append(tile);
@@ -674,7 +672,7 @@ function renderGameMenu(){
   search.oninput=drawNav;if(home)drawNav();
   if(complete)status.replaceChildren(node('span','menu-sync-dot'),document.createTextNode('Память загружена'));
   if(!complete&&!loadingMemory)status.replaceChildren(para('Загружена часть истории.'),button('Загрузить память',()=>void loadMemory(),'btn secondary'));
-  try{showContent(menu,prefs,sections,go);}catch(e){output.replaceChildren(node('div','notice','Не удалось открыть этот раздел: '+e.message),button('Повторить',show,'btn secondary'));console.error(e);}
+  try{showContent(menu,prefs,sections,go);}catch(e){output.replaceChildren(node('div','notice','Не удалось открыть этот раздел: '+menuError(e)),button('Повторить',show,'btn secondary'));console.error(e);}
  }
  function showContent(menu,prefs,sections,go){
   if(saved.section==='settings'){output.append(settingsView(prefs));return;}

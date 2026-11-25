@@ -1,6 +1,10 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.50.1 — русская локализация меню (candidate)
+- [x] Shared Russian presentation dictionaries for field names, statuses, record kinds, needs, actions, and current live-world keys. Hide internal IDs, version fields and policy metadata; preserve names, titles, prose and canonical data. Localized visible errors and letter/gallery statuses. Tests added.
+- [ ] CI and published application/device verification. Arbitrary narrator-authored foreign-language prose remains unchanged; unknown enum values use a neutral Russian fallback.
+
 ## v0.50.0 — native application game menu
 - [x] Grouped home directory, search across all 47 sections, favorites, direct section screens with back navigation, icon tiles and responsive style. No browser reload or hash routing for internal menu navigation. In-place source reader, journal, historical memory reader, direct settings and priorities. Automatically loads complete pinned structured memory when needed; one active snapshot cache. No automatic choice, fictional time or gameplay write.
 - [x] Optional narrative intent forms separated from reading; duplicate action selectors removed. Lazy section galleries and CSP blob image support. Existing actual narrator remains ChatGPT; no paid API.
