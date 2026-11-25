@@ -37,8 +37,11 @@ export function visualReferences(assets,subject){
  return assets.filter(a=>a.status==='ready'&&a.subject_kind===subject.subject_kind&&a.subject_id===subject.subject_id).slice(0,8);
 }
 export function visualPrompt(subject,description,references=[],prefs={}){
- const identity=subject.detail||references[0]?.identity_notes||'';
- return ['Иллюстрация вымышленного мира: '+subject.title,description,identity?'Сохраняй подтверждённые признаки: '+identity:null,references.length?'Используй сохранённые изображения как референсы внешности и формы, если они доступны генератору. Не меняй узнаваемые черты без основания.':null,prefs.style?'Стиль: '+prefs.style:null,'Не добавляй неизвестные герою факты. Иллюстрация не является новым событием истории.'].filter(Boolean).join('\n').slice(0,8000);
+ const current=subject.detail||'';
+ const historical=references[0]?.identity_notes||'';
+ const identity=current||historical;
+ const previous=current&&historical&&current!==historical?'Исторические заметки к референсу (только неизменившиеся признаки; текущие сведения имеют приоритет): '+historical:null;
+ return ['Иллюстрация вымышленного мира: '+subject.title,description,identity?'Сохраняй подтверждённые признаки: '+identity:null,previous,references.length?'Используй сохранённые изображения как референсы внешности и формы, если они доступны генератору. Не меняй узнаваемые черты без основания.':null,prefs.style?'Стиль: '+prefs.style:null,'Не добавляй неизвестные герою факты. Иллюстрация не является новым событием истории.'].filter(Boolean).join('\n').slice(0,8000);
 }
 export function visibleVisuals(assets,subjects,section='illustrations'){
  const known=new Set(subjects.map(x=>x.subject_kind+'|'+x.subject_id));
