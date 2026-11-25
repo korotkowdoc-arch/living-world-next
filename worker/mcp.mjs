@@ -366,12 +366,12 @@ async function callTool(name,args,env,token){
    if((lastScenes[0]?.id??null)!==active.head_scene_id)throw Error('Scene head changed while reading recent history; retry');
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete,trustedProjection:history.projection,turnOptions:{actors:args.actors,place:args.place,target_time:args.target_time,scope:args.scope}});
    const focusActors=ctx.next_turn.actor_context.map(x=>x.actor);
-   const [historicalHints,historicalIndex]=await Promise.all([readFocusedNotes(env,token,world,active.head_scene_id,focusActors),readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:focusActors,menuActor:ctx.player_choice?.pending?.actor??focusActors[0]})]);
+   const controlledActors=recordedPlayerActors(ctx.memory);
+   const playerActor=ctx.player_choice?.pending?.actor??(controlledActors.length===1?controlledActors[0]:null);
+   const [historicalHints,historicalIndex]=await Promise.all([readFocusedNotes(env,token,world,active.head_scene_id,focusActors),readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:focusActors,menuActor:playerActor})]);
    const finalWorld=await ownerWorld(env,token,world.id),finalBranch=await branch(env,token,finalWorld);
    if(finalWorld.active_branch_id!==world.active_branch_id||finalBranch.head_scene_id!==active.head_scene_id||finalWorld.directive_version!==world.directive_version)throw Error('Story or rules changed while preparing world context; retry.');
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
-   const controlledActors=recordedPlayerActors(ctx.memory);
-   const playerActor=ctx.player_choice?.pending?.actor??(controlledActors.length===1?controlledActors[0]:null);
    const menu=gameMenuContext({world,directives:rules,context:ctx});
    if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,reviewedHistory:historicalIndex.menu_reviews});
    if(menu.overview)menu.overview.visuals={...menu.overview.visuals,...await compactVisualContext(env,token,world)};

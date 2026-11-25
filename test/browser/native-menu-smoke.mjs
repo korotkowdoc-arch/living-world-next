@@ -14,6 +14,9 @@ const world={id:wid,title:'Browser fixture',seed:'Synthetic test story.',start_m
 const branch={id:bid,head_scene_id:sid,name:'Main'};
 const note={scene_id:sid,note_key:'test',note:{key:'test',kind:'other',summary:'Историческая тестовая заметка',quote:body,actors:['Hero']}};
 let rules=[],writes=[];
+const review={scene_id:sid,note_key:'menu-work-test',note:{key:'menu-work-test',kind:'action',summary:'История тестовой работы',quote:body,actors:['Hero']}};
+const asset={id:'40000000-0000-4000-8000-000000000001',world_id:wid,branch_id:bid,scene_id:sid,subject_kind:'character',subject_id:'Hero',kind:'portrait',title:'Тестовый портрет',status:'pending',prompt:'Test',identity_notes:'',reference_asset_ids:[],byte_size:null,mime_type:null};
+let assets=[];
 const base=resolve('public'),mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 const server=createServer(async(req,res)=>{
  try{const p=resolve(base,'.'+new URL(req.url,'http://localhost').pathname.replace(/\/$/,'/index.html'));if(!p.startsWith(base+'/'))throw Error('bad path');const data=await readFile(p);res.writeHead(200,{'content-type':mime[extname(p)]||'application/octet-stream'});res.end(data);}catch{res.writeHead(404);res.end();}
@@ -33,9 +36,9 @@ try{
   else if(p==='/rest/v1/nw_directives')result=rules;
   else if(p==='/rest/v1/rpc/nw_active_history'||p==='/rest/v1/rpc/nw_active_memory_page')result=[scene];
   else if(p==='/rest/v1/nw_scenes')result=[scene];
-  else if(p==='/rest/v1/rpc/nw_read_memory_notes')result=[note];
+  else if(p==='/rest/v1/rpc/nw_read_memory_notes')result=[note,review];
   else if(p==='/rest/v1/nw_visual_preferences')result=[];
-  else if(p==='/rest/v1/rpc/nw_list_visual_assets')result=[];
+  else if(p==='/rest/v1/rpc/nw_list_visual_assets')result=assets;
   else if(p==='/rest/v1/rpc/nw_save_menu_preferences'){
    writes.push(p);const input=req.postDataJSON();assert.equal(input.p_expected_head,sid);assert.equal(input.p_expected_version,world.directive_version);
    rules=[{id:'settings',active:true,text:MENU_PREFIX+JSON.stringify(input.p_record)}];world.directive_version++;result={saved:true};
@@ -61,10 +64,17 @@ try{
  for(const s of menu.sections){
   if(s.id==='settings')continue;
   await open(s.label);
+  if(s.id==='work'){await page.getByText('История тестовой работы',{exact:true}).waitFor();}
   if(s.id==='journal'){await page.locator('.menu-record-button').first().click();await page.locator('dialog[open] .scene-body').waitFor();assert.match(await page.locator('dialog[open] .scene-body').innerText(),/Анна ждала ответа/);await page.getByRole('button',{name:'Закрыть',exact:true}).click();}
   if(s.id==='memories'){await page.getByText('Историческая тестовая заметка',{exact:true}).waitFor();await page.getByText('Историческая тестовая заметка',{exact:true}).click();await page.getByRole('button',{name:'Прочитать сцену',exact:true}).click();await page.locator('dialog[open] .scene-body').waitFor();await page.getByRole('button',{name:'Закрыть',exact:true}).click();}
   await back();
  }
+ assets=[asset];await open(menu.sections.find(s=>s.id==='portraits').label);
+ await page.getByText('Тестовый портрет · Портрет · Ожидает файл',{exact:true}).waitFor();
+ assets=[{...asset,status:'ready',byte_size:123,mime_type:'image/png'}];
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await page.getByText('Тестовый портрет · Портрет · Готово',{exact:true}).waitFor();
+ await back();
  await page.getByRole('searchbox',{name:'Найти раздел меню'}).fill('Настройки');await page.locator('.menu-tile-button').filter({has:page.getByText('Настройки',{exact:true})}).click();
  await page.getByLabel('Темп времени').selectOption('fast');
  await page.getByRole('button',{name:'Сохранить настройки',exact:true}).click();
