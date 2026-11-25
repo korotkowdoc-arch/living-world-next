@@ -1,3 +1,4 @@
+import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
 /** A unified turn preparation view. All candidates are read-only. The narrator
  * chooses plausible developments, writes them in the scene and commits evidence.
@@ -143,6 +144,11 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   }
  }
  // A recorded active habit can motivate leisure without assuming that it is due today.
+ for(const r of records)if(r.player_life_version===1&&r.life_kind==='appointment'&&r.status==='confirmed'){
+  const at=parseStoryDate(r.starts_at);
+  const due=!!at&&!!anchor&&(anchor.precision==='minute'?at.order<=anchor.order:at.day<anchor.day);
+  add('appointment',{...r,actors:r.participants},{timing:due?'reached_requires_story':'future',starts_at:r.starts_at,ends_at:r.ends_at,policy:'Confirmed meeting requires scene evidence for attendance or outcome.'});
+ }
  for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active')
   add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),guidance:'Optional established tendency, not a scheduled or completed action.'});
  // Shared circumstances offer interaction without asserting a meeting or shared knowledge.
@@ -202,7 +208,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  };
  // Latest source in canonical ancestry first; updates of old keys are not insert order.
  const recent=rows=>rows.slice().reverse().sort((a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
- const stateFields=new Set(['location','residence','availability','occupation','condition','injury','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','preference','aversion','habit','coping_style','humor','register','life_stage','education','career_goal']);
+ const stateFields=new Set(['location','residence','availability','occupation','condition','injury','appearance','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','preference','aversion','habit','coping_style','humor','register','life_stage','education','career_goal']);
  for(const p of projection.people||[]){
   if(!actorIndex.has(p.name))continue;
   const ctx=actorIndex.get(p.name);ctx.age=characterAge(p,anchor?.literal);
@@ -265,7 +271,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(clock&&proposed&&!comparable)warnings.push('Точность дат различается: длительность перехода неизвестна.');
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
-  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor)),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
+  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,time_advance:proposed?.precision==='minute'&&clock?.precision==='minute'&&proposed.order>clock.order&&focus.size===1?planTimeAdvance(scenes,projection,[...focus][0],proposed.literal,{complete:opts.complete!==false,pace:preferences.settings.pace,pending:records.some(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')}):null,player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor,{scenes,clock:anchor?.literal,complete:opts.complete!==false})),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
   relationship_context,relationship_context_omitted,life_context,actor_context,actor_context_omitted:omittedActors.size,
   drivers:storyDrivers(projection,directives,{max:8,actors:[...focus]}),warnings,
   workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
