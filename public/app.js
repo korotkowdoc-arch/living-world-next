@@ -1,3 +1,4 @@
+import {ARCHIVE_ACTIONS,ARCHIVE_SECTIONS} from './core/world-archive.mjs';
 import {SOCIETY_ACTIONS,SOCIETY_ACTION_IDS,societyActionRows} from './core/magic-society.mjs';
 import {MAGIC_ACTIONS,MAGIC_ACTION_IDS,magicActionRows} from './core/magic-world.mjs';
 import {ADVANCED_ACTIONS,ADVANCED_ACTION_IDS} from './core/advanced-world.mjs';
@@ -308,6 +309,71 @@ function placesView(graph){
 }
 function timelineView(data){const out=node('div','life-timeline');for(const e of data?.records||[])out.append(add(node('article','timeline-entry'),node('strong','',e.source?.world_time||'Дата не установлена'),renderMenuData([e])));if(!data?.records?.length)out.append(para('Нет подтверждённых событий.'));if(data?.omitted)out.append(para('Ещё записей: '+data.omitted));return out;}
 const menuUiState=new Map();
+/** Dedicated readers. Text is displayed as textContent, not HTML. Reading
+ * and writing intentions are copied to the story chat; browsing is read-only. */
+function archiveReaderView(overview,section,send){
+ const out=node('div','archive-reader'),toolbar=node('div','row'),search=node('input','field');search.type='search';search.placeholder='Поиск по названию и автору на странице';
+ const area=node('div','archive-shelf'),rows=overview.archive?.[section.id]?.records||[];
+ const action=(a,doc,part=null,detail=ARCHIVE_ACTIONS[a])=>send({action:a,document_id:doc?.id,part_id:part?.id,detail});
+ const note=(a,d,p=null)=>{
+  const text=field(a==='review_document'?'Текст рецензии':'Текст заметки');text.rows=5;
+  area.append(text,button('Передать в историю',()=>action(a,d,p,text.value),'btn secondary'));
+ };
+ const book=(d,partId=null)=>{
+  let detail;try{detail=overview.archive_reader(d.id,partId);}catch(e){area.replaceChildren(para(e.message));return;}
+  area.replaceChildren(button('← К списку',list,'btn secondary'),node('h3','',detail.title),node('p','muted',detail.author+' · '+detail.edition));
+  if(detail.summary)area.append(para(detail.summary));
+  if(partId){
+   const p=detail.part;area.append(button('← Оглавление',()=>book(d),'btn secondary'),node('h3','',p.title));
+   if(p.text!=null){const body=node('article','archive-text',p.text);body.style.whiteSpace='pre-wrap';body.style.lineHeight='1.75';body.style.overflowWrap='anywhere';area.append(body);}
+   else area.append(para(p.requires_authoring?'Текст этой части ещё не создан. При первом чтении рассказчик напишет и сохранит его.':'Текст сохранён, но герой ещё не прочитал эту часть.'));
+   if(p.reflection)area.append(node('h4','','Впечатления героя'),para(p.reflection));
+   if(detail.access==='available'){
+    if(p.requires_first_read||p.requires_authoring)area.append(button('Прочитать в истории',()=>action('read_document',detail,p)));
+    if(overview.archive_owner(d.id)&&p.requires_authoring)area.append(button('Написать часть',()=>action('write_document_part',detail,p),'btn secondary'));
+    area.append(button('Изучить',()=>action('study_document',detail,p),'btn secondary'),button(p.bookmarked?'Убрать закладку':'Закладка',()=>action(p.bookmarked?'remove_document_bookmark':'bookmark_document',detail,p),'btn secondary'),button('Добавить заметку',()=>note('annotate_document',detail,p),'btn secondary'));
+   }
+   const idx=detail.contents.findIndex(x=>x.id===partId),nav=node('div','row');
+   if(idx>0)nav.append(button('← Предыдущая',()=>book(d,detail.contents[idx-1].id),'btn secondary'));
+   if(idx+1<detail.contents.length)nav.append(button('Следующая →',()=>book(d,detail.contents[idx+1].id),'btn secondary'));
+   area.append(nav);
+  }else{
+   area.append(node('p','muted','Прочитано: '+detail.read_count+' / '+detail.part_count),node('h4','','Оглавление'));
+   for(const p of detail.contents)area.append(button((p.bookmarked?'★ ':p.status!=='unread'?'✓ ':'')+p.title+(p.materialized?'':' · не создана'),()=>book(d,p.id),'btn secondary'));
+   if(detail.access==='available'){
+    if(detail.read_count)area.append(button('Написать рецензию',()=>note('review_document',detail),'btn secondary'));
+    if(overview.archive_owner(d.id))area.append(button('Предложить публикацию',()=>action('publish_document',detail),'btn secondary'));
+   }
+  }
+  if(detail.notes.length){area.append(node('h4','','Личные заметки'));for(const n of detail.notes.filter(n=>!partId||!n.part_id||n.part_id===partId))area.append(para(n.text));}
+  if(detail.reviews.length){area.append(node('h4','','Рецензии'));for(const r of detail.reviews)area.append(node('strong','',r.actor),para(r.text));}
+ };
+ function list(){
+  area.replaceChildren();
+  const q=search.value.toLocaleLowerCase('ru').trim(),matches=rows.filter(r=>[r.title,r.author,r.edition].some(x=>String(x||'').toLocaleLowerCase('ru').includes(q)));
+  if(!matches.length)area.append(para(q?'На этой странице ничего не найдено.':'Здесь появятся материалы, полученные героем в истории.'));
+  for(const r of matches){const tile=node('article','card');tile.append(node('h3','',r.title),node('p','muted',r.author+' · '+r.edition),para(r.summary||''),node('p','muted','Прочитано: '+r.read_count+' / '+r.part_count),button('Открыть',()=>book(r),'btn secondary'));area.append(tile);}
+ }
+ search.addEventListener('input',list);toolbar.append(search);out.append(toolbar,area);
+ if(section.actions.includes('write_document')){const titleInput=field('Название, жанр, тема будущего материала');titleInput.rows=3;out.append(titleInput,button('Создать материал в истории',()=>action('write_document',null,null,titleInput.value),'btn secondary'));}
+ if(section.actions.includes('request_document_access')){const request=field('Какой материал найти или запросить?');request.rows=2;out.append(request,button('Запросить доступ в истории',()=>action('request_document_access',null,null,request.value),'btn secondary'));}
+ list();return out;
+}
+function letterReaderView(overview,send){
+ const out=node('div','archive-reader'),area=node('div','archive-shelf'),nav=node('div','row');
+ let mode='incoming';const lists=overview.life.letters;
+ function open(l){
+  area.replaceChildren(button('← К письмам',list,'btn secondary'),node('h3','',l.subject||'Непрочитанное письмо'),node('p','muted',mode==='incoming'?'От: '+l.from:'Кому: '+l.to));
+  if(l.message!=null){const body=node('article','archive-text',l.message);body.style.whiteSpace='pre-wrap';body.style.lineHeight='1.75';body.style.overflowWrap='anywhere';area.append(body);}
+  else area.append(para('Полный текст откроется после того, как герой прочитает письмо в сцене.'),button('Прочитать письмо',()=>send({action:'read_letter',letter_id:l.id,detail:'Прочитать письмо от '+l.from})));
+  if(mode==='incoming'&&l.status==='read'){const reply=field('Твой ответ');reply.rows=7;area.append(reply,button('Передать ответ в историю',()=>send({action:'send_letter',letter_id:l.id,detail:'Ответить '+l.from+' на письмо «'+l.subject+'»: '+reply.value}),'btn secondary'));}
+ }
+ function list(){area.replaceChildren();for(const l of lists[mode].records){const tile=node('article','card');tile.append(node('strong','',mode==='incoming'?l.from:l.to),para(l.subject||'Непрочитанное письмо'),node('p','muted',l.status==='delivered'?'Новое':l.status==='read'?'Прочитано':l.status),button('Открыть',()=>open(l),'btn secondary'));area.append(tile);}if(!lists[mode].records.length)area.append(para('Писем пока нет.'));}
+ nav.append(button('Входящие',()=>{mode='incoming';list();},'btn secondary'),button('Исходящие',()=>{mode='outgoing';list();},'btn secondary'));
+ const to=field('Получатель'),subject=field('Тема'),message=field('Полный текст письма');message.rows=7;
+ out.append(nav,area,node('h3','','Написать письмо'),to,subject,message,button('Передать письмо в историю',()=>send({action:'send_letter',detail:'Получатель: '+to.value+'\nТема: '+subject.value+'\nТекст:\n'+message.value}),'btn secondary'));list();return out;
+}
+
 function renderGameMenu(){
  const w=state.world,key=w.id+':'+w.active_branch_id;
  const saved=menuUiState.get(key)||{section:uiPrefs.lastSection,actor:'',offset:0};menuUiState.set(key,saved);
@@ -376,7 +442,11 @@ function renderGameMenu(){
   if(saved.section==='dashboard'){output.append(title('Обзор'));if(prefs.settings.hud)output.append(hudView(overview));output.append(title('Уведомления'));for(const n of overview.dashboard.notifications.records){output.append(button(n.title||n.kind,()=>{const s=sections.find(x=>x.id===n.section);if(s)go(s);},'btn secondary'));}output.append(renderMenuData(overview.dashboard.counts));for(const q of [...(overview.life.quick_actions||[]),...(overview.dashboard.quick_actions||[])])output.append(button(q.label||MENU_ACTION_LABELS[q.action]||q.action,()=>busy(()=>copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+(q.detail||q.label)+'. Проверь актуальный get_game_menu и validate_game_menu_action: '+JSON.stringify({action:q.action,detail:q.detail||q.label,...Object.fromEntries(Object.entries(q).filter(([k])=>k.endsWith('_id')))})+'. Не выполняй автоматически.')),'btn secondary'));return;}
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
   output.append(title(section.label));
-  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
+  const sendMaterial=input=>busy(async()=>{
+    const clean=Object.fromEntries(Object.entries(input).filter(([,v])=>v!=null));const intent=menuActionIntent(clean,overview);
+    await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Проверь текущий head и validate_game_menu_action: '+JSON.stringify(clean)+'. Намерение: '+intent.intent+'. Сыграй действие, сохрани полный текст материала и результат; не меняй ранее сохранённый текст.');
+   });
+  if(ARCHIVE_SECTIONS.includes(section.id))output.append(archiveReaderView(overview,section,sendMaterial));else if(section.id==='letters')output.append(letterReaderView(overview,sendMaterial));else if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   output.append(personalActions(section,overview));
   const magical=section.actions.filter(a=>Object.hasOwn(MAGIC_ACTIONS,a)||Object.hasOwn(SOCIETY_ACTIONS,a));
@@ -404,13 +474,13 @@ function renderGameMenu(){
     const intent=menuActionIntent(input,overview);await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Проверь актуальный head и validate_game_menu_action: '+JSON.stringify(input)+'. Намерение: '+intent.intent+'. Сыграй результат, не считай действие выполненным.');
    })));
   }
-  if(['timeline','news','investments','psychology','map','magic','magical_medicine','rituals','alchemy','magical_ecology','magical_clinics','magical_science'].includes(section.id)){
+  if([...ARCHIVE_SECTIONS,'letters','timeline','news','investments','psychology','map','magic','magical_medicine','rituals','alchemy','magical_ecology','magical_clinics','magical_science'].includes(section.id)){
    const data=menuSection(overview,section.id).data;
    const hasNext=v=>v&&typeof v==='object'&&(v.next_offset!=null||Object.values(v).some(x=>!Array.isArray(x)&&x&&typeof x==='object'&&hasNext(x)));
    const move=offset=>{const y=window.scrollY;saved.offset=offset;show();window.scrollTo({top:Math.min(y,output.getBoundingClientRect().top+window.scrollY),behavior:'instant'});};
    if(saved.offset>0||hasNext(data))output.append(row(...(saved.offset>0?[button('← Предыдущие записи',()=>move(Math.max(0,saved.offset-24)),'btn secondary')]:[]),...(hasNext(data)?[button('Следующие записи →',()=>move((saved.offset||0)+24),'btn secondary')]:[])));
   }
-  const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a)&&!Object.hasOwn(ADVANCED_ACTIONS,a)&&!Object.hasOwn(MAGIC_ACTIONS,a)&&!Object.hasOwn(SOCIETY_ACTIONS,a));
+  const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a)&&!Object.hasOwn(ADVANCED_ACTIONS,a)&&!Object.hasOwn(MAGIC_ACTIONS,a)&&!Object.hasOwn(SOCIETY_ACTIONS,a)&&!Object.hasOwn(ARCHIVE_ACTIONS,a)&&!(section.id==='letters'&&['read_letter','send_letter'].includes(a)));
   if(otherActions.length){
    const actions=node('select','field'),detail=field('Что именно сделать, с кем или с каким предметом?');detail.rows=3;
    for(const a of otherActions){const o=node('option','',MENU_ACTION_LABELS[a]);o.value=a;actions.append(o);}
