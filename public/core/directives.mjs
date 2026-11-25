@@ -1,3 +1,4 @@
+import {isMenuDirective,parseMenuDirective} from './game-menu.mjs';
 /** Owner-authored directives remain verbatim; extracted locks are only a strict, optional index. */
 const norm = v => String(v ?? '').trim().replace(/\s+/g,' ').toLocaleLowerCase('ru');
 export const pairKey = (a,b) => [norm(a),norm(b)].sort().join('::');
@@ -33,6 +34,7 @@ export function classifyDirective(raw) {
   const text=String(raw??'').trim();
   if (!text) throw new Error('Напиши, что нужно изменить в мире.');
   if (text.length>5000) throw new Error('Изменение должно быть короче 5000 символов.');
+  if(isMenuDirective(text)){parseMenuDirective(text);return {text,category:'general',tags:['general'],relationship_lock:null,relationship_locks:[]};}
   const low=text.toLocaleLowerCase('ru'); const tags=[];
   if (/ненавид|враг|вражд|соперни|примир|мириться|уважен|довер|дружб|отношени/.test(low)) tags.push('relations');
   if (/характер|инициатив|решительн|боится|желани|секс|близост|любов|ревн|чувств/.test(low)) tags.push('characters');
