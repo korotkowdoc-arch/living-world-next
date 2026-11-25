@@ -223,3 +223,7 @@ prepare_story_turn объединяет активную память, расп�
 ## v0.36 — семейная история и общие цели
 
 `child_birth` и `child_milestone` связывают родительство, реальные семейные события и точную календарную дату сцены; возраст вычисляется из игрового времени. `shared_goal`, `shared_goal_member`, `shared_goal_step` — явное согласие участников, неизменяемый список шагов, фактически выполненные события и закрытие только после всех шагов. Миграция 028; никакого автоматического появления детей, согласия, изменения навыков или исполнения целей.
+
+## v0.37 — durable projection snapshots
+
+Private Supabase snapshots are derived by the `nw-projection-snapshot` Edge Function from canonical ancestry after validating the caller with Auth. Only service-role RPCs can read/write the snapshot store. The Worker validates the boundary against its own ancestry and falls back to full replay on errors. Projection metrics report replayed/reused scenes; this does not eliminate full ancestry reads. Deploy the Edge Function with the same pinned engine release and migration 029. Never deploy an unpinned external source or expose the service key to the browser. If the version differs, the Worker ignores the snapshot.
