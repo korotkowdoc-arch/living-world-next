@@ -129,6 +129,35 @@ export function sceneMemoryDuplicateKey(e){return JSON.stringify([e.memory_kind,
 /** Recall explicitly saved semantic notes, not generated summaries of old prose.
  * All sources are from the supplied active ancestry. Invalid scenes/events are
  * excluded. Round-robin across domains prevents one topic monopolizing context. */
+const legacyRecord=e=>e?.type==='world'&&!isSceneMemory(e)&&!Object.keys(e).some(k=>k.endsWith('_version'))&&typeof e.key==='string'&&typeof e.description==='string'&&typeof e.evidence==='string'&&!!e.evidence.trim();
+/** Legacy generic world records are searchable source hints, not migrations.
+ * Domain labels below are lexical cues; actual names, claims and meaning
+ * must be checked against the full scene before use. */
+export function legacySourceRecall(scenes=[],projection={}, {actors:focus=[],place=null,queries=[],complete=true,maxRecords=8,maxChars=4200}={}){
+ const phrases=[...new Set([...focus,place,...queries].filter(x=>typeof x==='string'&&x.trim()).map(x=>norm(x.trim())))];
+ const badScenes=new Set(),badEvents=new Set();
+ for(const f of projection.validation_warnings||[]){if(!f.scene_id)continue;if(f.event_id)badEvents.add(JSON.stringify([f.scene_id,f.event_id]));else badScenes.add(f.scene_id);}
+ const records=[],keys=new Set();let total=0;
+ const cap=Math.max(1,Math.min(20,Math.floor(Number(maxRecords)||8)));
+ const order=(a,b)=>b.rank-a.rank||b.scene_index-a.scene_index||b.event_index-a.event_index;
+ if(phrases.length)for(let i=scenes.length-1;i>=0;i--){
+  const s=scenes[i];if(!s?.id||badScenes.has(s.id))continue;
+  for(let j=(s.events||[]).length-1;j>=0;j--){
+   const e=s.events[j];if(!legacyRecord(e)||badEvents.has(JSON.stringify([s.id,e.id])))continue;
+   const hay=norm([e.key,e.description,e.evidence].join('\n')),matched=phrases.filter(x=>hay.includes(x));
+   if(!matched.length)continue;
+   const k=JSON.stringify([e.key,e.description,e.evidence]);if(keys.has(k))continue;keys.add(k);total++;
+   const rank=matched.length;
+   if(records.length>=cap*3&&rank<=records.at(-1).rank)continue;
+   const cues=Object.entries(cuePatterns).filter(([,p])=>p.test(e.description+' '+e.evidence)).map(([d])=>d);
+   records.push({rank,scene_index:i,event_index:j,key:compact(e.key,180),description:compact(e.description,360),quote:compact(e.evidence,320),quote_truncated:e.evidence.length>320,matched_terms:matched,possible_domains:cues,source:{scene_id:s.id,event_id:e.id,world_time:s.world_time??null},kind:'legacy_literal_source_hint'});
+   records.sort(order);if(records.length>cap*3)records.pop();
+  }
+ }
+ const selected=[];
+ for(const row of records){if(selected.length>=cap)break;const {rank,scene_index,event_index,...r}=row;selected.push(r);if(JSON.stringify(selected).length>maxChars)selected.pop();}
+ return {canonical:false,memory_complete:complete,total_matching:total,records:selected,omitted:total-selected.length,policy:'Old generic records only: lexical matches and possible routing domains are not proof of current state. Verify original source; never create a payment, item, relationship, knowledge or action from this hint alone.'};
+}
 export function sceneMemoryRecall(scenes=[],projection={}, {actors:focus=[],place=null,queries=[],complete=true,maxNotes=16,maxChars=7800}={}){
  const a=new Set(focus),q=[...new Set(queries.filter(x=>typeof x==='string'&&x.trim()).map(norm))].slice(0,8);
  const failures=new Set(),badScenes=new Set();
@@ -157,15 +186,15 @@ export function sceneMemoryRecall(scenes=[],projection={}, {actors:focus=[],plac
   const {rank,scene_index,event_index,...note}=row;
   notes.push(note);if(JSON.stringify(notes).length>maxChars)notes.pop();
  }
- return {canonical:false,memory_complete:complete,total_matching:total,notes,omitted:Math.max(0,total-notes.length),policy:'Interpretive scene memory only. Read original source and verify speaker/context. Never grant knowledge, change ledger or treat an intention or claim as a performed action.'};
+ return {canonical:false,memory_complete:complete,total_matching:total,notes,omitted:Math.max(0,total-notes.length),legacy_source_hints:legacySourceRecall(scenes,projection,{actors:focus,place,queries,complete}),policy:'Interpretive scene memory only. Read original source and verify speaker/context. Never grant knowledge, change ledger or treat an intention or claim as a performed action.'};
 }
 export function memoryCoverageSummary(scenes=[],{complete=true}={}){
- const counts={scenes:scenes.length,with_events:0,without_events:0,with_supplemental_memory:0,without_supplemental_memory:0,supplemental_records:0},domains=Object.create(null);
+ const counts={scenes:scenes.length,with_events:0,without_events:0,with_supplemental_memory:0,without_supplemental_memory:0,supplemental_records:0,legacy_generic_records:0},domains=Object.create(null);
  for(const s of scenes){const es=Array.isArray(s.events)?s.events:[],notes=es.filter(e=>isSceneMemory(e)&&!sceneMemoryError(e));
   counts[es.some(e=>!isSceneMemory(e))?'with_events':'without_events']++;
   counts[notes.length?'with_supplemental_memory':'without_supplemental_memory']++;counts.supplemental_records+=notes.length;
-  for(const e of es){const route=eventRoute(e);domains[route.domain]=(domains[route.domain]||0)+1;}
+  for(const e of es){if(legacyRecord(e))counts.legacy_generic_records++;const route=eventRoute(e);domains[route.domain]=(domains[route.domain]||0)+1;}
  }
  return {complete,counts,domains,policy:'Counts are structural coverage indicators, not a semantic completeness score. Review original scenes for missing important details.'};
 }
-export const SCENE_MEMORY_GUIDANCE='СОХРАНЕНИЕ И ИЗВЛЕЧЕНИЕ: после написания реальной сцены перечитай ВЕСЬ текст от начала до конца, а не только последние реплики. Сначала выдели реальные изменения: состояние и внешность, местонахождение, знакомства и отношения, знания каждого участника, деньги и предметы, обязательства/сроки, учёба и навыки, работа и бизнес, жильё, магия и здоровье, общество/спорт, письма и документы, планы и последствия. Для каждого используй соответствующую существующую версионированную запись, стабильные ID и дословное evidence. Сохраняй отдельные связанные операции в причинном порядке (перевод, владение, принятие, результат); не дублируй деньги или предметы. Значимые детали, для которых нет подходящей записи состояния, можно атомарно сохранить внутри events как type=world, scene_memory_version=1, id, memory_kind=observed/claim/intention/belief/description/uncertain, domain из character/relationships/knowledge/finance/inventory/property/education/work/magic/medicine/community/civic/documents/travel/calendar/goals/world/experiences, actors (до 8), actor обязательно для claim/intention/belief и входит в actors, summary (до 600), evidence (точная цитата до 1200), опционально place/topics. НЕ добавляй key или другой version. Это подсказка рассказчику с источником, НЕ состояние, НЕ знание героя и НЕ замена канонического события. Не делай двойную запись одного факта без причины. Перед сохранением используй review_scene_draft для длинных, насыщенных или сложных сцен; проверь routing и review_cues, не превращая слова в факты. Первый answered и последний pending остаются на своих местах. После save_scene проверь receipt/routing, не сохраняй повторно. При следующем ходе используй scene_memory_recall и focused context, проверяй первоисточник. Старые сцены с пропусками — read-only review, исторические подсказки отдельно через save_memory_notes, без ретроактивных событий. Никаких внешних платных API; смысловое извлечение выполняет сама модель рассказчика.';
+export const SCENE_MEMORY_GUIDANCE='СОХРАНЕНИЕ И ИЗВЛЕЧЕНИЕ: после написания реальной сцены перечитай ВЕСЬ текст от начала до конца, а не только последние реплики. Сначала выдели реальные изменения: состояние и внешность, местонахождение, знакомства и отношения, знания каждого участника, деньги и предметы, обязательства/сроки, учёба и навыки, работа и бизнес, жильё, магия и здоровье, общество/спорт, письма и документы, планы и последствия. Для каждого используй соответствующую существующую версионированную запись, стабильные ID и дословное evidence. Сохраняй отдельные связанные операции в причинном порядке (перевод, владение, принятие, результат); не дублируй деньги или предметы. Значимые детали, для которых нет подходящей записи состояния, можно атомарно сохранить внутри events как type=world, scene_memory_version=1, id, memory_kind=observed/claim/intention/belief/description/uncertain, domain из character/relationships/knowledge/finance/inventory/property/education/work/magic/medicine/community/civic/documents/travel/calendar/goals/world/experiences, actors (до 8), actor обязательно для claim/intention/belief и входит в actors, summary (до 600), evidence (точная цитата до 1200), опционально place/topics. НЕ добавляй key или другой version. Это подсказка рассказчику с источником, НЕ состояние, НЕ знание героя и НЕ замена канонического события. Не делай двойную запись одного факта без причины. Перед сохранением используй review_scene_draft для длинных, насыщенных или сложных сцен; проверь routing и review_cues, не превращая слова в факты. Первый answered и последний pending остаются на своих местах. После save_scene проверь receipt/routing, не сохраняй повторно. При следующем ходе используй scene_memory_recall, включая legacy_source_hints, и focused context. Старые универсальные записи — только подсказки к первоисточнику; не считать их автоматически перенесёнными в реестр. Старые сцены с пропусками — read-only review, исторические подсказки отдельно через save_memory_notes, без ретроактивных событий. Никаких внешних платных API; смысловое извлечение выполняет сама модель рассказчика.';

@@ -31,6 +31,7 @@ test('authenticated MCP reads archived mentions and structured NPC events on one
   if(p.pathname==='/rest/v1/nw_branches'){readBranches++;return Response.json([{id:bid,head_scene_id:sid}]);}
   if(p.pathname==='/rest/v1/rpc/nw_actor_history')return Response.json([{scene_id:sid,event:{type:'relationship',evidence:'Малфой покачал головой.'}}]);
   if(p.pathname==='/rest/v1/rpc/nw_search_history')return Response.json([{scene_id:sid,snippet:'Малфой не хотел даже говорить с Гарри.'}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:sid,parent_scene_id:null,world_time:null,events:[{id:'note',type:'world',scene_memory_version:1,memory_kind:'claim',domain:'relationships',actors:['Малфой'],actor:'Малфой',summary:'Он заявил, что не хочет разговаривать.',evidence:'Малфой не хотел даже говорить с Гарри.'}]}]);
   return Response.json({error:'unexpected '+p.pathname},{status:404});
  };
  try{
@@ -43,7 +44,9 @@ test('authenticated MCP reads archived mentions and structured NPC events on one
   assert.equal(content.literal_mentions.length,1);
   assert.equal(content.literal_mentions[0].confidence,'literal_text_only');
   assert.equal(content.active_head_scene_id,sid);
-  assert.equal(readWorlds,2);assert.equal(readBranches,2);
+  assert.equal(content.scene_memory_recall.notes[0].memory_kind,'claim');
+  assert.equal(content.scene_memory_recall.canonical,false);
+  assert.equal(readWorlds,3);assert.equal(readBranches,3);
  }finally{globalThis.fetch=original;}
 });
 test('MCP actor recall refuses mismatched branch or changed ancestry',async()=>{

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sceneMemoryError,sceneSaveAudit,sceneMemoryRecall,memoryCoverageSummary,eventRoute} from '../public/core/scene-memory-routing.mjs';
+import {sceneMemoryError,sceneSaveAudit,sceneMemoryRecall,memoryCoverageSummary,eventRoute,legacySourceRecall} from '../public/core/scene-memory-routing.mjs';
 import {validateScene,replay,validateStateAppend} from '../public/core/continuity.mjs';
 import {reviewSceneDraft} from '../public/core/scene-draft.mjs';
 import {prepareStoryTurn} from '../public/core/story-turn.mjs';
@@ -52,4 +52,16 @@ test('recall ranks old exact actor plus topic matches above newer weak matches e
  const h=[scene('old',[old]),...Array.from({length:40},(_,i)=>scene('recent-'+i,[{...n,id:'r'+i,summary:'План '+i,topics:['поездка']}]))];
  const p=replay(h),r=sceneMemoryRecall(h,p,{actors:['Анна'],queries:['архив'],maxNotes:1});
  assert.equal(r.notes[0].source.scene_id,'old');
+});
+
+test('legacy generic records are retrievable as literal source hints without changing typed state',()=>{
+ const old={id:'old',type:'world',key:'old-room',description:'Анна узнала о комнате и возможной аренде.',evidence:'Анна узнала о комнате и возможной аренде.'};
+ const h=[scene('s1',[old],old.evidence)],p=replay(h);
+ const found=legacySourceRecall(h,p,{actors:['Анна']});
+ assert.equal(found.canonical,false);assert.equal(found.records[0].source.scene_id,'s1');assert.equal(found.records[0].kind,'legacy_literal_source_hint');
+ assert.ok(found.records[0].possible_domains.includes('property'));
+ assert.equal(legacySourceRecall(h,p,{actors:['Борис']}).records.length,0);
+ assert.equal(sceneMemoryRecall(h,p,{actors:['Анна']}).legacy_source_hints.records.length,1);
+ assert.equal(memoryCoverageSummary(h).counts.legacy_generic_records,1);
+ assert.equal(p.balances.length,0);assert.equal(p.items.length,0);assert.equal(p.knowledge.length,0);
 });
