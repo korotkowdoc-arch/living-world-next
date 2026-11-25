@@ -395,7 +395,7 @@ function renderGameMenu(){
    const sel=node('select','field'),records=node('select','field'),detail=field('Уточни действие и условия');detail.rows=3;
    for(const a of advanced){const o=node('option','',ADVANCED_ACTIONS[a]);o.value=a;sel.append(o);}
    const redraw=()=>{const id=ADVANCED_ACTION_IDS[sel.value];records.replaceChildren();records.hidden=!id;if(!id)return;
-    const a=overview.advanced,rows=id==='instrument_id'?a.investments.instruments.records:id==='lot_id'?a.investments.lots.records:id==='motive_id'?a.motives.records:id==='channel_id'?a.channels.channels.records:a.channels.subscriptions.records;
+    const a=overview.advanced,rows=id==='loan_id'?a.loans.records:id==='instrument_id'?a.investments.instruments.records:id==='lot_id'?a.investments.lots.records:id==='motive_id'?a.motives.records:id==='channel_id'?a.channels.channels.records:a.channels.subscriptions.records;
     for(const r of rows){try{menuActionIntent({action:sel.value,detail:'Проверка',[id]:r.id},overview);}catch{continue;}const o=node('option','',r.title||r.id);o.value=r.id;records.append(o);}
    };sel.addEventListener('change',redraw);redraw();
    output.append(node('h3','','Действия'),sel,records,detail,button('Скопировать намерение в ChatGPT',()=>busy(async()=>{
