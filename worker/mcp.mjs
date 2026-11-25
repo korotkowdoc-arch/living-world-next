@@ -1,3 +1,4 @@
+import {loadDurableCheckpoint} from '../public/core/durable-projection.mjs';
 import {createProjectionCache} from '../public/core/projection-cache.mjs';
 import {recordedPlayerActors} from '../public/core/social-dashboard.mjs';
 import {createAncestryCache} from '../public/core/ancestry-cache.mjs';
@@ -167,10 +168,13 @@ async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
   if(currentBranch.head_scene_id!==head)throw Error('History changed during memory read; retry');
  }
  if(!cached)ancestryCache.put(scope,world.id,world.active_branch_id,head,maxScenes,result);
- // Projection cache is consulted only after the same owner and head checks.
+ // Only use a durable checkpoint after verified complete ancestry. The
+ // Edge Function independently authenticates and derives the state.
+ const durable=projectionCache.hasReusable(scope,world.id,world.active_branch_id,result)?null:await loadDurableCheckpoint({url:env.SUPABASE_URL,anonKey:env.SUPABASE_ANON_KEY,token,world:world.id,branch:world.active_branch_id,head,history:result});
+ if(durable){const current=await ownerWorld(env,token,world.id),b=await branch(env,token,current);if(current.active_branch_id!==world.active_branch_id||b.head_scene_id!==head)throw Error('History changed during snapshot read; retry');}
  let projected;
- const load=()=>projected??=projectionCache.project(scope,world.id,world.active_branch_id,result);
- return {...result,get projection(){return load().projection;},get checkpoint(){return load().checkpoint;}};
+ const load=()=>projected??=projectionCache.project(scope,world.id,world.active_branch_id,result,durable);
+ return {...result,get projection(){return load().projection;},get checkpoint(){return load().checkpoint;},get projection_cache(){const p=load();return {source:p.cache_source,reused_scenes:p.reused_scenes,replayed_scenes:p.replayed_scenes};}};
 }
 /** Optional historical hints. Failure is visible, does not break canonical reads.
  * All queries remain scoped to the pinned owner branch. Never turn notes into knowledge. */
@@ -239,7 +243,7 @@ async function callTool(name,args,env,token){
    if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete});
    return {...ctx,game_menu:menu,next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints},memory:compactMemory,memory_is_sample:true,
     memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn','validate_player_choice'],
-    narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:finalWorld.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
+    narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:finalWorld.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,projection_cache:history.projection_cache,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
     warning:history.complete?ctx.memory_warning:'Structured memory reached the 50,000-scene safety cap; partial data cannot justify facts about earlier history.'};
