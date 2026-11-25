@@ -31,8 +31,9 @@ export function knowledgeView(projection={},opts={}){
  const actor=text(opts.actor),topic=text(opts.topic);
  if(actor.length>140||topic.length>140||(!actor&&!topic))throw Error('Укажи имя героя или ID темы.');
  const rows=(projection.knowledge||[]).filter(x=>(!actor||x.actor===actor)&&(!topic||x.topic_id===topic||x.fact.includes(topic)));
+ const positions=new Map((opts.scenes||[]).map((s,i)=>[s.id,i]));
  const offset=Math.max(0,Math.floor(Number(opts.offset)||0)),limit=Math.max(1,Math.min(40,Math.floor(Number(opts.limit)||20)));
- return {actor:actor||null,topic:topic||null,records:rows.slice().reverse().slice(offset,offset+limit).map(x=>({
+ return {actor:actor||null,topic:topic||null,records:rows.slice().reverse().sort((a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1)).slice(offset,offset+limit).map(x=>({
   actor:x.actor,topic_id:x.topic_id||null,content:x.fact,status:x.knowledge_version===1?x.status:'legacy_recorded_knowledge',
   channel:x.channel,informant:x.informant||null,source:x.source,evidence:x.evidence.slice(0,600)})),
   next_offset:rows.length>offset+limit?offset+limit:null,total:rows.length,memory_complete:opts.complete!==false,
