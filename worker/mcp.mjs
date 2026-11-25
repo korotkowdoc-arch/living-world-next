@@ -1,3 +1,4 @@
+import {reviewedMenuHistory} from '../public/core/menu-history.mjs';
 import {SCENE_MEMORY_GUIDANCE,sceneSaveAudit,sceneMemoryRecall,memoryCoverageSummary} from '../public/core/scene-memory-routing.mjs';
 import {VISUAL_PICKER_URI,VISUAL_PICKER_MIME,VISUAL_PICKER_HTML} from './visual-picker.mjs';
 import {nativeImageDescriptor,fetchNativeImage,transferNativeImage,privateImagePath,limitedBytes,imageMime,base64Image} from './native-visual-transfer.mjs';
@@ -221,7 +222,7 @@ async function readHistoricalIndex(env,token,world,head,history,focus={}){
   if(!Array.isArray(batch)||batch.length>40)throw Error('Invalid historical page');
   rows.push(...batch);if(batch.length<40){complete=true;break;}
  }}catch{unavailable=true;}
- return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
+ return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),menu_reviews:focus.menuActor?reviewedMenuHistory(rows,history.scenes,focus.menuActor,{complete:complete&&history.complete}):undefined,status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
 }
 async function visualStorageFetch(env,token,a,{method='GET',bytes,mime}={}){
  const base=new URL(env.SUPABASE_URL);if(base.protocol!=='https:')throw Error('Invalid storage configuration');
@@ -268,7 +269,7 @@ async function callTool(name,args,env,token){
     if(now.active_branch_id!==w.active_branch_id||after.head_scene_id!==active.head_scene_id)throw Error('Branch changed; refresh illustration');
     return visualStorageFetch(env,token,x,{method:'POST',bytes,mime});
    },finish:async id=>{const v=await rpc(env,token,'nw_finish_visual',{p_asset_id:id});return Array.isArray(v)?v[0]:v;}});
-   return {saved:true,reused:saved.reused,...visualLink(saved.asset),native_transfer:true};
+   return {saved:true,reused:saved.reused,...visualLink(saved.asset),native_transfer:true,storage_verified:true};
   }
   case 'list_world_illustrations':
   case 'get_visual_profile':
@@ -296,7 +297,7 @@ async function callTool(name,args,env,token){
    const current=await ownerWorld(env,token,w.id);if(current.directive_version!==w.directive_version)throw Error('Rules changed; refresh visual request');
    const result=await rpc(env,token,'nw_prepare_visual',{p_world_id:w.id,p_branch_id:w.active_branch_id,p_expected_head:active.head_scene_id,p_subject_kind:v.subject_kind,p_subject_id:v.subject_id,p_kind:v.kind,p_title:v.title,p_prompt:v.prompt,p_identity_notes:v.identity_notes,p_references:v.reference_asset_ids});
    const a=Array.isArray(result)?result[0]:result;
-   return {...visualLink(a),reference_images:refs.map(visualLink),generation_required:true,policy:'Generate using ChatGPT Images. Save the actual generated/selected Library file via save_chatgpt_illustration. If host does not supply authorized file, ask user to select it from Library or use app link. Do not claim ready until confirmed.'};
+   return {...visualLink(a),reference_images:refs.map(visualLink),generation_required:true,save_required:true,handoff:{tool:'save_chatgpt_illustration',world_id:w.id,asset_id:a.id,requires_authorized_image_file:true,fallback_tool:'open_visual_upload',verify_tool:'get_world_illustration'},policy:'Generate using ChatGPT Images. Save the actual generated/selected Library file via save_chatgpt_illustration. If host does not supply authorized file, ask user to select it from Library or use app link. Do not claim ready until confirmed.'};
   }
   case 'list_worlds':return await rest(env,token,'nw_worlds?select=id,title,seed,start_marker,active_branch_id,auto_save,updated_at&order=updated_at.desc');
   case 'get_document_authoring':
@@ -334,7 +335,8 @@ async function callTool(name,args,env,token){
    const clock=recordedWorldAgenda(history.scenes,projection);
    const choice=playerChoiceView(history.scenes,projection,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:history.complete});
    if(choice.pending&&choice.pending.actor!==args.actor)throw Error('Actor does not match the current player choice');
-   const overview=playerMenuOverview(projection,args.actor,clock.anchor_is_latest_scene?clock.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,offset:args.offset??0,limit:name==='validate_game_menu_action'?50000:args.limit??24});
+   const reviewed=name==='get_game_menu'&&(!args.section||['goals','work','education','interests'].includes(args.section))?await readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:[args.actor],menuActor:args.actor}):null;
+   const overview=playerMenuOverview(projection,args.actor,clock.anchor_is_latest_scene?clock.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,reviewedHistory:reviewed?.menu_reviews,offset:args.offset??0,limit:name==='validate_game_menu_action'?50000:args.limit??24});
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id||current.directive_version!==world.directive_version)throw Error('Menu changed during read; refresh.');
    const anchor={world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version};
@@ -364,14 +366,14 @@ async function callTool(name,args,env,token){
    if((lastScenes[0]?.id??null)!==active.head_scene_id)throw Error('Scene head changed while reading recent history; retry');
    const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete,trustedProjection:history.projection,turnOptions:{actors:args.actors,place:args.place,target_time:args.target_time,scope:args.scope}});
    const focusActors=ctx.next_turn.actor_context.map(x=>x.actor);
-   const [historicalHints,historicalIndex]=await Promise.all([readFocusedNotes(env,token,world,active.head_scene_id,focusActors),readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:focusActors})]);
+   const controlledActors=recordedPlayerActors(ctx.memory);
+   const playerActor=ctx.player_choice?.pending?.actor??(controlledActors.length===1?controlledActors[0]:null);
+   const [historicalHints,historicalIndex]=await Promise.all([readFocusedNotes(env,token,world,active.head_scene_id,focusActors),readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:focusActors,menuActor:playerActor})]);
    const finalWorld=await ownerWorld(env,token,world.id),finalBranch=await branch(env,token,finalWorld);
    if(finalWorld.active_branch_id!==world.active_branch_id||finalBranch.head_scene_id!==active.head_scene_id||finalWorld.directive_version!==world.directive_version)throw Error('Story or rules changed while preparing world context; retry.');
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
-   const controlledActors=recordedPlayerActors(ctx.memory);
-   const playerActor=ctx.player_choice?.pending?.actor??(controlledActors.length===1?controlledActors[0]:null);
    const menu=gameMenuContext({world,directives:rules,context:ctx});
-   if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete});
+   if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,reviewedHistory:historicalIndex.menu_reviews});
    if(menu.overview)menu.overview.visuals={...menu.overview.visuals,...await compactVisualContext(env,token,world)};
    return {...ctx,magic_worldbuilding:magicalAuthorSeeds(world,history.scenes),game_menu:menu,next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints,historical_index:historicalIndex},memory:compactMemory,memory_is_sample:true,memory_coverage:memoryCoverageSummary(history.scenes,{complete:history.complete}),
     memory_retrieval_tools:['read_world_illustration_image','list_world_illustrations','get_visual_profile','get_world_illustration','get_document_authoring','get_world_document','get_game_menu','get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn','validate_player_choice'],
@@ -738,7 +740,7 @@ export default {
     let hint='Bearer';try{hint=challenge(env);}catch{}
     return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
    }
-   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.50.1'},instructions:narratorWorkflow})));
+   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.51.0'},instructions:narratorWorkflow})));
    if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
    if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
    if(msg.method==='resources/templates/list')return response(JSON.stringify(done(msg.id,{resourceTemplates:[]})));

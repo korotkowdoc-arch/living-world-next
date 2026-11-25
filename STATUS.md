@@ -1,9 +1,14 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## v0.50.1 — русская локализация меню (candidate)
+## v0.51.0 — заполнение меню из подтверждённой истории и синхронизация галереи (candidate)
+- [x] Found live mismatch: 28 scenes, 24 social contacts yet top-level contacts empty because episodes are not keyed worldFacts. Unify menu contacts with accepted social episode view, expose explicit recorded character goals as prioritizable tasks; source-linked historic own intentions and actual receipts with work context in dedicated sections (never retroactive shifts or ledger mutations). Clarify empty sections; route actual future state changes via narrator guidance.
+- [x] Live Lia portrait already ready (manual upload). Native request returns explicit handoff and verification contract; narrator must not claim success without ready. Foreground gallery refresh on focus/visibility and every 15 seconds, preserves open cards; no document reload. Automatic generated-file handoff still requires host authorization; no invented file IDs, no paid APIs.
+- [x] Source-backed review annotation categories for historical goals, work, interests and education; displayed separately from formal state. Existing goal priorities now enter narrator candidate ordering. Fixed first CI fixture issues (null source and English inflection). [x] 28 additional source-linked menu review annotations saved in 12 existing scenes of the active Harry/Lia story, covering historical work, education, interests and intentions. Scene head pinned on write; no canonical history mutation. [ ] Final CI, deployment, live menu and actual automatic image handoff verification. Historical reconstruction is a read-only view, not a full typed canonical backfill; semantic review remains needed.
+
+## v0.50.1 — русская локализация меню
 - [x] Shared Russian presentation dictionaries for field names, statuses, record kinds, needs, actions, and current live-world keys. Hide internal IDs, version fields and policy metadata; preserve names, titles, prose and canonical data. Localized visible errors and letter/gallery statuses. Tests added.
-- [ ] CI and published application/device verification. Arbitrary narrator-authored foreign-language prose remains unchanged; unknown enum values use a neutral Russian fallback.
+- [x] PR #46 merged (3502f9d), Node/Chromium and SQL CI passed. [ ] Published application/device verification. Arbitrary narrator-authored foreign-language prose remains unchanged; unknown enum values use a neutral Russian fallback.
 
 ## v0.50.0 — native application game menu
 - [x] Grouped home directory, search across all 47 sections, favorites, direct section screens with back navigation, icon tiles and responsive style. No browser reload or hash routing for internal menu navigation. In-place source reader, journal, historical memory reader, direct settings and priorities. Automatically loads complete pinned structured memory when needed; one active snapshot cache. No automatic choice, fictional time or gameplay write.
