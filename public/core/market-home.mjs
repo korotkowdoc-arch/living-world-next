@@ -41,10 +41,15 @@ export function marketHomeTransition(records,items,e){
  }
  return null;
 }
+/** Invalidate confirmation when an item or access is lost. Reacquisition does not restore a placement. */
+export function invalidateFurnishing(records,items,e,source){
+ if(e.type!=='item'&&!['estate_sale','lease'].includes(e.life_kind))return;
+ for(const [key,row] of records)if(row.life_kind==='furnishing'&&row.status==='placed'&&(e.type!=='item'||e.item_id===row.item_id)&&!effectiveFurnishing(records,items,row))records.set(key,{...row,status:'unconfirmed',source});
+}
 export function applyMarketAdjustment(records,e,value){
  if(e.player_life_version!==1||e.life_kind!=='market_adjustment')return;
  const key='player-life:venue_service:'+e.service_id,service=records.get(key);
- records.set(key,{...service,amount:e.amount,source:value.source,last_adjustment_id:e.record_id});
+ records.set(key,{...service,amount:e.amount,evidence:e.evidence,source:value.source,last_adjustment_id:e.record_id});
 }
 export function marketHomeView(projection={},actor){
  const records=new Map((projection.worldFacts||[]).map(x=>[x.key,x])),items=new Map((projection.items||[]).map(x=>[x.item_id,x]));
