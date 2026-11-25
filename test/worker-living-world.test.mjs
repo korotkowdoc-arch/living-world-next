@@ -187,8 +187,8 @@ test('world context prepares a focused next turn and historical hints with one a
  };
  try{
   const r=(await (await worker.fetch(call('get_world_context',{actors:['Анна'],target_time:'2026-11-25'}),env)).json()).result;
-  assert.equal(r.isError,false);assert.equal(reads,1);assert.equal(notes,1);
-  const t=r.structuredContent.next_turn;assert.deepEqual(t.focus.actors,['Анна']);assert.equal(t.target_time,'2026-11-25');assert.equal(t.expected_head,head);assert.equal(t.expected_rules_version,3);assert.equal(t.historical_hints.canonical,false);
+  assert.equal(r.isError,false);assert.equal(reads,1);assert.equal(notes,2); // focused actor + bounded historical index
+  const t=r.structuredContent.next_turn;assert.equal(t.historical_index.scan_complete,true);assert.equal(t.historical_index.scanned_notes,0);assert.equal(t.historical_index.scenes_without_notes_in_scan,1);assert.deepEqual(t.focus.actors,['Анна']);assert.equal(t.target_time,'2026-11-25');assert.equal(t.expected_head,head);assert.equal(t.expected_rules_version,3);assert.equal(t.historical_hints.canonical,false);
  }finally{globalThis.fetch=old;}
 });
 
