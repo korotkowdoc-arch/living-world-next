@@ -59,7 +59,7 @@ export function travelServiceTransition(records,e){
 /** The successful transfer must precede the service receipt in the same scene.
  * Payment occurrence and service receipts share one reference namespace. */
 export function journeyArrivalError(e,old,acceptedLocations){
- if(e.life_kind!=='journey'||!['travelling','arrived'].includes(e.status))return null;
+ if(e.player_life_version!==1||e.life_kind!=='journey'||!['travelling','arrived'].includes(e.status))return null;
  if(old&&old.status!=='planned'&&old.reached===e.reached)return null;
  if(acceptedLocations.get(e.actor)!==e.stops[e.reached].place)return 'Departure or arrival needs a preceding location observation in this scene';
  return null;
@@ -73,7 +73,7 @@ export function servicePaymentError(e,events,i,used){
 const page=rows=>({records:rows.slice(0,40),total:rows.length,omitted:Math.max(0,rows.length-40)});
 export function travelServiceView(projection={},actor){
  const rows=(projection.worldFacts||[]).filter(x=>x.player_life_version===1);
- const journeys=rows.filter(x=>x.life_kind==='journey'&&x.actor===actor).map(x=>({id:x.record_id,title:x.title,status:x.status,stops:x.stops,reached:x.reached,next_stop:x.stops[x.reached+1]??null,source:x.source}));
+ const journeys=rows.filter(x=>x.life_kind==='journey'&&x.actor===actor).map(x=>({id:x.record_id,title:x.title,status:x.status,stops:x.stops,reached:x.reached,next_stop:['arrived','cancelled'].includes(x.status)?null:x.stops[x.reached+1]??null,source:x.source}));
  const balances=new Map((projection.balances||[]).filter(x=>x.actor===actor).map(x=>[x.currency,x]));
  const catalogue=rows.filter(x=>x.life_kind==='discovery'&&x.actor===actor).map(x=>({id:x.service_id,title:x.title,provider:x.provider,place:x.place,category:x.category,amount:x.amount,currency:x.currency,duration_minutes:x.duration_minutes,status:x.status,affordability:!balances.get(x.currency)?.known?'unknown':balances.get(x.currency).balance>=x.amount?'recorded_funds_cover_quote':'insufficient_recorded_funds',source:x.source}));
  const visits=rows.filter(x=>x.life_kind==='service_visit'&&x.actor===actor).map(x=>({id:x.record_id,service_id:x.service_id,title:x.title,provider:x.provider,place:x.place,amount:x.amount,currency:x.currency,status:x.status,outcome:x.outcome??null,source:x.source}));
