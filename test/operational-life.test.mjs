@@ -37,3 +37,9 @@ test('program completion and unrecorded accepted exam result are distinct admini
  rows.push(life('module_result','mr',{actor:'Student',program_enrollment_id:'pe',assessment_id:'a',module_id:'m',status:'passed'}));
  index=operationalIndex({worldFacts:rows});assert.equal(index.view('Organizer').education.records[0].kind,'program_completion_review');
 });
+
+test('equal module titles cannot reuse the same exam as a candidate for two module IDs',()=>{
+ const rows=[life('study_program','p',{actor:'Organizer',institution_id:'inst',title:'Course',status:'active',modules:[{id:'a',title:'Basics'},{id:'b',title:'Basics'}]}),life('enrollment','e',{actor:'Student',institution_id:'inst',status:'enrolled'}),life('program_enrollment','pe',{actor:'Student',program_id:'p',enrollment_id:'e',status:'active'}),life('assessment','a',{actor:'Student',enrollment_id:'e',title:'Basics',status:'passed'})];
+ const index=operationalIndex({worldFacts:rows});assert.deepEqual(index.view('Student').program_progress.records[0].modules.map(x=>x.status),['module_link_requires_review','module_link_requires_review']);
+ assert.equal(index.view('Organizer').education.total,0);
+});

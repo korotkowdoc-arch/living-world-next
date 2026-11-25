@@ -1,4 +1,4 @@
-import {MENU_GUIDANCE,menuPreferences,isMenuDirective} from './game-menu.mjs';
+import {MENU_GUIDANCE,MENU_COMPACT_GUIDANCE,menuPreferences,isMenuDirective} from './game-menu.mjs';
 import { classifyDirective,extractLocks } from './directives.mjs';
 import {storyDrivers,storyDriverPrompt} from './story-drivers.mjs';
 import {limitedNarratorMemory,narratorSceneExcerpt} from './narration-budget.mjs';
@@ -45,7 +45,7 @@ export function buildWorldDraft(raw) {
   };
 }
 
-export function promptForNarrator({world, directives = [], history = [], projection = null, timeContext = null}={}) {
+export function promptForNarrator({world, directives = [], history = [], projection = null, timeContext = null, technicalGuidance = true}={}) {
   if (!world?.seed) throw new Error('Нет описания выбранного мира.');
   let memoryIndex=-1,sceneIndex=-1;
   const blocks = [
@@ -54,7 +54,8 @@ export function promptForNarrator({world, directives = [], history = [], project
     'ПОСТОЯННЫЕ ПРИНЦИПЫ:\n' + FOUNDATIONS.map(x => `• ${x.text}`).join('\n'),
   ];
   const active=directives.filter(x=>x.active!==false&&!isMenuDirective(x.text));
-  blocks.push(MENU_GUIDANCE+'\nТЕКУЩИЕ НАСТРОЙКИ И ПРИОРИТЕТЫ: '+JSON.stringify(menuPreferences(directives,world.active_branch_id)));
+  const menuIndex=blocks.length,settingsText='\nТЕКУЩИЕ НАСТРОЙКИ И ПРИОРИТЕТЫ: '+JSON.stringify(menuPreferences(directives,world.active_branch_id));
+  blocks.push((technicalGuidance?MENU_GUIDANCE:MENU_COMPACT_GUIDANCE)+settingsText);
   if (active.length) blocks.push('УСТАНОВЛЕННЫЕ ИГРОКОМ УСЛОВИЯ (приоритетнее творческой импровизации):\n' + active.map(x=>`• ${x.text}`).join('\n'));
   const locks=extractLocks(active);
   if(locks.length)blocks.push('ЖЁСТКИЕ ОГРАНИЧЕНИЯ ОТНОШЕНИЙ — НЕ ПЕРЕОСМЫСЛЯЙ:\n' + locks.map(x=>`${x.a} ↔ ${x.b}: ${x.forbid_reconciliation?'нет примирения/дружбы; ':''}${x.forbid_respect?'нет взаимного уважения; ':''}совместная опасность/помощь не меняет эту установку`).join('\n'));
@@ -96,7 +97,14 @@ export function promptForNarrator({world, directives = [], history = [], project
   const target=52000;
   const render=()=>blocks.join('\n\n');
   if(render().length>target){
-    const fixed=blocks.reduce((n,b,i)=>n+(i===memoryIndex||i===sceneIndex?0:b.length)+2,0);
+    let fixed=blocks.reduce((n,b,i)=>n+(i===memoryIndex||i===sceneIndex?0:b.length)+2,0);
+    // Preserve rules verbatim and source excerpts. The connected MCP context
+    // supplies complete technical schema guidance separately, so do not repeat
+    // all schemas in the prose prompt when they would crowd out evidence.
+    if(technicalGuidance&&fixed>target-6500){
+      blocks[menuIndex]=MENU_COMPACT_GUIDANCE+settingsText;
+      fixed=blocks.reduce((n,b,i)=>n+(i===memoryIndex||i===sceneIndex?0:b.length)+2,0);
+    }
     const available=Math.max(0,target-fixed-600);
     if(memoryIndex>=0){
       const cap=Math.max(2500,Math.min(12000,Math.floor(available*(sceneIndex>=0?0.57:1))));
