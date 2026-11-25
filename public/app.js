@@ -1,5 +1,5 @@
 import {sectionScrollTarget,WORLD_TABS} from './core/section-navigation.mjs';
-import {gameMenuContext,playerMenuOverview,menuSection,menuPreferences,menuRecordFromInput,menuActionIntent,DEFAULT_MENU_SETTINGS} from './core/game-menu.mjs';
+import {gameMenuContext,playerMenuOverview,menuSection,menuPreferences,menuRecordFromInput,menuActionIntent,DEFAULT_MENU_SETTINGS,MENU_ACTION_LABELS} from './core/game-menu.mjs';
 import {PERSONAL_ACTIONS,PERSONAL_ACTION_IDS} from './core/personal-menu.mjs';
 import {recordedPlayerActors} from './core/social-dashboard.mjs';
 import {FOUNDATIONS,buildWorldDraft,promptForNarrator} from './core/world.mjs';
@@ -303,17 +303,28 @@ function renderGameMenu(){
   output.replaceChildren();nav.replaceChildren();const prefs=menuPreferences(state.directives,w.active_branch_id);
   const menu=gameMenuContext({world:w,directives:state.directives,context:{head_scene_id:w.head_scene_id,memory_complete:complete}});
   const sections=[{id:'dashboard',label:'Обзор'},...menu.sections];
-  for(const s of sections){const b=button(s.label,()=>{saved.section=s.id;show();},'game-tile'+(saved.section===s.id?' active':''));b.setAttribute('aria-pressed',String(saved.section===s.id));nav.append(b);}
+  for(const s of sections){const b=button(s.label,()=>{const y=window.scrollY;const top=nav.getBoundingClientRect().top+y;saved.section=s.id;show();window.scrollTo({top:Math.min(y,top),behavior:'instant'});},'game-tile'+(saved.section===s.id?' active':''));b.setAttribute('aria-pressed',String(saved.section===s.id));nav.append(b);}
   if(saved.section==='settings'){output.append(settingsView(prefs));return;}
   if(!complete){output.append(node('div','notice','История загружена частично. Нажми «Вся память», чтобы проверить доступные действия.'));return;}
   if(!saved.actor){output.append(para('Герой определяется по сохранённому выбору игрока. Пока он не установлен, доступна настройка мира.'));return;}
   const overview=playerMenuOverview(projection,saved.actor,scenes.at(-1)?.world_time??null,{scenes,complete});
-  if(saved.section==='dashboard'){output.append(title('Обзор'),renderMenuData(overview.dashboard.notifications),renderMenuData(overview.dashboard.counts),renderMenuData(overview.dashboard.quick_actions));return;}
+  if(saved.section==='dashboard'){output.append(title('Обзор'),renderMenuData(overview.dashboard.notifications),renderMenuData(overview.dashboard.counts));for(const q of overview.dashboard.quick_actions||[])output.append(button(q.label||MENU_ACTION_LABELS[q.action]||q.action,()=>busy(()=>copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+q.detail+'. Проверь актуальный get_game_menu и validate_game_menu_action: '+JSON.stringify(q)+'. Не выполняй автоматически.')),'btn secondary'));return;}
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
   output.append(title(section.label));
   if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else output.append(renderMenuData(menuSection(overview,section.id).data));
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   output.append(personalActions(section,overview));
+  const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a));
+  if(otherActions.length){
+   const actions=node('select','field'),detail=field('Что именно сделать, с кем или с каким предметом?');detail.rows=3;
+   for(const a of otherActions){const o=node('option','',MENU_ACTION_LABELS[a]);o.value=a;actions.append(o);}
+   output.append(node('h3','','Другие действия'),actions,detail,button('Скопировать намерение в ChatGPT',()=>busy(async()=>{
+    const d=detail.value.trim();if(!d)throw Error('Опиши действие.');
+    // The app cannot resolve an ambiguous object ID or execute the narrator.
+    // ChatGPT must re-read the current pinned menu and resolve the exact visible record.
+    await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+MENU_ACTION_LABELS[actions.value]+' — '+d+'. Прочитай актуальный раздел '+section.id+', проверь необходимые ID и условия через validate_game_menu_action; если выбор неоднозначен, уточни. Не считай действие выполненным до сцены.');
+   })));
+  }
   if(section.actions.length)output.append(button('Открыть этот раздел в ChatGPT',()=>busy(()=>copy('/меню '+section.label+' — мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Прочитай актуальное меню и покажи доступные действия без продвижения времени.')),'btn secondary'));
  }
  actor.addEventListener('change',()=>{saved.actor=actor.value;show();});
