@@ -66,6 +66,7 @@ begin
    stamp:=trim(p_world_time);
    if stamp is null or stamp !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2})?$' or left(stamp,10) is distinct from coalesce(e->>'born_on',e->>'occurred_on') then raise exception 'Family record requires exact scene date';end if;
    perform public.nw_work_minute(to_jsonb(case when length(stamp)=10 then stamp||' 00:00' else replace(stamp,'T',' ') end));
+   if e->>'life_kind'='child_birth' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where idx<i and x.value->>'type'='character' and trim(x.value->>'name')=e->>'actor' and x.value->'state_patch'->'birth_date'=e->'born_on') then raise exception 'Birth requires matching character birth_date in same scene';end if;
    if not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where idx<i and x.value->'dynamics_version'='1'::jsonb and x.value->>'dynamics_kind'='family_event' and x.value->'record_id'=e->'family_event_id' and x.value->>'status'='completed') then raise exception 'Family event must be completed in same scene';end if;
   elsif e->>'life_kind'='shared_goal_step' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where idx<i and x.value->'record_id'=e->'completion_id' and x.value->>'status'='completed' and ((e->>'completion_kind'='activity' and x.value->'activity_version'='1'::jsonb and x.value->>'activity_kind'='activity') or (e->>'completion_kind'='family_event' and x.value->'dynamics_version'='1'::jsonb and x.value->>'dynamics_kind'='family_event'))) then raise exception 'Goal step requires actual same-scene completion';end if;
  end loop;
@@ -78,6 +79,7 @@ declare k text:=e->>'key'; kind text:=e->>'life_kind'; old jsonb; other jsonb; f
  slots constant text[]:=array['head','face','upper','outer','lower','feet','hands','accessory'];
 begin
  if not (e?'player_life_version') and coalesce(k,'') not like 'player-life:%' then
+  if e->>'type'='character' and e->'state_patch'?'birth_date' and exists(select 1 from jsonb_each(st->'life') x where x.value->>'life_kind'='child_birth' and x.value->>'actor'=trim(e->>'name') and x.value->'born_on' is distinct from e->'state_patch'->'birth_date') then raise exception 'Recorded birth date cannot change';end if;
   if e->>'type'='item' then st:=jsonb_set(st,'{economy}',public.nw_economy_step(st->'economy',e));st:=public.nw_furnishing_invalidate(st,e); end if;
   if e->>'dynamics_kind'='employment' and e->'dynamics_version'='1'::jsonb then perform public.nw_employment_requirements(st,e);st:=jsonb_set(st,array['jobs',e->>'record_id'],e,true);end if;
   if (e->'dynamics_version'='1'::jsonb and e->>'dynamics_kind' in ('economic_agreement','payment_schedule','institution','enterprise','family_duty','family_event','bond')) or e->'consequence_version'='1'::jsonb or (e->'activity_version'='1'::jsonb and e->>'activity_kind'='activity') or (e->'growth_version'='1'::jsonb and e->>'growth_kind'='skill') or (e->'social_record_version'='1'::jsonb and e->>'social_kind'='group') then st:=jsonb_set(st,array['refs',k],e,true);end if;
