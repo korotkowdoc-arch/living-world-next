@@ -145,6 +145,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   }
  }
  // A recorded active habit can motivate leisure without assuming that it is due today.
+ for(const r of records)if(r.player_life_version===1&&r.life_kind==='work_shift'&&['scheduled','working'].includes(r.status)){const start=parseStoryDate(r.starts_at);add('work_shift',{...r,counterparty:r.employer},{starts_at:r.starts_at,ends_at:r.ends_at,timing:r.status==='working'||start&&anchor&&start.order<=anchor.order?'reached_requires_story':'future'});}
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='journey'&&['travelling','planned','paused'].includes(r.status))add('journey',r,{next_stop:r.stops[r.reached+1]??null,reached:r.reached,timing:'requires_character_choice'});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='service_visit'&&['requested','accepted'].includes(r.status))add('service_visit',{...r,counterparty:r.provider},{amount:r.amount,currency:r.currency,timing:'requires_character_choice'});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='appointment'&&r.status==='confirmed'){
