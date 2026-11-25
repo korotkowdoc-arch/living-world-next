@@ -54,6 +54,89 @@ begin
 end $market$;
 revoke all on function public.nw_market_home_step(jsonb,jsonb) from public,anon,authenticated;
 
+create or replace function public.nw_home_step(st jsonb,e jsonb)
+returns jsonb language plpgsql immutable security invoker set search_path='' as $home$
+declare k text:=e->>'key'; kind text:=e->>'life_kind'; status text:=coalesce(e->>'status',''); old jsonb:=st->'life'->k; a jsonb; b jsonb; f text; start_time timestamp; end_time timestamp; units numeric; total numeric;
+begin
+ if not public.nw_story_text_valid(e->'actor',140) then raise exception 'Invalid life actor';end if;
+ if old is not null and old->'actor' is distinct from e->'actor' then raise exception 'Changed life actor';end if;
+ if kind='lease' then
+  if not public.nw_story_text_valid(e->'landlord',140) or e->'landlord'=e->'actor' or not public.nw_story_text_valid(e->'title',200) or not public.nw_story_text_valid(e->'place',140) or not public.nw_home_id(e->'agreement_id') or not public.nw_home_id(e->'schedule_id') or status not in ('proposed','active','ended','cancelled') then raise exception 'Invalid lease';end if;
+  if old is null then
+   if status not in ('proposed','active') then raise exception 'Lease must begin proposed or active';end if;
+  else
+   foreach f in array array['landlord','place','agreement_id','schedule_id'] loop
+    if old->f is distinct from e->f then raise exception 'Changed lease terms';end if;
+   end loop;
+   if not (case old->>'status' when 'proposed' then status in ('proposed','active','cancelled') when 'active' then status in ('active','ended') else false end) then raise exception 'Invalid lease transition';end if;
+  end if;
+  if exists(select 1 from jsonb_each(st->'life') r where r.key<>k and r.value->>'life_kind'='lease' and (r.value->'agreement_id'=e->'agreement_id' or r.value->'schedule_id'=e->'schedule_id')) then raise exception 'Duplicate lease terms';end if;
+  a:=st->'refs'->('dynamics:economic_agreement:'||(e->>'agreement_id'));b:=st->'refs'->('dynamics:payment_schedule:'||(e->>'schedule_id'));
+  if a is null or b is null or a->>'agreement_kind'<>'rent' or b->>'payment_kind'<>'rent' or a->'actor' is distinct from e->'actor' or b->'actor' is distinct from e->'actor' or a->'counterparty' is distinct from e->'landlord' or b->'counterparty' is distinct from e->'landlord' or a->'place' is distinct from e->'place' or a->'amount' is distinct from b->'amount' or a->'currency' is distinct from b->'currency' then raise exception 'Lease requires matching rent terms';end if;
+  if status='active' and (a->>'status'<>'active' or b->>'status'<>'active') or status='ended' and (a->>'status' not in ('settled','cancelled') or b->>'status'<>'ended') then raise exception 'Lease state requires matching contract and payment state';end if;
+ elsif kind='home_condition' then
+  if not public.nw_home_id(e->'lease_id') or not public.nw_story_text_valid(e->'area',140) or not public.nw_story_text_valid(e->'description',600) or status not in ('good','worn','damaged','unsafe','unknown') then raise exception 'Invalid home condition';end if;
+  a:=st->'life'->('player-life:lease:'||(e->>'lease_id'));
+  if a is null or a->'actor' is distinct from e->'actor' or a->>'status'<>'active' or old is not null and (old->'lease_id' is distinct from e->'lease_id' or old->'area' is distinct from e->'area') or exists(select 1 from jsonb_each(st->'life') r where r.key<>k and r.value->>'life_kind'='home_condition' and r.value->'lease_id'=e->'lease_id' and r.value->'area'=e->'area') then raise exception 'Home condition needs own active lease and unique area';end if;
+ elsif kind='budget' then
+  if not public.nw_story_text_valid(e->'title',200) or not public.nw_story_text_valid(e->'currency',80) or status not in ('active','paused','closed') then raise exception 'Invalid budget';end if;
+  perform public.nw_work_uint(e->'monthly_limit');perform public.nw_work_uint(e->'savings_target');
+  if old is null and status<>'active' or old is not null and (old->'currency' is distinct from e->'currency' or old->>'status'='closed') or status<>'closed' and exists(select 1 from jsonb_each(st->'life') r where r.key<>k and r.value->>'life_kind'='budget' and r.value->'actor'=e->'actor' and r.value->'currency'=e->'currency' and r.value->>'status'<>'closed') then raise exception 'One current budget per currency';end if;
+ elsif kind='capacity_slot' then
+  if not public.nw_home_id(e->'service_id') or not public.nw_story_text_valid(e->'resource',140) or status not in ('open','closed') then raise exception 'Invalid capacity slot';end if;
+  start_time:=public.nw_work_minute(e->'starts_at');end_time:=public.nw_work_minute(e->'ends_at');units:=public.nw_work_uint(e->'capacity');
+  if start_time>=end_time or units not between 1 and 10000 then raise exception 'Invalid capacity interval or units';end if;
+  a:=st->'life'->('player-life:venue_service:'||(e->>'service_id'));
+  if a is null or a->'actor' is distinct from e->'actor' or old is null and status<>'open' or old is not null and old->>'status'='closed' then raise exception 'Slot requires owned service';end if;
+  if old is not null then
+   foreach f in array array['service_id','resource','starts_at','ends_at','capacity'] loop
+    if old->f is distinct from e->f then raise exception 'Immutable capacity slot';end if;
+   end loop;
+  end if;
+  if exists(select 1 from jsonb_each(st->'life') r where r.key<>k and r.value->>'life_kind'='capacity_slot' and r.value->'actor'=e->'actor' and r.value->'resource'=e->'resource' and public.nw_work_minute(r.value->'starts_at')<end_time and start_time<public.nw_work_minute(r.value->'ends_at')) then raise exception 'Overlapping slots';end if;
+ elsif kind='reservation' then
+  if not public.nw_home_id(e->'slot_id') or not public.nw_home_id(e->'visit_id') or status not in ('reserved','used','cancelled') then raise exception 'Invalid reservation';end if;
+  units:=public.nw_work_uint(e->'units');if units not between 1 and 10000 then raise exception 'Invalid reservation units';end if;
+  a:=st->'life'->('player-life:capacity_slot:'||(e->>'slot_id'));b:=st->'life'->('player-life:service_visit:'||(e->>'visit_id'));
+  if a is null or b is null or b->'actor' is distinct from e->'actor' or b->'provider' is distinct from a->'actor' or b->'service_id' is distinct from a->'service_id' or exists(select 1 from jsonb_each(st->'life') r where r.key<>k and r.value->>'life_kind'='reservation' and r.value->'visit_id'=e->'visit_id') then raise exception 'Reservation must match own visit';end if;
+  if old is null then
+   if status<>'reserved' or a->>'status'<>'open' or b->>'status'<>'accepted' then raise exception 'Reservation requires open slot and accepted service';end if;
+   select coalesce(sum((value->>'units')::numeric),0) into total from jsonb_each(st->'life') where value->>'life_kind'='reservation' and value->'slot_id'=e->'slot_id' and value->>'status' in ('reserved','used');
+   if total+units>(a->>'capacity')::numeric then raise exception 'Capacity exhausted';end if;
+  else
+   foreach f in array array['slot_id','visit_id','units'] loop
+    if old->f is distinct from e->f then raise exception 'Changed reservation terms';end if;
+   end loop;
+   if old->>'status'<>'reserved' or status not in ('used','cancelled') or status='used' and b->>'status'<>'completed' or status='cancelled' and b->>'status'<>'cancelled' then raise exception 'Close matching service before reservation';end if;
+  end if;
+ elsif kind='enrollment' then
+  if not public.nw_home_id(e->'institution_id') or not public.nw_story_text_valid(e->'title',200) or not public.nw_story_text_valid(e->'place',140) or status not in ('applied','enrolled','completed','withdrawn','rejected') then raise exception 'Invalid enrollment';end if;
+  a:=st->'refs'->('dynamics:institution:'||(e->>'institution_id'));
+  if a is null or a->'place' is distinct from e->'place' or old is null and (status not in ('applied','enrolled') or a->>'status'<>'operating') then raise exception 'Enrollment requires operating institution';end if;
+  if old is not null then
+   foreach f in array array['institution_id','title','place'] loop
+    if old->f is distinct from e->f then raise exception 'Changed enrollment';end if;
+   end loop;
+   if not (case old->>'status' when 'applied' then status in ('enrolled','rejected','withdrawn') when 'enrolled' then status in ('completed','withdrawn') else false end) then raise exception 'Invalid enrollment transition';end if;
+  end if;
+ elsif kind='assessment' then
+  if not public.nw_home_id(e->'enrollment_id') or not public.nw_story_text_valid(e->'title',200) or status not in ('scheduled','passed','failed','cancelled') or status in ('passed','failed') and not public.nw_story_text_valid(e->'outcome',600) then raise exception 'Invalid assessment';end if;
+  if public.nw_work_minute(e->'starts_at')>=public.nw_work_minute(e->'ends_at') then raise exception 'Invalid assessment interval';end if;
+  a:=st->'life'->('player-life:enrollment:'||(e->>'enrollment_id'));
+  if a is null or a->'actor' is distinct from e->'actor' or a->>'status'<>'enrolled' or old is null and status<>'scheduled' then raise exception 'Assessment needs active enrollment';end if;
+  if old is not null and (old->>'status'<>'scheduled' or old->'enrollment_id' is distinct from e->'enrollment_id' or old->'title' is distinct from e->'title' or status<>'scheduled' and (old->'starts_at' is distinct from e->'starts_at' or old->'ends_at' is distinct from e->'ends_at')) then raise exception 'Invalid assessment transition';end if;
+ elsif kind='practice_record' then
+  if not public.nw_home_id(e->'skill_id') or not public.nw_home_id(e->'origin_id') or coalesce(e->>'origin_kind','') not in ('work_shift','assessment','lesson') or status<>'recorded' or not public.nw_story_text_valid(e->'description',600) then raise exception 'Invalid practice evidence';end if;
+  a:=st->'refs'->('growth:skill:'||(e->>'skill_id'));b:=st->'life'->('player-life:'||(e->>'origin_kind')||':'||(e->>'origin_id'));
+  if old is not null or a is null or b is null or a->'actor' is distinct from e->'actor' or b->'actor' is distinct from e->'actor' or not (case e->>'origin_kind' when 'work_shift' then b->>'status'='worked' when 'lesson' then b->>'status'='attended' else b->>'status' in ('passed','failed') end) or exists(select 1 from jsonb_each(st->'life') r where r.value->>'life_kind'='practice_record' and r.value->'actor'=e->'actor' and r.value->'skill_id'=e->'skill_id' and r.value->'origin_kind'=e->'origin_kind' and r.value->'origin_id'=e->'origin_id') then raise exception 'Practice needs unique completed activity and own skill';end if;
+ elsif kind='reputation' then
+  if not public.nw_home_id(e->'group_id') or not public.nw_story_text_valid(e->'observer',140) or e->'actor'=e->'observer' or not public.nw_story_text_valid(e->'description',600) or jsonb_typeof(e->'known_to_actor') is distinct from 'boolean' or status not in ('positive','neutral','negative','mixed','unknown') or old is not null or not ((st->'refs')?('social:group:'||(e->>'group_id'))) then raise exception 'Invalid or repeated reputation observation';end if;
+ else raise exception 'Unknown housing or education record';end if;
+ return jsonb_set(st,array['life',k],e,true);
+end $home$;
+revoke all on function public.nw_home_step(jsonb,jsonb) from public,anon,authenticated;
+
+
 create or replace function public.nw_player_life_step(st jsonb,e jsonb)
 returns jsonb language plpgsql immutable security invoker set search_path='' as $life$
 declare k text:=e->>'key'; kind text:=e->>'life_kind'; old jsonb; other jsonb; field text; val jsonb; item text; garment jsonb;
