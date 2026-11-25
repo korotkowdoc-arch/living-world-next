@@ -12,14 +12,18 @@ const sc=(id,events=[],world_time='2000-08-01 09:00')=>({id,events,body:evidence
 const valid=(h,e,worldTime='2000-08-01 09:00')=>validateStateAppend(h,e,evidence,{worldTime}).ok;
 const birthEvent=dyn('family_event','birth',{actors:[actor,other,child],title:'Birth',family_kind:'birth',status:'completed',outcome:'Born'});
 const bond=dyn('bond','parent',{actor,counterparty:child,bond_type:'parenthood',status:'active'});
+const character={id:'child-character',type:'character',name:child,state_patch:{birth_date:'2000-08-01'},evidence};
 const birth=life('child_birth','child',{actor:child,parent:actor,born_on:'2000-08-01',family_event_id:'birth',status:'recorded'});
 test('birth and milestones require actual dated scene and parenthood; age is derived without automatic development',()=>{
- assert.equal(valid([], [birthEvent,birth]),false);
- assert.equal(valid([], [bond,birthEvent,birth],null),false);
- assert.equal(valid([], [bond,birthEvent,birth],'2000-08-02'),false);
- assert.equal(valid([], [bond,birthEvent,birth]),true);
- const h=[sc('birth',[bond,birthEvent,birth])],p=replay(h);
+ assert.equal(valid([], [character,birthEvent,birth]),false);
+ assert.equal(valid([], [bond,birthEvent,birth]),false);
+ assert.equal(valid([], [bond,character,birthEvent,birth],null),false);
+ assert.equal(valid([], [bond,character,birthEvent,birth],'2000-08-02'),false);
+ assert.equal(valid([], [bond,character,birthEvent,birth]),true);
+ const h=[sc('birth',[bond,character,birthEvent,birth])],p=replay(h);
  assert.deepEqual(p.validation_warnings,[]);
+ assert.equal(valid(h,[{...character,state_patch:{birth_date:'2000-08-02'}}]),false);
+ assert.equal(p.people.find(x=>x.name===child).state_fields.find(x=>x.field==='birth_date').value,'2000-08-01');
  assert.equal(familyGoalView(p,actor,'2001-07-31').children.records[0].age_years,0);
  assert.equal(familyGoalView(p,actor,'2001-08-01').children.records[0].age_years,1);
  assert.equal(familyGoalView(p,actor,'1999-08-01').children.records[0].age_years,null);
