@@ -1,9 +1,9 @@
 {
   "app": "living-world-next",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "mcp": "/mcp",
   "health": "/health",
   "deploy_source": "github-main",
   "note": "Public deployment marker only; check /health independently for MCP",
-  "deployment_probe": "2026-11-25-chat-game-menu"
+  "deployment_probe": "2026-11-25-player-life-menu"
 }
