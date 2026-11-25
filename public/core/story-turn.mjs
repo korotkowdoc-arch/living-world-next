@@ -286,9 +286,27 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  // Attach a bounded actor context to the actual turn, instead of forcing the narrator
  // to retrieve every subsystem independently. Focused actors precede background actors.
  const background=backgroundTimeReview(all,{clock:clock?.literal,target:proposed?.literal,segmentUntil:timeAdvance?.proposed_until,protectedActors,complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor});
- const segmentCandidates=background?.status==='player_choice_pending'?[]:background?all.filter(c=>{
+ const segmentCandidates=background?.status==='player_choice_pending'?[]:background?all.flatMap(c=>{
   const at=parseStoryDate(c.review_at);
-  return !at||at.order<=segmentAnchor.order;
+  if(at&&at.order>segmentAnchor.order)return [];
+  const row=householdRecords.get(c.key);
+  if(c.kind==='payment_schedule'||c.kind==='family_duty'){
+   const window=c.kind==='payment_schedule'?paymentScheduleWindow(row,segmentAnchor,paymentOccurrences.get(row?.record_id)||[]):familyDutyWindow(row,clock,segmentAnchor,dutyOccurrences.get(row?.record_id)||[]);
+   return window?[{...c,...window,review_at:window.first_due_on}]:[];
+  }
+  if(c.kind==='routine'){
+   if(!row)return [];
+   let intersects=routineWindow(row,clock)==='scheduled_window_not_actual_presence'||routineWindow(row,segmentAnchor)==='scheduled_window_not_actual_presence';
+   const first=Math.floor(clock.order/1440),last=Math.floor(segmentAnchor.order/1440);
+   const start=Number(row.start.slice(0,2))*60+Number(row.start.slice(3)),end=Number(row.end.slice(0,2))*60+Number(row.end.slice(3));
+   for(let d=first-1;!intersects&&d<=Math.min(last,first+7);d++){
+    const weekday=new Date(d*86400000).getUTCDay()||7;
+    if(row.weekdays.includes(weekday)&&d*1440+start<=segmentAnchor.order&&d*1440+end+(end<start?1440:0)>clock.order)intersects=true;
+   }
+   if(!intersects)return [];
+  }
+  // A future appointment or work shift is a forecast, not a task to perform now.
+  return [c];
  }):all;
  const npcInitiatives=npcInitiativeView(segmentCandidates,{focus:[...focus],player:pendingActor,players:recordedPlayers,settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:background&&segmentAnchor&&clock?segmentAnchor.order-clock.order:interval});
  const selectedActors=scope==='background'?[]:[...focus],omittedActors=new Set();
