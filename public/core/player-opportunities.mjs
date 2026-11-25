@@ -13,6 +13,12 @@ const isPlace=v=>typeof v==='string'&&v.trim()&&!absence.test(v.trim())&&!negati
 // Residence is a historical observation, not guaranteed access. Negative or
 // ambiguous prose should not create a special return-home action.
 const isResidence=v=>isPlace(v)&&!/[;\n]|\b(?:not rented|no lease)\b|не\s+(?:арендовал\p{L}*|снимает|наш[её]л\p{L}*|оплатил\p{L}*)|без\s+(?:жилья|ночлега)|на\s+улице/iu.test(v);
+// Keep the actual place name, not payment dates, rent or trial terms.
+export function residenceDestination(value){
+ if(!isResidence(value))return null;
+ const place=value.split(/,\s*(?=(?:пробная\s+неделя|оплачен\p{L}*|аренд\p{L}*\s+до|стоимость|залог|срок\s+аренды|£|\$|€|paid\b|rent\b|trial\b))/iu)[0].trim();
+ return isPlace(place)?place:null;
+}
 export function playerOpportunities(projection={},actor,{scenes=[],clock=null,complete=true}={}){
  const head=scenes.at(-1)?.id??null,character=(projection.people||[]).find(x=>x.name===actor);
  const location=character?.state_fields?.find(x=>x.field==='location');
@@ -21,12 +27,13 @@ export function playerOpportunities(projection={},actor,{scenes=[],clock=null,co
  const remember=(name,s,reason)=>{if(isPlace(name)&&!knownPlaces.has(name))knownPlaces.set(name,{name,source:s,reason});};
  remember(place,source(location),'last_recorded_location');
  const home=character?.state_fields?.find(x=>x.field==='residence');
- if(isResidence(home?.value))remember(home.value,source(home),'recorded_residence');
+ const homePlace=residenceDestination(home?.value);
+ remember(homePlace,source(home),'recorded_residence');
  const rejectedScenes=new Set(),rejectedEvents=new Set();
  for(const w of projection.validation_warnings||[])if(w.scene_id){if(w.event_id)rejectedEvents.add(JSON.stringify([w.scene_id,w.event_id]));else rejectedScenes.add(w.scene_id);}
  for(const s of scenes)for(const e of s.events||[])if(!rejectedScenes.has(s.id)&&!rejectedEvents.has(JSON.stringify([s.id,e.id]))&&e.type==='character'&&e.name===actor){
   const from={scene_id:s.id,event_id:e.id,world_time:s.world_time??null};
-  remember(e.state_patch?.location,from,'recorded_visit');if(isResidence(e.state_patch?.residence))remember(e.state_patch.residence,from,'recorded_residence');
+  remember(e.state_patch?.location,from,'recorded_visit');remember(residenceDestination(e.state_patch?.residence),from,'recorded_residence');
  }
  const habits=records.filter(x=>x.activity_version===1&&x.activity_kind==='habit'&&x.actor===actor&&x.status==='active');
  const activities=records.filter(x=>x.activity_version===1&&x.activity_kind==='activity'&&x.actors?.includes(actor)&&['planned','in_progress'].includes(x.status));
@@ -50,7 +57,7 @@ export function playerOpportunities(projection={},actor,{scenes=[],clock=null,co
  for(const x of travel.catalogue.records.filter(x=>x.status==='available'&&x.place===place&&atHead).slice(0,8))add('request_service',x.title,'Уточнить условия и заказать '+x.title,{service_id:x.id,place:x.place,amount:x.amount,currency:x.currency,affordability:x.affordability,availability:x.affordability==='insufficient_recorded_funds'?'recorded_funds_insufficient':'requires_scene_check',source:x.source});
  for(const x of travel.work.records.filter(x=>x.status==='active'&&x.actor===actor&&x.place===place&&atHead).slice(0,3))add('perform_work',x.title,'Выполнить рабочие обязанности: '+x.title,{employment_id:x.id,place:x.place,source:x.source});
  if(place&&atHead)add('explore','Осмотреться','Осмотреться в '+place,{source:source(location)});
- if(isResidence(home?.value)&&home.value!==place)add('travel','Вернуться домой','Отправиться домой: '+home.value,{place:home.value,source:source(home)});
+ if(homePlace&&homePlace!==place)add('travel','Вернуться домой','Отправиться домой: '+homePlace,{place:homePlace,source:source(home)});
  for(const x of activities.slice(0,6))add('continue_activity',str(x.name,140),'Продолжить занятие: '+x.name,{activity_id:x.record_id,place:x.place??null,source:source(x)});
  for(const x of habits.slice(0,6))add('practice_habit',str(x.name,140),'Заняться привычным делом: '+x.name,{activity_id:x.record_id,place:x.place??null,source:source(x)});
  for(const x of places.filter(x=>!x.current_location&&!closed.has(x.access)).slice(0,10))if(!options.some(o=>o.action==='travel'&&o.place===x.name))add('travel','Отправиться: '+x.name,'Отправиться в '+x.name,{place:x.name,source:x.source});
