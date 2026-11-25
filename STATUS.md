@@ -1,19 +1,28 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## Living Civilization — cross-system review (feature branch)
+## v0.45.0 — Living Civilization: координация систем (candidate)
 - [x] Narrator-only coordination of overlapping canonical lessons, assessments, shifts and appointments, including teacher participation but not fictitious employer attendance. Bounded sweep, exact windows, no automatic action.
 - [x] Aggregate unreviewed scheduled payments per payer/currency against recorded balance, with explicit unknowns and no debt or transfer assumption. Segment-scoped due queue with canonical sources, exact clock and pending-choice gate.
-- [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; CI and live verification pending. No new database schema or tool discovery required.
+- [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; Node CI 45650053662 and PostgreSQL CI 45650053799 passed before integration; combined CI/live verification pending. No new database schema or tool discovery required.
 - [x] Candidate ordering now respects global urgency tiers with fair category rounds; NPC initiative rotation accounts for accepted offscreen participation; bounded old-source callback anchors match exact active-ancestry participants/place/record or words. All remain proposals, not simulation outcomes. Regression coverage added.
 - [ ] Continue autonomous event resolution, institutional life, housing, media, deeper university simulation and full private asset backups. Existing menu settings and NPC psychology remain canonical; do not duplicate them.
+
+- [x] Player-facing dashboard reports conflicts from its own existing calendar projection. No narrator-private records are exposed.
+
+## v0.44.2 — совместимость визуального интерфейса и подтверждённые знакомства
+- [x] Каталог портретов включает персонажей из подтверждённых общих эпизодов (world_depth.social.nodes), даже когда формальные contacts пусты. Возрастные признаки героя и явное обновление внешности имеют приоритет над старым промптом. Отсечены несколько ошибочно классифицированных жилищных статусов.
+- [x] MCP picker: явное разрешение вызова save_chatgpt_illustration из UI, совместимость host callTool и MCP Apps bridge, доверенный переход в PWA, объяснение отсутствия file picker. Тесты регрессий.
+- [x] PR #37 merged (8937389); Node CI 45650134484 and PostgreSQL CI 45650134412 successful. Current canonical appearance takes precedence; historical reference notes preserved only as secondary continuity context. Client discovery of all three native image tools confirmed.
+- [ ] Cloud publication of 0.44.2 and real binary E2E in ChatGPT client still unverified. No paid API.
 
 ## v0.44.1 — перенос изображений ChatGPT без платного API
 - [x] Официальный MCP file parameter save_chatgpt_illustration: реальный авторизованный файл из ChatGPT Library, временная HTTPS ссылка files.oaiusercontent.com, ограничение 8 МБ, проверка формата, запрет произвольных URL/redirect и перезаписи. Передача байтов в существующий приватный Storage с OAuth пользователя, finalize подтверждает наличие. Повторная отправка идентичных байтов безопасна, иной файл не заменяет готовый.
 - [x] read_world_illustration_image возвращает реальные пиксели из приватного Storage как MCP image content для повторного просмотра/референса в совместимых клиентах. open_visual_upload — встроенный MCP Apps виджет выбора файла из Library, либо локального файла через host upload; fallback PWA. Ресурс защищён OAuth, никаких внешних скриптов/платной генерации. Рассказчик использует ChatGPT Images, затем сохраняет фактически доступный файл; не придумывает ID/URL.
 - [x] Никаких API-ключей генерации, внешних платных сервисов или автоматизации приватных endpoint. Не меняет сцены, игровые часы и выбор. Схема БД 031 остаётся прежней.
 - [x] PR #36 merged (694f8c9); Node CI 45640763667 и PostgreSQL CI 45640763424 успешны. Read-only проверка: 23 сцены, прежний head и awaiting_player, 47 разделов; облачный MCP ещё возвращал v0.44.0 (без native transfer).
-- [ ] Подтверждение облачной публикации v0.44.1, E2E настоящий файл из ChatGPT в рабочий Storage и отображение виджета на конкретном клиенте. Host fileParams и Library picker опциональны; если ChatGPT не передаёт только что сгенерированный файл, нужен явный выбор в виджете. Точный хост загрузки ограничен files.oaiusercontent.com. 
+- [x] Облачная v0.44.1 подтверждена: native reader, native save guidance, 47 разделов, 23 сцены, тот же head/awaiting_player.
+- [ ] E2E настоящий файл из ChatGPT в рабочий Storage и отображение виджета на конкретном клиенте. Host fileParams и Library picker опциональны; если ChatGPT не передаёт только что сгенерированный файл, нужен явный выбор в виджете. Точный хост загрузки ограничен files.oaiusercontent.com. 
    
 ## v0.44.0 — визуальная библиотека мира
 - [x] Приватное Storage-хранилище изображений до 8 МБ, PNG/JPEG/WebP, метаданные, подтверждённая сцена/ветка, subject_kind/subject_id, постоянные признаки внешности, референсы, статусы pending/ready/archived. Независимо от канонических событий и текущего выбора игрока. Историческая ветка не получает изображения из альтернативного будущего.

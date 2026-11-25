@@ -85,6 +85,8 @@ export function dashboardSummary(overview){
  for(const e of s?.invitations.incoming.records||[])if(e.status==='sent')add('invitation','relationships',e.title,e.source,'normal',{invitation_id:e.id});
  for(const e of l?.letters.incoming.records||[])if(e.status==='delivered')add('letter','letters','Непрочитанное письмо от '+e.from,e.source,'normal',{letter_id:e.id});
  for(const e of l?.calendar?.entries||[])if(['due_now','past_unresolved','same_day_uncertain'].includes(e.timing))add(e.kind,'calendar',e.title,e.source,e.timing==='same_day_uncertain'?'normal':'urgent',{record_id:e.id,when:e.when});
+ const calendar=l?.calendar;
+ if(calendar?.conflicts?.length){const total=calendar.conflicts.length+(calendar.omitted_conflicts||0);const first=calendar.conflicts[0];add('calendar_conflict','calendar','Пересекающиеся записи в календаре: '+total,null,'urgent',{conflict_count:total,when:first.from??null});}
  for(const e of overview.family_goals?.goals.records||[])if(e.membership==='invited'&&['proposed','active'].includes(e.status))add('shared_goal','tasks',e.title,e.source,'normal',{goal_id:e.id,membership_id:e.membership_id});
  for(const e of overview.expense_care?.shares.records||[])if(e.actor===overview.actor&&e.status==='proposed')add('expense_share','finances',e.title,e.source,'normal',{share_id:e.id});
  for(const e of overview.expense_care?.care_plans.records||[])if(e.status==='proposed')add('care_plan','health',e.title,e.source,'normal',{care_plan_id:e.id});

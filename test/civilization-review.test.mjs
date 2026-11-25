@@ -48,3 +48,10 @@ test('older callback anchors use only active source event IDs and focus, dedupli
  assert.equal(r.total,1);assert.equal(r.records[0].source.event_id,'e1');assert.deepEqual(r.records[0].matched_words,['hidden','library']);
  assert.equal(continuityAnchors(scenes,p,{focus:['A'],complete:false}).status,'unavailable');
 });
+
+import {dashboardSummary} from '../public/core/game-menu.mjs';
+test('player dashboard announces only its own already visible calendar conflicts',()=>{
+ const overview={actor:'Hero',inventory:{total:0},tasks:{total:0},life:{letters:{incoming:{records:[],total:0}},calendar:{entries:[],conflicts:[{first:'a',second:'b',from:'1994-07-01 10:00'}],omitted_conflicts:2}}};
+ const n=dashboardSummary(overview).notifications.records.find(x=>x.kind==='calendar_conflict');assert.equal(n.conflict_count,3);assert.equal(n.section,'calendar');assert.equal(n.priority,'urgent');
+ overview.life.calendar.conflicts=[];assert.equal(dashboardSummary(overview).notifications.total,0);
+});

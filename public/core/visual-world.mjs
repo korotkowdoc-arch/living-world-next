@@ -18,11 +18,13 @@ export function visualRequest(v){
 export function visualSubjects(overview,sceneId){
  const rows=[],seen=new Set();const add=(kind,id,label,detail='')=>{if(!text(id,180)||!text(label,240)||seen.has(kind+'|'+id))return;seen.add(kind+'|'+id);rows.push({subject_kind:kind,subject_id:id,title:label,detail:String(detail||'').slice(0,1000)});};
  const actor=overview.actor;
- add('character',actor,actor,overview.character?.fields?.filter(f=>f.field==='appearance'||f.field==='age').map(f=>f.value||f.description||'').join('; '));
+ add('character',actor,actor,overview.character?.fields?.filter(f=>['appearance','age','life_stage','birth_date'].includes(f.field)).map(f=>f.value||f.description||'').join('; '));
  for(const c of overview.contacts?.records||[])add('character',c.name,c.name);
+ // The participant graph includes confirmed shared episodes even without a relationship record.
+ for(const c of overview.world_depth?.social?.nodes||[])if(c.name!==actor)add('character',c.name,c.name);
  for(const x of overview.inventory?.records||[])add('item',x.id,x.name||x.id);
  for(const x of overview.property_systems?.estates?.records||[])add('place',x.id,x.title);
- for(const x of overview.world_depth?.places?.places?.records||[])add('place',x.id||x.place||x.name,x.title||x.place||x.name);
+ for(const x of overview.world_depth?.places?.places?.records||[]){const label=x.title||x.place||x.name;if(typeof label==='string'&&!/^(без постоянного жилья|временный оплаченный ночлег|вторая оплаченная ночь)/iu.test(label)&&!/оплачена; пробный срок/iu.test(label))add('place',x.id||x.place||x.name,label);}
  for(const k of ['library','newspapers','documents','archives','authored','notebooks','catalogues','medical_records','bank_records','gallery'])for(const x of overview.documents?.[k]?.records||[]){add('document',x.id,x.title,x.summary);for(const ch of x.contents||[])if(ch.read)add('chapter',x.id+':'+ch.id,x.title+' — '+ch.title);}
  for(const x of overview.magic_system?.society?.ecology?.species?.records||[])add('creature',x.id,x.title||x.name,x.description);
  for(const x of overview.magic_system?.society?.rituals?.protocols?.records||[])add('ritual',x.id,x.title,x.description);
@@ -35,8 +37,11 @@ export function visualReferences(assets,subject){
  return assets.filter(a=>a.status==='ready'&&a.subject_kind===subject.subject_kind&&a.subject_id===subject.subject_id).slice(0,8);
 }
 export function visualPrompt(subject,description,references=[],prefs={}){
- const identity=references[0]?.identity_notes||subject.detail||'';
- return ['Иллюстрация вымышленного мира: '+subject.title,description,identity?'Сохраняй подтверждённые признаки: '+identity:null,references.length?'Используй сохранённые изображения как референсы внешности и формы, если они доступны генератору. Не меняй узнаваемые черты без основания.':null,prefs.style?'Стиль: '+prefs.style:null,'Не добавляй неизвестные герою факты. Иллюстрация не является новым событием истории.'].filter(Boolean).join('\n').slice(0,8000);
+ const current=subject.detail||'';
+ const historical=references[0]?.identity_notes||'';
+ const identity=current||historical;
+ const previous=current&&historical&&current!==historical?'Исторические заметки к референсу (только неизменившиеся признаки; текущие сведения имеют приоритет): '+historical:null;
+ return ['Иллюстрация вымышленного мира: '+subject.title,description,identity?'Сохраняй подтверждённые признаки: '+identity:null,previous,references.length?'Используй сохранённые изображения как референсы внешности и формы, если они доступны генератору. Не меняй узнаваемые черты без основания.':null,prefs.style?'Стиль: '+prefs.style:null,'Не добавляй неизвестные герою факты. Иллюстрация не является новым событием истории.'].filter(Boolean).join('\n').slice(0,8000);
 }
 export function visibleVisuals(assets,subjects,section='illustrations'){
  const known=new Set(subjects.map(x=>x.subject_kind+'|'+x.subject_id));
