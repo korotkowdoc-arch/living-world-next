@@ -29,3 +29,12 @@ test('native transfer saves bytes and verifies receipt; retries never overwrite'
  assert.deepEqual(stored,bytes);
  await assert.rejects(transferNativeImage({...args,finish:async()=>({...ready,byte_size:1})}),/confirm/);
 });
+
+test('native picker JavaScript parses and stays on authorized file bridge',async()=>{
+ const {VISUAL_PICKER_URI,VISUAL_PICKER_HTML}=await import('../worker/visual-picker.mjs');
+ assert.match(VISUAL_PICKER_URI,/^ui:\/\//);
+ const script=VISUAL_PICKER_HTML.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+ assert.ok(script);assert.doesNotThrow(()=>new Function(script));
+ assert.match(script,/selectFiles/);assert.match(script,/getFileDownloadUrl/);assert.match(script,/save_chatgpt_illustration/);
+ assert.ok(!/<script[^>]+src=/.test(VISUAL_PICKER_HTML));
+});
