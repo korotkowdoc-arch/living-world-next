@@ -140,7 +140,7 @@ export const DOCUMENT_ACTION_IDS=Object.freeze({read_document:'edition_id',study
 export function documentActionRows(input,overview){
  if(input.action==='reply_letter')return (overview.life?.letters?.incoming.records||[]).filter(r=>r.status==='read');
  const d=overview.documents;if(!d?.memory_complete)return [];
- const xs=[...d.library.records,...d.newspapers.records,...d.documents.records,...d.archives.records,...d.authored.records];
+ const xs=[d.library,d.newspapers,d.documents,d.archives,d.authored,d.notebooks,d.catalogues,d.medical_records,d.bank_records,d.gallery].flatMap(p=>p?.records||[]);
  return [...new Map(xs.map(r=>[r.id,r])).values()].filter(r=>!['continue_document','publish_document','share_document'].includes(input.action)||r.own);
 }
 export function validateDocumentAction(input,overview){
