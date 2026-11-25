@@ -1,4 +1,4 @@
-import {replay,validateScene,needsStatePreflight} from './continuity.mjs';
+import {replay,replayWithCheckpoint,validateScene,needsStatePreflight} from './continuity.mjs';
 import {draftEvidenceCoverage} from './annotation-passages.mjs';
 import {parseStoryDate} from './world-time.mjs';
 export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time=null}={}){
@@ -8,8 +8,9 @@ export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time
  result.evidence_coverage=draftEvidenceCoverage(body,events);
  if(!memory?.complete&&needsStatePreflight(events)){result.ok=false;result.errors.push('Для проверки переходов нужна полная память.');return result;}
  const scenes=memory?.scenes||[],id='__draft_preview__';
- const before=replay(scenes,[],{evidencePrevalidated:true});
- const after=replay([...scenes,{id,body,events,world_time}],[],{evidencePrevalidated:true});
+ const before=memory?.projection??replay(scenes,[],{evidencePrevalidated:true});
+ const history=[...scenes,{id,body,events,world_time}];
+ const after=memory?.checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint:memory.checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  const rejected=after.validation_warnings.filter(x=>x.scene_id===id);
  if(rejected.length){result.ok=false;result.errors.push(...rejected.flatMap(x=>x.errors));return result;}
  const clock=parseStoryDate(scenes.at(-1)?.world_time),next=parseStoryDate(world_time);

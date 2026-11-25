@@ -1,3 +1,4 @@
+import {prepaidSceneError,prepaidReplayError,applyPrepaid} from './prepaid-travel.mjs';
 import {applyMarketAdjustment,invalidateFurnishing} from './market-home.mjs';
 import {applyPropertySettlement,propertyPaymentError} from './property-lessons.mjs';
 import {addBudgetFlow,budgetFlowRows} from './home-systems.mjs';
@@ -42,6 +43,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
     const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
+    const prepaidError=prepaidSceneError(event,events,i,paymentTransfers);if(prepaidError)errors.push(prefix+': '+prepaidError);
     const propertyError=propertyPaymentError(event,events,i,paymentTransfers);if(propertyError)errors.push(prefix+': '+propertyError);
     const workError=workSceneError(event,events,i,paymentTransfers,usedStock);if(workError)errors.push(prefix+': '+workError);
     const serviceError=servicePaymentError(event,events,i,paymentTransfers);if(serviceError)errors.push(prefix+': '+serviceError);
@@ -106,10 +108,25 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
 
 /** Replay only the actual ancestry of one branch, oldest first. No other branch can leak in. */
 export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) {
-  const people=new Map(), relationships=new Map(), knowledge=new Map(), balances=new Map(), items=new Map(), stock=new Map(), obligations=new Map(), worldFacts=new Map(), plans=new Map(), offscreen=[];
-  const outfits=new Map(),budgetFlows=new Map();
-  let eventCount=0; const failures=[]; const relationshipHistory=[];let awaiting=null;
-  for(const scene of scenes){
+ return runReplay(scenes,{evidencePrevalidated}).projection;
+}
+/** A checkpoint is private derived state, created only by replay of an already
+ * authenticated immutable ancestry. It is NOT a client-supplied save or DB
+ * validation authority. The prefix boundary must match the verified chain. */
+export function replayWithCheckpoint(scenes=[],{evidencePrevalidated=false,checkpoint=null}={}){
+ const n=checkpoint?.scene_count;
+ const reusable=checkpoint?.version===1&&checkpoint.evidence_prevalidated===evidencePrevalidated&&Number.isSafeInteger(n)&&n>0&&n<=scenes.length&&scenes[n-1]?.id===checkpoint.head_scene_id&&!!checkpoint.state;
+ return runReplay(scenes,{evidencePrevalidated,checkpoint:reusable?checkpoint:null,capture:true});
+}
+function runReplay(scenes,{evidencePrevalidated=false,checkpoint=null,capture=false}={}){
+  const seed=checkpoint?structuredClone(checkpoint.state):null;
+  const map=k=>new Map(seed?.[k]||[]);
+  const people=map('people'),relationships=map('relationships'),knowledge=map('knowledge'),balances=map('balances'),items=map('items'),stock=map('stock'),obligations=map('obligations'),worldFacts=map('worldFacts'),plans=map('plans'),offscreen=seed?.offscreen||[];
+  const outfits=map('outfits'),budgetFlows=new Map((seed?.budgetFlows||[]).map(([k,v])=>[k,{...v,income:BigInt(v.income),expense:BigInt(v.expense)}]));
+  let eventCount=seed?.eventCount??0;const failures=seed?.failures||[];const relationshipHistory=seed?.relationshipHistory||[];let awaiting=seed?.awaiting??null;
+  const offset=checkpoint?.scene_count??0;
+  for(let sceneIndex=offset;sceneIndex<scenes.length;sceneIndex++){
+    const scene=scenes[sceneIndex];
     const events=Array.isArray(scene.events)?scene.events:[];
     // Replay checks the whole saved package once; current user rules NEVER rewrite past facts.
     const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated});
@@ -136,9 +153,9 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||journeyArrivalError(event,worldFacts.get(event.key),acceptedLocations)||workReplayError(worldFacts,event,acceptedStock,acceptedMoney)||(event.life_kind==='estate_sale'&&event.status==='settled'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Estate payment was not accepted':null)||(event.life_kind==='service_visit'&&event.status==='completed'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Service transfer was not accepted':null)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
+          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||journeyArrivalError(event,worldFacts.get(event.key),acceptedLocations)||workReplayError(worldFacts,event,acceptedStock,acceptedMoney)||prepaidReplayError(event,acceptedMoney)||(event.life_kind==='estate_sale'&&event.status==='settled'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Estate payment was not accepted':null)||(event.life_kind==='service_visit'&&event.status==='completed'&&event.amount>0&&event.prepayment_id==null&&!acceptedMoney.has(event.transfer_event_id)?'Service transfer was not accepted':null)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
-          else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);applyPropertySettlement(worldFacts,event,value);applyMarketAdjustment(worldFacts,event,value);invalidateFurnishing(worldFacts,items,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
+          else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);applyPropertySettlement(worldFacts,event,value);applyMarketAdjustment(worldFacts,event,value);applyPrepaid(worldFacts,event,value);invalidateFurnishing(worldFacts,items,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
         }break;
         case 'offscreen': offscreen.push(value);break;
         case 'plan': {
@@ -172,7 +189,17 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
     }
   }
   const list=m=>[...m.values()];
-  return {budget_flows:budgetFlowRows(budgetFlows),effective_outfits:list(outfits),people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),stock:list(stock),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:eventCount,validation_warnings:failures};
+  const projection={budget_flows:budgetFlowRows(budgetFlows),effective_outfits:list(outfits),people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),stock:list(stock),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:eventCount,validation_warnings:failures};
+  let next=null;
+  if(capture&&scenes.length){
+   const entries=m=>[...m.entries()];
+   next={version:1,evidence_prevalidated:evidencePrevalidated,scene_count:scenes.length,head_scene_id:scenes.at(-1).id,state:structuredClone({
+    people:entries(people),relationships:entries(relationships),knowledge:entries(knowledge),balances:entries(balances),items:entries(items),stock:entries(stock),obligations:entries(obligations),worldFacts:entries(worldFacts),plans:entries(plans),outfits:entries(outfits),
+    budgetFlows:entries(budgetFlows).map(([k,v])=>[k,{...v,income:String(v.income),expense:String(v.expense)}]),
+    offscreen,relationshipHistory,failures,awaiting,eventCount
+   })};
+  }
+  return {projection,checkpoint:next,replayed_scenes:scenes.length-offset,reused_scenes:offset};
 }
 
 export function branchAncestry(allScenes,headId) {
@@ -188,8 +215,8 @@ export function branchAncestry(allScenes,headId) {
   return out.reverse();
 }
 
-export function buildNextContext({world,directives=[],scenes=[],evidencePrevalidated=false,historyComplete=true,turnOptions={}}){
-  const projection=replay(scenes,directives,{evidencePrevalidated});
+export function buildNextContext({world,directives=[],scenes=[],evidencePrevalidated=false,historyComplete=true,turnOptions={},trustedProjection=null}){
+  const projection=trustedProjection??replay(scenes,directives,{evidencePrevalidated});
   return {world_id:world.id,world_title:world.title,world_seed:world.seed,start_marker:world.start_marker,
     active_branch_id:world.active_branch_id,head_scene_id:scenes.at(-1)?.id??null,directive_version:world.directive_version,auto_save:world.auto_save,
     confirmed_scene_count:scenes.length,memory_complete:historyComplete,
@@ -228,9 +255,9 @@ export function validateEconomyAppend(scenes,events,body){
 export function needsStatePreflight(events=[]){
  return events.some(e=>e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
 }
-export function validateStateAppend(scenes,events,body){
- const draftId='__pending_state_scene__';
- const p=replay([...scenes,{id:draftId,body,events}],[],{evidencePrevalidated:true});
+export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null}={}){
+ const draftId='__pending_state_scene__',history=[...scenes,{id:draftId,body,events,world_time:worldTime}];
+ const p=checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  const errors=p.validation_warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors);
  return {ok:errors.length===0,errors};
 }

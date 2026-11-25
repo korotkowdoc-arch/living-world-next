@@ -1,3 +1,4 @@
+import {createProjectionCache} from '../public/core/projection-cache.mjs';
 import {recordedPlayerActors} from '../public/core/social-dashboard.mjs';
 import {createAncestryCache} from '../public/core/ancestry-cache.mjs';
 import {planTimeAdvance} from '../public/core/life-calendar.mjs';
@@ -40,7 +41,7 @@ const toolsList=[
   {name:'plan_game_time',description:'Preview staged fictional time advance for player actor. Never saves or consumes a choice. Check scheduled deadlines and estimated critical needs.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},target_time:{type:'string',maxLength:30}},required:['world_id','actor','target_time'],additionalProperties:false}},
   {name:'get_game_menu',description:'Read menu, evidence-backed own character, inventory, tasks, skills, contacts and settings. No scene or time change. Specify the exact player-controlled actor. Optional section returns only that section and the dashboard.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},section:{type:'string',enum:['character','health','wardrobe','relationships','work','education','memories','inventory','finances','contacts','calendar','journal','places','skills','property','letters','tasks','settings']}},required:['world_id','actor'],additionalProperties:false}},
   {name:'save_game_menu_preferences',description:'After explicit owner confirmation atomically save settings or ordered branch priorities. Reject stale menus. No fictional event or choice consumption.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null'],format:'uuid'},expected_rules_version:{type:'integer',minimum:0},kind:{type:'string',enum:['settings','focus']},settings:{type:'object',properties:{pace:{enum:['slow','normal','dynamic','fast']},detail:{enum:['brief','normal','high','maximum']},agency:{enum:['low','normal','high']},events:{enum:['low','normal','high']},choices:{enum:['frequent','important','free']},visibility:{enum:['immersive','rpg','director']},hud:{type:'boolean'},skip_routine:{type:'boolean'}},required:['pace','detail','agency','events','choices','visibility','hud','skip_routine'],additionalProperties:false},priorities:{type:'array',maxItems:3,items:{type:'string',maxLength:200}}},required:['world_id','branch_id','expected_head','expected_rules_version','kind'],additionalProperties:false}},
-  {name:'validate_game_menu_action',description:'Validate explicitly selected gameplay intent, not its outcome, against pinned current world and confirmed player inventory. Use ordinary validate_player_choice and save_scene afterwards. Never call merely for menu navigation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null'],format:'uuid'},expected_rules_version:{type:'integer',minimum:0},actor:{type:'string',maxLength:140},action:{type:'string',enum:['change_appearance','use_item','equip_item','plan_purchase','seek_work','respond_employment','perform_work','manage_business','start_shift','finish_shift','claim_wage','choose_transport','manage_recipe','contact','plan_time','travel','practice','manage_property','set_budget','review_budget','arrange_lease','end_lease','repair_home','reserve_service','cancel_reservation','apply_education','take_assessment','review_reputation','invite_contact','respond_invitation','withdraw_invitation','seek_care','offer_estate','respond_estate_sale','settle_estate_sale','repair_estate','place_furnishing','remove_furnishing','adjust_price','issue_ticket','use_ticket','cancel_ticket','attend_lesson','submit_assignment','plan_journey','continue_journey','pause_journey','cancel_journey','request_service','complete_service','cancel_service','explore','continue_activity','practice_habit','send_letter','read_letter','remove_item','eat','drink','rest','wash','relax','plan_routine','create_task','edit_task','pause_task','resume_task','abandon_task','save_outfit','apply_outfit','remove_outfit','plan_appointment','change_appointment','cancel_appointment']},detail:{type:'string',maxLength:1500},item_id:{type:'string',maxLength:140},task_id:{type:'string',maxLength:240},letter_id:{type:'string',maxLength:80},preset_id:{type:'string',maxLength:80},appointment_id:{type:'string',maxLength:80},journey_id:{type:'string',maxLength:80},service_id:{type:'string',maxLength:80},visit_id:{type:'string',maxLength:80},employment_id:{type:'string',maxLength:80},enterprise_id:{type:'string',maxLength:80},shift_id:{type:'string',maxLength:80},transit_id:{type:'string',maxLength:80},lease_id:{type:'string',maxLength:80},reservation_id:{type:'string',maxLength:80},assessment_id:{type:'string',maxLength:80},invitation_id:{type:'string',maxLength:80},estate_id:{type:'string',maxLength:80},sale_id:{type:'string',maxLength:80},ticket_id:{type:'string',maxLength:80},lesson_id:{type:'string',maxLength:80},assignment_id:{type:'string',maxLength:80},furnishing_id:{type:'string',maxLength:80}},required:['world_id','branch_id','expected_head','expected_rules_version','actor','action','detail'],additionalProperties:false}},
+  {name:'validate_game_menu_action',description:'Validate explicitly selected gameplay intent, not its outcome, against pinned current world and confirmed player inventory. Use ordinary validate_player_choice and save_scene afterwards. Never call merely for menu navigation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null'],format:'uuid'},expected_rules_version:{type:'integer',minimum:0},actor:{type:'string',maxLength:140},action:{type:'string',enum:['change_appearance','use_item','equip_item','plan_purchase','seek_work','respond_employment','perform_work','manage_business','start_shift','finish_shift','claim_wage','choose_transport','manage_recipe','contact','plan_time','travel','practice','manage_property','set_budget','review_budget','arrange_lease','end_lease','repair_home','reserve_service','cancel_reservation','apply_education','take_assessment','review_reputation','invite_contact','respond_invitation','withdraw_invitation','seek_care','offer_estate','respond_estate_sale','settle_estate_sale','repair_estate','place_furnishing','remove_furnishing','adjust_price','issue_ticket','use_ticket','cancel_ticket','prepay_ticket','refund_ticket','attend_lesson','submit_assignment','plan_journey','continue_journey','pause_journey','cancel_journey','request_service','complete_service','cancel_service','explore','continue_activity','practice_habit','send_letter','read_letter','remove_item','eat','drink','rest','wash','relax','plan_routine','create_task','edit_task','pause_task','resume_task','abandon_task','save_outfit','apply_outfit','remove_outfit','plan_appointment','change_appointment','cancel_appointment']},detail:{type:'string',maxLength:1500},item_id:{type:'string',maxLength:140},task_id:{type:'string',maxLength:240},letter_id:{type:'string',maxLength:80},preset_id:{type:'string',maxLength:80},appointment_id:{type:'string',maxLength:80},journey_id:{type:'string',maxLength:80},service_id:{type:'string',maxLength:80},visit_id:{type:'string',maxLength:80},employment_id:{type:'string',maxLength:80},enterprise_id:{type:'string',maxLength:80},shift_id:{type:'string',maxLength:80},transit_id:{type:'string',maxLength:80},lease_id:{type:'string',maxLength:80},reservation_id:{type:'string',maxLength:80},assessment_id:{type:'string',maxLength:80},invitation_id:{type:'string',maxLength:80},estate_id:{type:'string',maxLength:80},sale_id:{type:'string',maxLength:80},ticket_id:{type:'string',maxLength:80},lesson_id:{type:'string',maxLength:80},assignment_id:{type:'string',maxLength:80},furnishing_id:{type:'string',maxLength:80}},required:['world_id','branch_id','expected_head','expected_rules_version','actor','action','detail'],additionalProperties:false}},
   {name:'list_worlds',description:'List the authenticated owner’s worlds.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes and a focused next-turn proposal in one ancestry read. Reports incomplete history. Supply actors/place/target_time to avoid a separate prepare_story_turn call.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actors:{type:'array',maxItems:8,items:{type:'string',maxLength:140}},place:{type:'string',maxLength:140},target_time:{type:'string',maxLength:16},scope:{type:'string',enum:['all','focus','background']}},required:['world_id']}},
   {name:'search_story_memories',description:'Search the ENTIRE active branch by exact text substring, including scenes older than 1000. Returns scene IDs and evidence excerpts, never other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},query:{type:'string',minLength:2,maxLength:180},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','query']}},
@@ -143,7 +144,7 @@ async function readHistory(env,token,id,limit=100,offset=0){return rpc(env,token
  * Full source text remains available through get_branch_history/get_story_scene/search.
  * Never present a capped projection as complete; a write during pagination aborts the read.
  */
-const ancestryCache=createAncestryCache();
+const ancestryCache=createAncestryCache(),projectionCache=createProjectionCache();
 async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
  // ownerWorld has already authenticated this caller through RLS. Scope by
  // database, owner, world, branch and exact immutable head, never by world alone.
@@ -166,7 +167,10 @@ async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
   if(currentBranch.head_scene_id!==head)throw Error('History changed during memory read; retry');
  }
  if(!cached)ancestryCache.put(scope,world.id,world.active_branch_id,head,maxScenes,result);
- return result;
+ // Projection cache is consulted only after the same owner and head checks.
+ let projected;
+ const load=()=>projected??=projectionCache.project(scope,world.id,world.active_branch_id,result);
+ return {...result,get projection(){return load().projection;},get checkpoint(){return load().checkpoint;}};
 }
 /** Optional historical hints. Failure is visible, does not break canonical reads.
  * All queries remain scoped to the pinned owner branch. Never turn notes into knowledge. */
@@ -193,7 +197,7 @@ async function callTool(name,args,env,token){
    const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
    if(name==='validate_game_menu_action')assertMenuAnchor(args,world,active);
    const [rules,history]=await Promise.all([directives(env,token,world.id),readStructuredMemory(env,token,world,active.head_scene_id)]);
-   const projection=replay(history.scenes,[],{evidencePrevalidated:true});
+   const projection=history.projection;
    const clock=recordedWorldAgenda(history.scenes,projection);
    const choice=playerChoiceView(history.scenes,projection,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:history.complete});
    if(choice.pending&&choice.pending.actor!==args.actor)throw Error('Actor does not match the current player choice');
@@ -224,7 +228,7 @@ async function callTool(name,args,env,token){
     readHistory(env,token,world.id,3,0)
    ]);
    if((lastScenes[0]?.id??null)!==active.head_scene_id)throw Error('Scene head changed while reading recent history; retry');
-   const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete,turnOptions:{actors:args.actors,place:args.place,target_time:args.target_time,scope:args.scope}});
+   const ctx=buildNextContext({world,directives:rules,scenes:history.scenes,evidencePrevalidated:true,historyComplete:history.complete,trustedProjection:history.projection,turnOptions:{actors:args.actors,place:args.place,target_time:args.target_time,scope:args.scope}});
    const historicalHints=await readFocusedNotes(env,token,world,active.head_scene_id,ctx.next_turn.actor_context.map(x=>x.actor));
    const finalWorld=await ownerWorld(env,token,world.id),finalBranch=await branch(env,token,finalWorld);
    if(finalWorld.active_branch_id!==world.active_branch_id||finalBranch.head_scene_id!==active.head_scene_id||finalWorld.directive_version!==world.directive_version)throw Error('Story or rules changed while preparing world context; retry.');
@@ -264,7 +268,7 @@ async function callTool(name,args,env,token){
     Promise.all(focus.queries.map(query=>rpc(env,token,'nw_search_history',{p_world_id:world.id,p_query:query,p_limit:8,p_offset:0}))),
     readFocusedNotes(env,token,world,active.head_scene_id,focus.actors)
    ]);
-   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const projection=memory.projection;
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
     throw Error('Story changed while building focused scene context; retry.');
@@ -278,7 +282,7 @@ async function callTool(name,args,env,token){
    const world=await ownerWorld(env,token,args.world_id);
    const active=await branch(env,token,world);
    const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
-   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const projection=memory.projection;
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
     throw Error('Story changed while reading character state; retry.');
@@ -318,7 +322,7 @@ async function callTool(name,args,env,token){
    const world=await ownerWorld(env,token,args.world_id);
    const active=await branch(env,token,world);
    const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
-   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const projection=memory.projection;
    const current=await ownerWorld(env,token,world.id);
    const after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
@@ -329,7 +333,7 @@ async function callTool(name,args,env,token){
   case 'get_living_world':{
    const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
    const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
-   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const projection=memory.projection;
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
     throw Error('Story changed while reading living world; retry.');
@@ -371,7 +375,7 @@ async function callTool(name,args,env,token){
   case 'get_character_knowledge':{
    const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
    const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
-   const p=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const p=memory.projection;
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)throw Error('Story changed; retry.');
    const options={...args,complete:memory.complete};
@@ -413,7 +417,7 @@ async function callTool(name,args,env,token){
    const world=await ownerWorld(env,token,args.world_id);
    const before=await branch(env,token,world);
    const memory=await readStructuredMemory(env,token,world,before.head_scene_id);
-   const projection=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const projection=memory.projection;
    const agenda=recordedWorldAgenda(memory.scenes,projection,{maxEntries:100});
    const current=await ownerWorld(env,token,world.id);
    const after=await branch(env,token,current);
@@ -426,7 +430,7 @@ async function callTool(name,args,env,token){
    const world=await ownerWorld(env,token,args.world_id);
    const active=await branch(env,token,world);
    const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
-   const projection=buildNextContext({world,scenes:memory.scenes,evidencePrevalidated:true,historyComplete:memory.complete}).memory;
+   const projection=memory.projection;
    const actor=String(args.actor||'').trim().toLocaleLowerCase('ru');
    const plans=projection.plans.filter(p=>!actor||String(p.actor).toLocaleLowerCase('ru')===actor);
    return {world_id:world.id,actor:actor||null,plans,complete:memory.complete,
@@ -454,7 +458,7 @@ async function callTool(name,args,env,token){
   case 'validate_player_choice':{
    const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
    if(world.active_branch_id!==args.branch_id||active.head_scene_id!==args.expected_head||world.directive_version!==args.expected_rules_version)throw Error('Stale choice: refresh the current scene');
-   const memory=await readStructuredMemory(env,token,world,active.head_scene_id),p=replay(memory.scenes,[],{evidencePrevalidated:true});
+   const memory=await readStructuredMemory(env,token,world,active.head_scene_id),p=memory.projection;
    const result=resolvePlayerChoice(playerChoiceView(memory.scenes,p,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:memory.complete}),args);
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id||current.directive_version!==world.directive_version)throw Error('Choice changed during validation');
@@ -488,7 +492,7 @@ async function callTool(name,args,env,token){
      if(active.head_scene_id!==args.expected_head)throw Error('Head changed: refresh story before committing');
      const memory=await readStructuredMemory(env,token,world,active.head_scene_id);
      if(!memory.complete)throw Error('State preflight requires complete structured history; retrieve and verify sources before saving.');
-     const checked=validateStateAppend(memory.scenes,args.events,args.body);
+     const checked=validateStateAppend(memory.scenes,args.events,args.body,{checkpoint:memory.checkpoint,worldTime:args.world_time??null});
      if(!checked.ok)throw Error(checked.errors.join(' '));
     }
    }
