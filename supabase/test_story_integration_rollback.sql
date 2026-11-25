@@ -403,4 +403,33 @@ begin
  if not bad then raise exception 'Duplicated practice accepted';end if;
  if (select count(*) from public.nw_scenes where world_id=wid)<>3 then raise exception 'Rejected scene persisted';end if;
 end $home$;
+-- Invitations require explicit response and matching appointment; health is observed.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $social_life$
+declare wid uuid; bid uuid; h uuid; bad boolean; body text:='Anna recorded an event.';
+ common jsonb:='{"type":"world","player_life_version":1,"evidence":"Anna recorded an event."}';
+ invite jsonb:='{"id":"invite","life_kind":"invitation","record_id":"tea","key":"player-life:invitation:tea","actor":"Anna","recipient":"Boris","title":"Tea","place":"Cafe","invite_kind":"meeting","starts_at":"1994-08-01 14:00","ends_at":"1994-08-01 15:00","status":"sent"}';
+ meeting jsonb:='{"id":"appointment","life_kind":"appointment","record_id":"tea","key":"player-life:appointment:tea","actor":"Anna","participants":["Anna","Boris"],"title":"Tea","place":"Cafe","starts_at":"1994-08-01 14:00","ends_at":"1994-08-01 15:00","status":"confirmed"}';
+ health jsonb:='{"id":"health","life_kind":"health_episode","record_id":"cold","key":"player-life:health_episode:cold","actor":"Anna","title":"Cold","health_kind":"illness","severity":"moderate","status":"observed","description":"Observed symptoms"}';
+ accepted jsonb;
+begin
+ wid:=public.nw_create_world('Social test','Synthetic social life','1994-08-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ invite:=invite||common;meeting:=meeting||common;health:=health||common;accepted:=invite||'{"status":"accepted","appointment_id":"tea","outcome":"Boris agreed"}';
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(health||'{"status":"resolved"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Unobserved illness resolved';end if;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(invite,health),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(accepted),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Invitation accepted without matching meeting';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(meeting,accepted||'{"place":"Elsewhere"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Invitation terms rewritten';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(meeting,accepted),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 15:00',jsonb_build_array(accepted||'{"status":"completed","outcome":"Met"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Invitation completed before meeting';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 15:00',jsonb_build_array(meeting||'{"status":"completed"}',accepted||'{"status":"completed","outcome":"Met"}',health||'{"status":"recovering","description":"Recovering"}'),0);
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-02 09:00',jsonb_build_array(health||'{"status":"resolved","description":"Recovered"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-02 09:00',jsonb_build_array(health),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Closed health episode reopened';end if;
+ if (select count(*) from public.nw_scenes where world_id=wid)<>4 then raise exception 'Rejected scene persisted';end if;
+end $social_life$;
 rollback;

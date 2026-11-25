@@ -1,3 +1,4 @@
+import {recordedPlayerActors} from './social-dashboard.mjs';
 import {npcInitiativeView} from './npc-initiatives.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
@@ -145,6 +146,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   }
  }
  // A recorded active habit can motivate leisure without assuming that it is due today.
+ for(const r of records)if(r.player_life_version===1&&r.life_kind==='invitation'&&r.status==='sent')add('invitation',{...r,actor:r.recipient,counterparty:r.actor},{timing:'requires_character_choice',invitation_id:r.record_id,starts_at:r.starts_at,ends_at:r.ends_at});
+ for(const r of records)if(r.player_life_version===1&&r.life_kind==='health_episode'&&r.status!=='resolved')add('health_episode',r,{timing:'requires_character_choice',severity:r.severity});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='assessment'&&r.status==='scheduled'){const t=parseStoryDate(r.starts_at);add('assessment',r,{starts_at:r.starts_at,ends_at:r.ends_at,timing:t&&anchor&&t.order<=anchor.order?'reached_requires_story':'future'});}
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='home_condition'&&['damaged','unsafe'].includes(r.status))add('home_condition',{...r,title:r.area},{timing:'requires_character_choice'});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='work_shift'&&['scheduled','working'].includes(r.status)){const start=parseStoryDate(r.starts_at);add('work_shift',{...r,counterparty:r.employer},{starts_at:r.starts_at,ends_at:r.ends_at,timing:r.status==='working'||start&&anchor&&start.order<=anchor.order?'reached_requires_story':'future'});}
@@ -205,7 +208,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  // Attach a bounded actor context to the actual turn, instead of forcing the narrator
  // to retrieve every subsystem independently. Focused actors precede background actors.
  const pendingActor=records.find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')?.actor??null;
- const npcInitiatives=npcInitiativeView(all,{focus:[...focus],player:pendingActor,settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:interval});
+ const npcInitiatives=npcInitiativeView(all,{focus:[...focus],player:pendingActor,players:recordedPlayerActors(projection),settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:interval});
  const selectedActors=scope==='background'?[]:[...focus],omittedActors=new Set();
  const addActor=name=>{if(!text(name)||selectedActors.includes(name))return;if(selectedActors.length<12)selectedActors.push(name);else omittedActors.add(name);};
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);

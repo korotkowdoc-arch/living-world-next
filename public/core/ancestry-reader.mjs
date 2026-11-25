@@ -17,6 +17,23 @@ export function createAncestryReader(head,{maxScenes=50000,pageSize=200}={}){
    if(expected===null){finished=true;complete=true;}
    else if(page.length<limit)throw Error('History ended before its recorded root');
   },
+  /** Reuse only a previously validated complete ancestry when the next
+   * expected parent is actually present in it. A new branch or divergent
+   * suffix cannot be substituted for the pinned chain. */
+  reusePrefix(prefix){
+   if(finished||!Array.isArray(prefix)||!prefix.length)return false;
+   const index=prefix.findIndex(s=>s.id===expected);
+   if(index<0||rows.length+index+1>maxScenes||prefix[0]?.parent_scene_id!==null)return false;
+   const older=prefix.slice(0,index+1);
+   const ids=new Set();
+   for(let i=0;i<older.length;i++){
+    const s=older[i];
+    if(!s?.id||seen.has(s.id)||ids.has(s.id)||s.parent_scene_id!==(i?older[i-1].id:null))return false;
+    ids.add(s.id);
+   }
+   for(let i=older.length-1;i>=0;i--){rows.push(older[i]);seen.add(older[i].id);}
+   expected=null;finished=true;complete=true;return true;
+  },
   result(){if(!finished)throw Error('History read unfinished');return {scenes:rows.slice().reverse(),complete};}
  };
 }
