@@ -43,3 +43,5 @@ test('identity review spots duplicate need/skill/plan scopes without confusing i
  const proposed=[{...need,id:'b',key:'need:b'},{...need,id:'c',key:'need:c',actor:'Other'},{...skill,id:'s2',key:'skill:b'},{...plan,id:'p2',plan_id:'p2',action:'start'},{...plan,id:'p3',plan_id:'p3',action:'start',actor:'Other'}];
  const r=identityReview({worldFacts:[need,skill],plans:[plan]},proposed);assert.equal(r.total,3);assert.deepEqual(r.records.map(x=>x.existing_id),['need:a','skill:a','p']);
 });
+
+test('inherited descriptive text is not presented as a newly observed field',()=>{const a=sc('a',[ev('desc','character',{name:'Hero',description:'Old description',state_patch:{location:'Park'}})]);const b=sc('b',[ev('loc','character',{name:'Hero',state_patch:{location:'Shop'}})]);const r=recentRegistryState(replay([a,b]),[a,b],{actors:['Hero'],window:1});assert.ok(!r.records[0].fields.some(f=>f.field==='description'));});

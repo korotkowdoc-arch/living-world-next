@@ -8,8 +8,8 @@ const has=(o,k)=>Object.hasOwn(o||{},k),equal=(a,b)=>JSON.stringify(a)===JSON.st
 const domain=(k,r)=>domains[k]??eventRoute(r).domain;
 function fields(k,r){
  if(!r)return {};
- if(k==='people')return Object.fromEntries([...(has(r,'description')?[['description',r.description]]:[]),...(r.state_fields||[]).map(x=>[x.field,x.value])]);
- if(k==='relationships')return Object.fromEntries([...(has(r,'stance')?[['stance',r.stance]]:[]),...(r.relationship_fields||[]).map(x=>[x.field,x.value])]);
+ if(k==='people')return Object.fromEntries([...(typeof r.description==='string'?[['description',r.description]]:[]),...(r.state_fields||[]).map(x=>[x.field,x.value])]);
+ if(k==='relationships')return Object.fromEntries([...(r.stance!==undefined?[['stance',r.stance]]:[]),...(r.relationship_fields||[]).map(x=>[x.field,x.value])]);
  return Object.fromEntries(Object.entries(r).filter(([k,v])=>!ignore.has(k)&&!k.endsWith('_version')&&v!==undefined));
 }
 const sourceFor=(k,r,f)=>k==='people'?r?.state_fields?.find(x=>x.field===f)?.source??r?.source:k==='relationships'?(f==='stance'?r?.stance_source:r?.relationship_fields?.find(x=>x.field===f)?.source)??r?.source:(f==='sender_visible_status'?r?.sender_visible_source:null)??r?.field_sources?.[f]??r?.source;
@@ -37,7 +37,7 @@ export function recentRegistryState(projection,scenes=[],{actors=[],window=4,lim
  for(const registry of Object.keys(ids))for(const {r,identity} of index(projection,registry).values()){
   if(!people(r,registry).some(a=>selected.has(a)))continue;
   const values=fields(registry,r),changed=[];
-  for(const field of keys({},values)){const source=sourceFor(registry,r,field);if(positions.has(source?.scene_id))changed.push({field,value:clip(values[field]),source});}
+  for(const field of keys({},values)){if(registry==='people'&&field==='description')continue;const source=sourceFor(registry,r,field);if(positions.has(source?.scene_id))changed.push({field,value:clip(values[field]),source});}
   const observed=positions.has(r.last_observation?.source?.scene_id);
   if(!changed.length&&!positions.has(r.source?.scene_id)&&!observed)continue;
   rows.push({registry,identity,actors:people(r,registry),domain:domain(registry,r),fields:changed.slice(0,10),omitted_fields:Math.max(0,changed.length-10),source:r.source??null,observation_source:observed?r.last_observation.source:null,rank:Math.max(positions.get(r.source?.scene_id)??-1,positions.get(r.last_observation?.source?.scene_id)??-1,...changed.map(x=>positions.get(x.source?.scene_id)??-1))});
