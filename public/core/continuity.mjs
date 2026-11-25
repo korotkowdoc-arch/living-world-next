@@ -156,7 +156,10 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
               updated.field_sources[field]=from;
               if(field==='goal')updated.goal_source=from;
             }
-            plans.set(key,{...updated,status:statuses[event.action],source:from,history:[...old.history,from],last_action:event.action,
+            // Replay owns this history array; no previous projection is retained.
+            // Append in place rather than copying an ever-growing chain on every update.
+            old.history.push(from);
+            plans.set(key,{...updated,status:statuses[event.action],source:from,history:old.history,last_action:event.action,
               evidence:event.evidence,performed_event_id:event.performed_event_id||old.performed_event_id});
           }
           break;
