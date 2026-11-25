@@ -142,15 +142,20 @@ select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111'
 select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
 do $archive$
 declare job uuid:=gen_random_uuid(); old_world uuid:=gen_random_uuid(); old_branch uuid:=gen_random_uuid(); old_scene uuid:=gen_random_uuid();
- b text; s text; manifest jsonb; receipt jsonb; restored uuid; active uuid; new_head uuid; rejected boolean:=false;
+ b text; s text; d text; edits text; old_rule uuid:=gen_random_uuid(); focus text; manifest jsonb; receipt jsonb; restored uuid; active uuid; new_head uuid; rejected boolean:=false;
 begin
  b:=jsonb_build_array(jsonb_build_object('id',old_branch,'world_id',old_world,'name','Main','head_scene_id',old_scene))::text;
  s:=jsonb_build_array(jsonb_build_object('id',old_scene,'world_id',old_world,'branch_id',old_branch,'parent_scene_id',null,'request_id',gen_random_uuid(),'body','A fictional archive source scene.','events','[]'::jsonb,'import_depth',0,'world_time','2026-01-01'))::text;
+ focus:='NEXT_MENU_V1:'||jsonb_build_object('kind','focus','branch_id',old_branch,'priorities',jsonb_build_array('Work'))::text;
+ d:=jsonb_build_array(jsonb_build_object('id',old_rule,'world_id',old_world,'text',focus,'category','general','active',true))::text;
+ edits:=jsonb_build_array(jsonb_build_object('id',gen_random_uuid(),'world_id',old_world,'directive_id',old_rule,'action','edit','before_state',jsonb_build_object('text','Ordinary rule'),'after_state',jsonb_build_object('text',focus)))::text;
  manifest:=jsonb_build_object('format','living-world-next-staged-v1','archive_sha256',repeat('a',64),'world',jsonb_build_object('id',old_world,'active_branch_id',old_branch,'title','Archive test','seed','Synthetic archive round trip'),
- 'counts',jsonb_build_object('branches',1,'directives',0,'directive_edits',0,'scenes',1,'revisions',0),'total_bytes',octet_length(b)+octet_length(s),
+ 'counts',jsonb_build_object('branches',1,'directives',1,'directive_edits',1,'scenes',1,'revisions',0),'total_bytes',octet_length(b)+octet_length(s)+octet_length(d)+octet_length(edits),
  'chunks',jsonb_build_array(
  jsonb_build_object('index',0,'section','branches','count',1,'bytes',octet_length(b),'sha256',encode(sha256(convert_to(b,'UTF8')),'hex')),
- jsonb_build_object('index',1,'section','scenes','count',1,'bytes',octet_length(s),'sha256',encode(sha256(convert_to(s,'UTF8')),'hex'))));
+ jsonb_build_object('index',1,'section','scenes','count',1,'bytes',octet_length(s),'sha256',encode(sha256(convert_to(s,'UTF8')),'hex')),
+ jsonb_build_object('index',2,'section','directives','count',1,'bytes',octet_length(d),'sha256',encode(sha256(convert_to(d,'UTF8')),'hex')),
+ jsonb_build_object('index',3,'section','directive_edits','count',1,'bytes',octet_length(edits),'sha256',encode(sha256(convert_to(edits,'UTF8')),'hex'))));
  perform public.nw_import_begin(job,manifest);
  perform public.nw_import_chunk(job,0,b);
  if (public.nw_import_chunk(job,0,b)->>'reused') is distinct from 'true' then raise exception 'Chunk retry failed'; end if;
@@ -158,6 +163,8 @@ begin
  begin perform public.nw_import_finalize(job); exception when raise_exception then rejected:=true; end;
  if not rejected then raise exception 'Incomplete archive finalized'; end if;
  perform public.nw_import_chunk(job,1,s);
+ perform public.nw_import_chunk(job,2,d);
+ perform public.nw_import_chunk(job,3,edits);
  receipt:=public.nw_import_finalize(job);restored:=(receipt->>'world_id')::uuid;
  if restored is null or restored=old_world then raise exception 'Archive reused world ID'; end if;
  if public.nw_import_finalize(job) is distinct from receipt then raise exception 'Finalize retry changed receipt'; end if;
@@ -165,6 +172,9 @@ begin
  select head_scene_id into new_head from public.nw_branches where id=active;
  if new_head is null or new_head=old_scene or active=old_branch then raise exception 'Archive IDs not remapped'; end if;
  if (select body from public.nw_scenes where id=new_head) is distinct from 'A fictional archive source scene.' then raise exception 'Archive body lost'; end if;
+ if (select (substring(text from 14)::jsonb)->>'branch_id' from public.nw_directives where world_id=restored) is distinct from active::text then raise exception 'Menu focus not remapped';end if;
+ if (select (substring(after_state->>'text' from 14)::jsonb)->>'branch_id' from public.nw_directive_edits where world_id=restored) is distinct from active::text then raise exception 'Menu audit not remapped';end if;
+ if (select before_state->>'text' from public.nw_directive_edits where world_id=restored) is distinct from 'Ordinary rule' then raise exception 'Ordinary directive changed';end if;
 end $archive$;
 -- Menu preference edits never consume a saved player choice, move time, or fork.
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
