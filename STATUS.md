@@ -1,12 +1,17 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## Historical memory search — candidate
+- [x] Actual active story historical review: 23/23 scenes, 120 separate unique evidence-backed historical notes saved and re-read. Live v0.49 projection confirmed: 9 recovered knowledge records; current head and pending choice unchanged. No canonical edits or retroactive payments.
+- [x] Bounded thematic search of historical notes independent of actor, separate coverage counts, explicit partial/unavailable status and unverified short-name alias candidates; no inferred identity merges. Regression tests added.
+- [ ] CI and deployment confirmation; real gameplay extraction test; verified canonical backfill and semantic contradiction review remain open. Existing v0.49 is playable without waiting for this candidate.
+
 ## v0.49.0 — смысловое сохранение и адресная память
 - [x] Scene extraction protocol: full-scene semantic extraction by narrator, existing canonical domain schemas, supplemental isolated evidence-backed scene memory for claims/intentions/descriptions/uncertainty. Receipt and preflight domain routing, unclassified records and lexical review cues (not facts), coverage counts, focused old-source recall by actors/place/topic. No external AI API and no automatic inference into canon. Atomic note events stored with scene; no state or plan-completion effects.
 - [x] SQL append guard for isolated note shape, duplicate note detection and prohibition as plan completion; JS/SQL regression tests. Existing saved scenes unchanged; historical annotation still separate and noncanonical.
 - [x] Local source-offset cues (same domain in separate passages), ranked recall across long histories, shared draft/save extension validation, isolation from confirmed actor-history RPC. Final Node CI 45666908034 and SQL CI 45666908130 passed. Read-only audit: 23/23 existing scenes contain structured events, 437 total, including 189 legacy generic world records. Legacy exact-source recall now included in scene_memory_recall with lexical domain cues, no retroactive ledger changes. Actor history test fixtures extended for actual structured ancestry read. Nine historical knowledge_version=1 events were mislabelled type=world; all nine have the exact valid schema and literal evidence. Recover them only in derived JS projection, without altering original scenes or granting knowledge to other holders. JS and SQL reject future misrouted versioned knowledge.
 - [x] PR #43 merged (1514ec8); migration 034 installed; production owner-RPC rollback assertions passed. Private guard confirmed, two worlds and 23 scenes unchanged. Initial live check still returned pre-v0.49 memory; deployment confirmation and real narration/scene save remain pending.
-- [ ] Confirm live v0.49 projection and actual semantic extraction during play; full historical semantic review and verified backfill remain open.
+- [x] Live v0.49 projection and historical review confirmed. [ ] Actual semantic extraction during play and verified canonical backfill remain open.
 
 ## v0.48.0 — планы жилья и управление комнатами
 - [x] Canonical measured room rectangles with floors, non-overlap, explicit door/passage/stair connections, current access/title epoch, no generated geometry. Own-room interactive floorplan and pinned room actions, with missing measurements visibly unknown. Migration 033 extends private SQL fold and tests. No real construction or expenditure without played evidence.

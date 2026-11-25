@@ -35,3 +35,31 @@ export function focusedMemoryNotes(groups,{maxChars=7000,maxNotes=12}={}){
  }
  return result;
 }
+
+/** Bounded read-only historical index. Query hits are retrieval hints, never
+ * canonical facts or grants of knowledge. No fuzzy actor identity inference. */
+const normalized=v=>String(v??'').normalize('NFKC').toLocaleLowerCase('ru').replace(/ё/g,'е').trim();
+export function historicalNoteIndex(rows,scenes,{queries=[],actors=[],complete=false,historyComplete=false,maxNotes=12,maxChars=7000}={}){
+ const source=new Map(scenes.map((s,i)=>[s.id,i])),seen=new Set(),valid=[],invalid=[];
+ for(const r of rows){
+  const id=JSON.stringify([r?.scene_id,r?.note_key]),n=r?.note;
+  if(!source.has(r?.scene_id)||!r?.note_key||!n||!types.has(n.kind)||typeof n.summary!=='string'||typeof n.quote!=='string'||!Array.isArray(n.actors)){invalid.push(id);continue;}
+  if(seen.has(id))continue;seen.add(id);valid.push(r);
+ }
+ const q=[...new Set(queries.map(normalized).filter(Boolean))],focus=new Set(actors);
+ const sceneIds=new Set(valid.map(r=>r.scene_id)),kinds=Object.create(null),actorNames=new Set();
+ for(const r of valid){const n=r.note;kinds[n.kind]=(kinds[n.kind]||0)+1;for(const a of n.actors)actorNames.add(a);}
+ const result={canonical:false,scan_complete:complete&&historyComplete&&invalid.length===0,scanned_notes:valid.length,invalid_records:invalid.length,scenes_with_historical_notes:sceneIds.size,scenes_without_notes_in_scan:scenes.filter(s=>!sceneIds.has(s.id)).length,kind_counts:kinds,notes:[],total_matching:0,omitted:0,possible_actor_aliases:[],policy:MEMORY_NOTE_POLICY+' Alias candidates require source verification; missing notes in a partial scan do not establish absence.'};
+ for(const actor of focus){const full=normalized(actor),first=full.split(/\s+/)[0];if(full===first||first.length<3)continue;
+  const candidates=[...actorNames].filter(a=>normalized(a)===first&&a!==actor);
+  for(const alias of candidates)result.possible_actor_aliases.push({actor,alias,verified:false});
+ }
+ const ranked=valid.map(r=>{const n=r.note,hay=normalized([r.note_key,n.summary,n.quote,...n.actors].join('\n')),matches=q.filter(v=>hay.includes(v)),overlap=n.actors.filter(a=>focus.has(a)).length;return {r,matches,score:matches.length*10+overlap};}).filter(x=>q.length&&x.matches.length);
+ ranked.sort((a,b)=>b.score-a.score||source.get(b.r.scene_id)-source.get(a.r.scene_id)||a.r.note_key.localeCompare(b.r.note_key));
+ result.total_matching=ranked.length;
+ for(const {r,matches} of ranked){if(result.notes.length>=maxNotes)break;const n=r.note;
+  result.notes.push({scene_id:r.scene_id,note_key:r.note_key,kind:n.kind,actors:n.actors,summary:n.summary.slice(0,360),quote:n.quote.slice(0,400),quote_truncated:n.quote.length>400,matched_queries:matches});
+  if(JSON.stringify(result).length>maxChars)result.notes.pop();
+ }
+ result.omitted=ranked.length-result.notes.length;return result;
+}
