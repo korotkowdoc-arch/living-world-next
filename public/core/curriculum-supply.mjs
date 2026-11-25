@@ -54,6 +54,24 @@ export function curriculumTransition(records,e){
  }
  return null;
 }
+/** Existing general records cannot silently close a linked specialized record.
+ * Both changes must be evidenced in the same scene, in dependency order. */
+export function curriculumCrossError(records,e,events,i){
+ const after=events.slice(i+1);
+ if(e.player_life_version===1&&e.life_kind==='enrollment'&&['completed','withdrawn'].includes(e.status)){
+  const p=[...records.values()].find(x=>x.life_kind==='program_enrollment'&&x.enrollment_id===e.record_id&&x.status==='active');
+  if(p){
+   const program=get(records,'study_program',p.program_id);
+   if(e.status==='completed'&&!program?.modules.every(m=>[...records.values()].some(x=>x.life_kind==='module_result'&&x.program_enrollment_id===p.record_id&&x.module_id===m.id&&x.status==='passed')))return 'Cannot complete enrollment before all linked modules pass';
+   if(!after.some(x=>x.player_life_version===1&&x.life_kind==='program_enrollment'&&x.key===p.key&&x.actor===p.actor&&x.status===e.status))return 'Close linked program in same scene';
+  }
+ }
+ if(e.dynamics_version===1&&e.dynamics_kind==='economic_agreement'){
+  const c=[...records.values()].find(x=>x.life_kind==='supply_contract'&&x.agreement_id===e.record_id);
+  if(c&&c.status!==e.status&&!after.some(x=>x.player_life_version===1&&x.life_kind==='supply_contract'&&x.key===c.key&&x.actor===c.actor&&x.status===e.status))return 'Change linked supply contract in same scene';
+ }
+ return null;
+}
 export function supplySceneError(e,events,i,usedMoney){
  if(e.player_life_version!==1||e.life_kind!=='supply_contract'||e.status!=='settled')return null;
  const before=events.slice(0,i),p=before.find(x=>x.id===e.transfer_event_id),s=before.find(x=>x.id===e.stock_event_id);
