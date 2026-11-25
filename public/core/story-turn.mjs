@@ -3,6 +3,7 @@ import {householdAccessible,jobEligibility} from './households-careers.mjs';
 import {recordedPlayerActors} from './social-dashboard.mjs';
 import {npcInitiativeView,independentSocialOpportunities,recordedHabitContext,recordedMarketOpportunities} from './npc-initiatives.mjs';
 import {npcNeedOpportunities,npcContactOpportunities,personalityHistory} from './npc-life.mjs';
+import {buildLongLifeIndex,backgroundTimeReview} from './npc-long-life.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
 /** A unified turn preparation view. All candidates are read-only. The narrator
@@ -33,7 +34,16 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(comparable&&proposed.order<clock.order)throw Error('Для возврата в прошлое используй альтернативную ветку, а не продвижение времени.');
  const anchor=proposed||clock;
  const interval=comparable?proposed.order-clock.order:null;
+ const preferences=menuPreferences(directives,opts.branchId);
  const records=projection.worldFacts||[],dutyOccurrences=new Map(),paymentOccurrences=new Map();
+ const pendingActor=records.find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')?.actor??null;
+ const recordedPlayers=recordedPlayerActors(projection);
+ const protectedActors=[...new Set([pendingActor,...recordedPlayers].filter(Boolean))];
+ if(!protectedActors.length)protectedActors.push(...focus);
+ const timeAdvance=proposed?.precision==='minute'&&clock?.precision==='minute'&&proposed.order>clock.order&&focus.size===1?planTimeAdvance(scenes,projection,[...focus][0],proposed.literal,{complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor}):null;
+ const segmentLimit=backgroundTimeReview([],{clock:clock?.literal,target:proposed?.literal,segmentUntil:timeAdvance?.proposed_until,protectedActors,complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor});
+ const segmentAnchor=parseStoryDate(segmentLimit?.segment_until)||clock;
+ const longLife=buildLongLifeIndex(scenes,projection,{complete:opts.complete!==false});
  const householdRecords=new Map(records.map(x=>[x.key,x]));
  for(const r of records)if(r.dynamics_kind==='payment_occurrence'&&r.schedule_id){if(!paymentOccurrences.has(r.schedule_id))paymentOccurrences.set(r.schedule_id,[]);paymentOccurrences.get(r.schedule_id).push(r);}
  for(const r of records)if(r.dynamics_kind==='family_event'&&r.duty_id){if(!dutyOccurrences.has(r.duty_id))dutyOccurrences.set(r.duty_id,[]);dutyOccurrences.get(r.duty_id).push(r);}
@@ -105,7 +115,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   const candidate={kind,key:row.key||row.plan_id||row.commitment_id||row.id||null,actors:participants,title:clip(row.title||row.name||row.goal||row.activity||row.description||row.evidence),
    status:row.status||'unknown',source:source(row),place:row.place||null,
    location_status:where?.status||null,location_source:source(where),focus_match:relevant,
-   next_step:clip(row.next_step),obstacle:clip(row.obstacle),...info,...candidateChecks(row,participants,kind),certainty:'candidate_only_not_performed'};
+   next_step:clip(row.next_step),obstacle:clip(row.obstacle),...info,
+   review_at:info.first_due_on??info.starts_at??row.starts_at??row.due_at??row.deadline??row.due??row.scheduled_on??null,...candidateChecks(row,participants,kind),certainty:'candidate_only_not_performed'};
   all.push(candidate);if(!byKind.has(kind))byKind.set(kind,[]);byKind.get(kind).push(candidate);
  }
  const timing=row=>{
@@ -250,9 +261,10 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  // Review real order states, not an invented demand multiplier.
  if(opts.complete!==false)for(const {kind,row,info} of recordedMarketOpportunities(records,scenes,clock?.literal))add(kind,row,info);
  if(opts.complete!==false){
-  for(const {kind,row,info} of npcNeedOpportunities(records,scenes,anchor?.literal))add(kind,row,info);
+  for(const {kind,row,info} of npcNeedOpportunities(records,scenes,(segmentLimit?segmentAnchor:anchor)?.literal))add(kind,row,info);
   for(const {kind,row,info} of npcContactOpportunities(scenes,projection,clock?.literal,{shared:all.slice()}))add(kind,row,info);
  }
+ for(const {kind,row,info} of longLife.opportunities())add(kind,row,info);
  const life_context=[];
  for(const person of projection.people||[]){
   const before=characterAge(person,clock?.literal),after=characterAge(person,anchor?.literal);
@@ -260,7 +272,6 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(before?.status==='calendar_derived'&&after?.status==='calendar_derived'&&after.years>before.years)
    add('age_milestone',{actor:person.name,title:'День рождения: '+person.name,source:after.source,status:'calendar_derived'},{timing:'reached_requires_story',previous_age:before.years,age_years:after.years,birthdays_crossed:after.years-before.years});
  }
- const preferences=menuPreferences(directives,opts.branchId);
  const priorityIndex=x=>x.focus_match?preferences.priorities.findIndex(p=>p===x.title||p===({intention:'plan:',obligation:'commitment:',project:'project:'}[x.kind]||'__none__:')+String(x.kind==='project'?String(x.key).replace(/^growth:project:/,''):x.key)):-1;
  for(const x of all){const i=priorityIndex(x);if(i>=0)x.player_priority=i+1;}
  // Due events remain first; exact player focus elevates matching opportunities, never executes them.
@@ -274,14 +285,36 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const candidate_counts={all:all.length,focus:all.filter(x=>x.focus_match).length,background:all.filter(x=>!x.focus_match).length};
  // Attach a bounded actor context to the actual turn, instead of forcing the narrator
  // to retrieve every subsystem independently. Focused actors precede background actors.
- const pendingActor=records.find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')?.actor??null;
- const npcInitiatives=npcInitiativeView(all,{focus:[...focus],player:pendingActor,players:recordedPlayerActors(projection),settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:interval});
+ const background=backgroundTimeReview(all,{clock:clock?.literal,target:proposed?.literal,segmentUntil:timeAdvance?.proposed_until,protectedActors,complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor});
+ const segmentCandidates=background?.status==='player_choice_pending'?[]:background?all.flatMap(c=>{
+  const at=parseStoryDate(c.review_at);
+  if(at&&at.order>segmentAnchor.order)return [];
+  const row=householdRecords.get(c.key);
+  if(c.kind==='payment_schedule'||c.kind==='family_duty'){
+   const window=c.kind==='payment_schedule'?paymentScheduleWindow(row,segmentAnchor,paymentOccurrences.get(row?.record_id)||[]):familyDutyWindow(row,clock,segmentAnchor,dutyOccurrences.get(row?.record_id)||[]);
+   return window?[{...c,...window,review_at:window.first_due_on}]:[];
+  }
+  if(c.kind==='routine'){
+   if(!row)return [];
+   let intersects=routineWindow(row,clock)==='scheduled_window_not_actual_presence'||routineWindow(row,segmentAnchor)==='scheduled_window_not_actual_presence';
+   const first=Math.floor(clock.order/1440),last=Math.floor(segmentAnchor.order/1440);
+   const start=Number(row.start.slice(0,2))*60+Number(row.start.slice(3)),end=Number(row.end.slice(0,2))*60+Number(row.end.slice(3));
+   for(let d=first-1;!intersects&&d<=Math.min(last,first+7);d++){
+    const weekday=new Date(d*86400000).getUTCDay()||7;
+    if(row.weekdays.includes(weekday)&&d*1440+start<=segmentAnchor.order&&d*1440+end+(end<start?1440:0)>clock.order)intersects=true;
+   }
+   if(!intersects)return [];
+  }
+  // A future appointment or work shift is a forecast, not a task to perform now.
+  return [c];
+ }):all;
+ const npcInitiatives=npcInitiativeView(segmentCandidates,{focus:[...focus],player:pendingActor,players:recordedPlayers,settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:background&&segmentAnchor&&clock?segmentAnchor.order-clock.order:interval});
  const selectedActors=scope==='background'?[]:[...focus],omittedActors=new Set();
  const addActor=name=>{if(!text(name)||selectedActors.includes(name))return;if(selectedActors.length<12)selectedActors.push(name);else omittedActors.add(name);};
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
  for(const initiative of npcInitiatives.initiatives)addActor(initiative.actor);
  if(scope==='background')for(const actor of focus)addActor(actor);
- const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],personality_history:[],omitted:{}}]));
+ const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],personality_history:[],life_interests:[],life_goals:[],life_threads:[],life_circles:[],life_experience:[],life_causes:[],omitted:{}}]));
  const actorRows=(actor,kind,row,cap)=>{const ctx=actorIndex.get(actor);if(!ctx)return;
   if(ctx[kind].length<cap)ctx[kind].push(row);else ctx.omitted[kind]=(ctx.omitted[kind]||0)+1;
  };
@@ -291,6 +324,15 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const [actor,history] of personality){
   for(const r of history.records)actorRows(actor,'personality_history',r,4);
   actorIndex.get(actor).omitted.personality_history=history.total-history.records.length;
+ }
+ for(const actor of selectedActors){
+  const view=longLife.view(actor,{clock:clock?.literal,limit:3});
+  for(const category of ['interests','goals','threads','circles','experience','causes']){
+   const rows=view[category];if(!rows)continue;
+   const kind='life_'+category;
+   for(const row of rows.records)actorRows(actor,kind,row,3);
+   actorIndex.get(actor).omitted[kind]=rows.omitted;
+  }
  }
  const stateFields=new Set(['location','residence','availability','occupation','condition','injury','appearance','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','preference','aversion','habit','coping_style','humor','register','life_stage','education','career_goal']);
  for(const p of projection.people||[]){
@@ -325,7 +367,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const o of recent(projection.obligations||[]))if(!closed.has(text(o.status)))actorRows(o.actor,'responsibilities',{kind:'commitment',title:clip(o.description||o.evidence),status:o.status,deadline:o.due_at||o.deadline||o.due||null,source:source(o)},6);
  // Round-robin across actors AND categories, reserving counts up front.
  // Bound extra turn payload even if all participants have lengthy records.
- const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen','resources','experience','responsibilities','personality_history'];
+ const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen','resources','experience','responsibilities','personality_history','life_interests','life_goals','life_threads','life_circles','life_experience','life_causes'];
  const actor_context=actorQueues.map(({actor,age,omitted,...rows})=>({actor,age,omitted:Object.fromEntries(kinds.map(k=>[k,(omitted[k]||0)+rows[k].length])),...Object.fromEntries(kinds.map(k=>[k,[]]))}));
  const actorBudget=18000;
  for(let i=0;i<12;i++)for(const kind of kinds)for(let j=0;j<actor_context.length;j++){
@@ -355,9 +397,9 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(clock&&proposed&&!comparable)warnings.push('Точность дат различается: длительность перехода неизвестна.');
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
-  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,npc_initiatives:npcInitiatives,time_advance:proposed?.precision==='minute'&&clock?.precision==='minute'&&proposed.order>clock.order&&focus.size===1?planTimeAdvance(scenes,projection,[...focus][0],proposed.literal,{complete:opts.complete!==false,pace:preferences.settings.pace,pending:records.some(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')}):null,player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor,{scenes,clock:anchor?.literal,complete:opts.complete!==false})),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
+  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,npc_initiatives:npcInitiatives,time_advance:timeAdvance,background_time_review:background,player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor,{scenes,clock:anchor?.literal,complete:opts.complete!==false})),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
   relationship_context,relationship_context_omitted,life_context,actor_context,actor_context_omitted:omittedActors.size,
   drivers:storyDrivers(projection,directives,{max:8,actors:[...focus]}),warnings,
-  workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
+  workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Use the life_* categories for individual interests, open goals, circles and actual past experiences; explicit cause claims are not automatic truth. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs. On long jumps, background_time_review is the next segment only; later candidates are forecasts, never completed outcomes.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
   policy:'This is a read-only turn proposal, not simulation results. No candidate changes world state, completes a deadline, transfers a resource, reveals a secret or proves presence. The player controls their own character.'};
 }
