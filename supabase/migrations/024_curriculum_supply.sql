@@ -249,7 +249,7 @@ begin
     if e->>'status'='completed' then
      program:=st->'life'->('player-life:study_program:'||(linked->>'program_id'));
      for module in select value from jsonb_array_elements(program->'modules') loop
-      if not exists(select 1 from jsonb_each(st->'life') r where r.value->>'life_kind'='module_result' and r.value->'program_enrollment_id'=linked->'record_id' and r.value->'module_id'=module->'id' and r.value->>'status'='passed') then raise exception 'Cannot complete enrollment before linked modules pass';end if;
+      if not exists(select 1 from jsonb_each(st->'life') mr where mr.value->>'life_kind'='module_result' and mr.value->'program_enrollment_id'=linked->'record_id' and mr.value->'module_id'=module->'id' and mr.value->>'status'='passed') then raise exception 'Cannot complete enrollment before linked modules pass';end if;
      end loop;
     end if;
     if not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx>event_position and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='program_enrollment' and x.value->'key'=linked->'key' and x.value->'actor'=linked->'actor' and x.value->'status'=e->'status') then raise exception 'Close linked program in same scene';end if;
