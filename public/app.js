@@ -242,7 +242,7 @@ function visualLibrary(w,overview,section='illustrations',focus=null){
   }else{
    const file=node('input','field');file.type='file';file.accept='image/png,image/jpeg,image/webp';
    const paste=node('div','rule','Можно также вставить скопированное изображение сюда (Ctrl+V).');paste.tabIndex=0;paste.addEventListener('paste',event=>{const image=[...(event.clipboardData?.files||[])].find(x=>x.type.startsWith('image/'));if(!image)return;event.preventDefault();void busy(async()=>{await uploadVisual(a,image);toast('Иллюстрация сохранена.');await refresh();});});
-   body.append(para('Готовое изображение из ChatGPT или другого генератора можно прикрепить сюда.'),paste,file,row(button('Загрузить и сохранить',()=>busy(async()=>{await uploadVisual(a,file.files?.[0]);toast('Иллюстрация сохранена.');await refresh();})),button('Проверить уже загруженный файл',()=>busy(async()=>{await finishVisual(a.id);await refresh();}),'btn secondary')));
+   body.append(para('Изображение можно сохранить непосредственно из ChatGPT командой «Сохрани эту картинку в мир». Если клиент не передал файл, выбери его здесь.'),paste,file,row(button('Загрузить и сохранить',()=>busy(async()=>{await uploadVisual(a,file.files?.[0]);toast('Иллюстрация сохранена.');await refresh();})),button('Проверить уже загруженный файл',()=>busy(async()=>{await finishVisual(a.id);await refresh();}),'btn secondary')));
   }
   body.append(row(button('Скопировать промпт для генерации',()=>busy(()=>copy(a.prompt)),'btn secondary'),button('Скопировать ссылку на изображение',()=>busy(()=>copy(location.origin+'/'+visualUploadHash(w.id,a.id))),'btn secondary')));
   if(a.scene_id)body.append(sceneLink(w.id,a.scene_id,'Сцена-источник'));
@@ -274,7 +274,7 @@ function visualLibrary(w,overview,section='illustrations',focus=null){
    const refs=visualReferences(assets,s),prompt=visualPrompt({...s,detail:identity.value},description.value,refs,prefs);
    const a=await prepareVisual(w,{...s,kind:kind.value,prompt,title:s.title,identity_notes:identity.value,reference_asset_ids:refs.map(x=>x.id)});
    const link=location.origin+'/'+visualUploadHash(w.id,a.id);
-   await copy('Создай изображение по следующему запросу. Заявка уже сохранена, не создавай новую. '+prompt+'\nПосле генерации файл можно прикрепить к заявке: '+link);
+   await copy('Создай изображение по следующему запросу. Заявка уже сохранена, не создавай новую. '+prompt+'\nПосле генерации вызови save_chatgpt_illustration с настоящим файлом ChatGPT Library, world_id='+w.id+', asset_id='+a.id+'. Если клиент не передал файл, прикрепи его к заявке: '+link);
    focus=a.id;offset=0;await refresh();
   })));
  };
