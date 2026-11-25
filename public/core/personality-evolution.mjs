@@ -47,7 +47,7 @@ export function personalityEvolution(projection={},scenes=[],{actors=[],complete
    }
   }
  }
- const timeline=(h,valid=true)=>({history_verified:!!h&&valid,first:valid?h?.first??null:null,observations:valid?h?.observations??0:0,changes:page(valid?(h?.changes||[]).slice().reverse():[],4),total_changes:valid?h?.total_changes??0:0});
+ const timeline=(h,valid=true)=>{const changes=page(valid?(h?.changes||[]).slice().reverse():[],4);changes.total=valid?h?.total_changes??0:0;changes.omitted=changes.total-changes.records.length;return {history_verified:!!h&&valid,first:valid?h?.first??null:null,observations:valid?h?.observations??0:0,changes,total_changes:changes.total};};
  const sameSource=(a,b)=>a?.scene_id===b?.scene_id&&a?.event_id===b?.event_id;
  const recent=(a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1);
  const share=Math.max(600,Math.floor(maxChars/Math.max(1,selected.length)));
@@ -64,7 +64,7 @@ export function personalityEvolution(projection={},scenes=[],{actors=[],complete
    return {id:r.record_id,key:r.key,kind:eventKind(r),title:r.name??r.title??null,status:r.status,description:clip(r.description),next_step:clip(r.next_step),source:r.source,history:timeline(h,verified)};
   });
   const currentEpisodes=page((episodes.get(actor)||[]).slice().reverse(),limit,Math.floor(share*.2));currentEpisodes.total=episodeCounts.get(actor)||0;currentEpisodes.omitted=currentEpisodes.total-currentEpisodes.records.length;
-  const compact=(rows,part)=>{const max=Math.floor(share*part),out=[];for(const r of rows){if(out.length>=limit)break;out.push(r);if(JSON.stringify(out).length>max){out.pop();const c={...r,history:{history_verified:r.history.history_verified,total_changes:r.history.total_changes,observations:r.history.observations,details_omitted:true}};out.push(c);if(JSON.stringify(out).length>max)out.pop();}}return {records:out,total:rows.length,omitted:rows.length-out.length};};
+  const compact=(rows,part)=>{const max=Math.floor(share*part),out=[];for(const r of rows){if(out.length>=limit)break;const attempts=[r,{...r,history:{history_verified:r.history.history_verified,total_changes:r.history.total_changes,observations:r.history.observations,details_omitted:true}},{...(r.field?{field:r.field,value:clip(r.value,100)}:{id:r.id,kind:r.kind,title:clip(r.title,80),status:r.status}),source:r.source,details_omitted:true}];for(const item of attempts){out.push(item);if(JSON.stringify(out).length<=max)break;out.pop();}}return {records:out,total:rows.length,omitted:rows.length-out.length};};
   result.push({actor,traits:compact(traits,.30),motives:compact(ownMotives,.25),habits_skills_projects:compact(routines,.25),life_experience:currentEpisodes});
  }
  return {actors:result,history_complete:complete,policy:'Stable traits are distinct from temporary moods. Changes require actual narrated evidence, not numerical personality drift. Prior experiences are possible context, not proved causes. Resolved motives and abandoned habits are history, not current drives. Never infer trauma, desire, attachment, forgiveness or knowledge.'};

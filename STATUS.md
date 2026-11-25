@@ -2,7 +2,7 @@
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
 ## v0.58.0 — развитие личности и жизненный опыт
-- [x] Candidate: per-character verified trajectory of persistent traits, motives, habits/skills/projects; first observation, latest source, actual changes and bounded history. Distinct accepted life episodes, never automatic causation. Connect turn, actor and focused reads, character state and psychology menu. Review persistent fields versus transient mood. NPC need estimate invalidated after long unobserved scene gap, same conservative day threshold as hero.
+- [x] Candidate: per-character verified trajectory of persistent traits, motives, habits/skills/projects; first observation, latest source, actual changes and bounded history. Distinct accepted life episodes, never automatic causation. Connect turn, actor and focused reads, character state and psychology menu with native trajectory cards and source links. Preserve current traits before dropping long history under context budget; exact total/omitted history counts. Review persistent fields versus transient mood. NPC need estimate invalidated after long unobserved scene gap, same conservative day threshold as hero.
 - [ ] CI, merge, deployment and live play verification. No automatic psychological change or history rewrite.
 
 ## v0.57.0 — индивидуальная память персонажей

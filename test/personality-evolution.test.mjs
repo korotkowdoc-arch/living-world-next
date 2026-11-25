@@ -31,3 +31,10 @@ test('NPC long unobserved gap does not turn comfortable observation into critica
  const need={actor:'A',key:'need',player_life_version:1,life_kind:'need',need:'hunger',status:'comfortable',source:{scene_id:'a',world_time:a.world_time}};
  assert.equal(npcNeedOpportunities([need],[a,b],b.world_time).length,0);
 });
+
+test('long history counts include omitted changes, large actor focus retains current traits',()=>{
+ const scenes=Array.from({length:12},(_,i)=>s('s'+i,[c('p'+i,'A',{temperament:'Trait '+i})]));const p=replay(scenes),r=personalityEvolution(p,scenes,{actors:['A']}).actors[0].traits.records[0].history;
+ assert.equal(r.total_changes,11);assert.equal(r.changes.total,11);assert.equal(r.changes.omitted,7);
+ const actors=Array.from({length:12},(_,i)=>'Actor '+i),a=s('many',actors.map((name,i)=>c('person'+i,name,{temperament:'Calm'})));
+ const many=personalityEvolution(replay([a]),[a],{actors});assert.ok(many.actors.every(r=>r.traits.records[0]?.value==='Calm'));
+});
