@@ -1,9 +1,13 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.59.0 — историческая память в меню
+- [x] Candidate: reject narrative absence of residence including reverse Russian wording; distinguish unconfirmed housing prose from actionable destinations. Group same-source historical evidence without deleting notes, preserve alternative interpretations and distinct actor scopes. Explicit single-holder reviewed history expanded to property, relationships, skills; actor-scoped paging up to 480 notes in app/MCP; verify literal quote when source body available. No promotion to canonical current state.
+- [ ] CI, merge, deployment and live menu verification; bounded review still may omit old rows.
+
 ## v0.58.0 — развитие личности и жизненный опыт
 - [x] Candidate: per-character verified trajectory of persistent traits, motives, habits/skills/projects; first observation, latest source, actual changes and bounded history. Distinct accepted life episodes, never automatic causation. Connect turn, actor and focused reads, character state and psychology menu with native trajectory cards and source links. Preserve current traits before dropping long history under context budget; exact total/omitted history counts. Review persistent fields versus transient mood. NPC need estimate invalidated after long unobserved scene gap, same conservative day threshold as hero.
-- [ ] CI, merge, deployment and live play verification. No automatic psychological change or history rewrite.
+- [x] PR #54 merged (8e91761), JS/Chromium and SQL passed; deployed context read confirmed. [ ] Live play verification. No automatic psychological change or history rewrite.
 
 ## v0.57.0 — индивидуальная память персонажей
 - [x] Candidate: per-holder current knowledge with accepted historical versions, exact topic ranking, unavailable content withheld from actionable perspective; outgoing attitudes, open commitments and accepted encounters; director-only differences in topic perspectives. Integrate turn, focused context and actor recall. Draft review flags topic duplicates and uncertain informant provenance. Incoming attitudes separated from own character context. Knowledge listing orders by latest source. Actor recall verifies annotations against loaded ancestry and rejects invalid or case-mismatched actor identity; forgotten content withheld in psychology too. Correct historical counts under partial ancestry and compact history before dropping current knowledge.

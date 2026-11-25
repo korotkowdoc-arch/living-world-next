@@ -1,4 +1,4 @@
-import {EMPTY_SECTION_HINTS,hasMenuRecords,reviewedMenuHistory} from './core/menu-history.mjs';
+import {EMPTY_SECTION_HINTS,hasMenuRecords,reviewedMenuHistory,REVIEWED_HISTORY_SECTIONS} from './core/menu-history.mjs';
 import {MENU_LABELS,menuLabel,menuValue,isMenuMetadata,menuError} from './core/menu-ru.mjs';
 import {MENU_GROUPS,MENU_DESCRIPTIONS,directorySections,menuSnapshotKey,menuSectionTransition} from './core/native-menu.mjs';
 import {ROOM_ACTIONS} from './core/room-layout.mjs';
@@ -624,11 +624,11 @@ function renderGameMenu(){
  async function loadReviews(name){
   if(reviewJobs.has(name)||reviews.has(name))return;reviewJobs.add(name);
   const rows=[];let done=false,failed=false;
-  try{for(let i=0;i<10;i++){const page=await readMemoryNotes(w,{actor:name,offset:i*20});if(!Array.isArray(page)||page.length>20)throw Error('Неверная страница памяти');rows.push(...page);if(page.length<20){done=true;break;}}}catch{failed=true;}
+  try{for(let i=0;i<12;i++){const page=await readMemoryNotes(w,{actor:name,offset:i*40,limit:40});if(!Array.isArray(page)||page.length>40)throw Error('Неверная страница памяти');rows.push(...page);if(page.length<40){done=true;break;}}}catch{failed=true;}
   finally{reviewJobs.delete(name);}
   if(!alive())return;
   reviews.set(name,{...reviewedMenuHistory(rows,scenes,name,{complete:done&&complete}),failed});
-  if(saved.actor===name&&['goals','work','education','interests','health','calendar','inventory'].includes(saved.section))show();
+  if(saved.actor===name&&REVIEWED_HISTORY_SECTIONS.includes(saved.section))show();
  }
  const selectActor=()=>{
   const choice=(projection.worldFacts||[]).find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending');
@@ -765,7 +765,7 @@ function renderGameMenu(){
   }
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
   output.append(add(node('div','menu-screen-heading'),menuGlyph(section.icon),title(section.label)));
-  if(['goals','work','education','interests','health','calendar','inventory'].includes(section.id)){
+  if(REVIEWED_HISTORY_SECTIONS.includes(section.id)){
    const review=reviews.get(saved.actor);if(!review){output.append(para('Проверяю ранее разобранные сцены…'));void loadReviews(saved.actor);}
    else if(!review.scan_complete)output.append(row(para('Исторические заметки загружены не полностью.'),button('Обновить заметки',()=>{reviews.delete(saved.actor);show();},'btn secondary')));
   }
@@ -774,7 +774,7 @@ function renderGameMenu(){
   if(section.id==='journal'){output.append(menuJournal(w,scenes));return;}else if(section.id==='memories'){output.append(menuMemories(w,overview,projection));return;}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
    output.append(readableMaterials(section.id,overview,documentIndex(scenes,projection,{complete}),w,saved.actor));
    if(section.id==='news')output.append(title('Известия и подписки'),renderMenuData({knowledge:overview.world_depth.news,...overview.advanced.channels}));
-  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else {const data=menuSection(overview,section.id).data;if(section.id==='psychology'&&data.personality_development){output.append(personalityDevelopmentView(data.personality_development));delete data.personality_development;}if(section.id==='tasks'){output.append(taskTrackerView(data.task_tracker),consequenceTrackerView(data.consequence_tracker));delete data.task_tracker;delete data.consequence_tracker;delete data.consequences;delete data.consequence_responses;const other=data.current_tasks.records.filter(x=>!x.id.startsWith('plan:'));data.current_tasks={...data.current_tasks,records:other,total:other.length+data.current_tasks.omitted};}if(!hasMenuRecords(data)&&!['character','health','psychology','calendar'].includes(section.id))output.append(para(EMPTY_SECTION_HINTS[section.id]||EMPTY_SECTION_HINTS.default));output.append(renderMenuData(data));if(section.id==='inventory'&&data.reviewed_inventory?.total)output.append(renderMenuData({reviewed_inventory:data.reviewed_inventory}));}
+  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else {const data=menuSection(overview,section.id).data;if(section.id==='psychology'&&data.personality_development){output.append(personalityDevelopmentView(data.personality_development));delete data.personality_development;}if(section.id==='tasks'){output.append(taskTrackerView(data.task_tracker),consequenceTrackerView(data.consequence_tracker));delete data.task_tracker;delete data.consequence_tracker;delete data.consequences;delete data.consequence_responses;const other=data.current_tasks.records.filter(x=>!x.id.startsWith('plan:'));data.current_tasks={...data.current_tasks,records:other,total:other.length+data.current_tasks.omitted};}if(!hasMenuRecords(data)&&!['character','health','psychology','calendar'].includes(section.id))output.append(para(EMPTY_SECTION_HINTS[section.id]||EMPTY_SECTION_HINTS.default));output.append(renderMenuData(data));if(section.id==='inventory'&&data.reviewed_inventory?.total)output.append(renderMenuData({reviewed_inventory:data.reviewed_inventory}));if(section.id==='skills'&&data.reviewed_skills?.total)output.append(renderMenuData({reviewed_skills:data.reviewed_skills}));}
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   const actionPanel=node('details','menu-action-panel');actionPanel.append(node('summary','','Действия героя в истории'),para('Просмотр данных работает здесь. Эти действия требуют сыгранной сцены в ChatGPT и сами не изменяют мир.'));
   let actionStart=output.childNodes.length;

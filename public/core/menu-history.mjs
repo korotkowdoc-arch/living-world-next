@@ -2,6 +2,7 @@
  * canonical events, marks an intention complete, grants knowledge or moves money.
  * Source IDs are retained; repeated receipts are NOT consolidated into shifts.
  */
+import {historicalEvidenceKey,normalized} from './memory-notes.mjs';
 import {sceneMemoryError,isSceneMemory} from './scene-memory-routing.mjs';
 const page=records=>({records:records.slice(0,40),total:records.length,omitted:Math.max(0,records.length-40)});
 const own=(x,a)=>x===a;
@@ -63,14 +64,17 @@ export function hasMenuRecords(v){
  * classification, not authority to create state. Single explicit holder only.
  * Rows returned by the owner-pinned historical notes RPC; ancestry is checked.
  */
-const reviewKinds={work:'action',education:'action',interests:'other',goals:'intention',health:'action',calendar:'claim',inventory:'action'};
+export const REVIEWED_HISTORY_SECTIONS=Object.freeze(['goals','work','education','interests','health','calendar','inventory','property','relationships','skills']);
+const reviewKinds={work:['action'],education:['action','claim'],interests:['other','claim'],goals:['intention'],health:['action','other','claim'],calendar:['claim'],inventory:['action','other'],property:['action','claim','place'],relationships:['relationship'],skills:['action','claim']};
 export function reviewedMenuHistory(rows,scenes,actor,{complete=false}={}){
- const ids=new Map(scenes.map((s,i)=>[s.id,i])),groups=Object.fromEntries(Object.keys(reviewKinds).map(k=>[k,[]])),seen=new Set();
+ const ids=new Map(scenes.map((s,i)=>[s.id,i])),groups=Object.fromEntries(Object.keys(reviewKinds).map(k=>[k,[]])),seen=new Map();let grouped=0,invalid=0;
  for(const r of rows||[]){
-  const n=r?.note,match=/^menu-(work|education|interests|goals|health|calendar|inventory)-[a-z0-9_-]+$/.exec(r?.note_key??'');
-  if(!match||!ids.has(r.scene_id)||!n||n.kind!==reviewKinds[match[1]]||!Array.isArray(n.actors)||n.actors.length!==1||n.actors[0]!==actor||typeof n.summary!=='string'||!n.summary.trim()||n.summary.length>600||typeof n.quote!=='string'||!n.quote.trim()||n.quote.length>1200)continue;
-  const key=JSON.stringify([r.scene_id,r.note_key]);if(seen.has(key))continue;seen.add(key);
-  groups[match[1]].push({title:n.summary,status:'historical_review',source:{scene_id:r.scene_id,world_time:scenes[ids.get(r.scene_id)]?.world_time??null},order:ids.get(r.scene_id)});
+  const n=r?.note,match=/^menu-(work|education|interests|goals|health|calendar|inventory|property|relationships|skills)-[a-z0-9_-]+$/.exec(r?.note_key??'');
+  if(!match)continue;
+  if(!ids.has(r.scene_id)||!n||!reviewKinds[match[1]].includes(n.kind)||!Array.isArray(n.actors)||n.actors.length!==1||n.actors[0]!==actor||typeof n.summary!=='string'||!n.summary.trim()||n.summary.length>600||typeof n.quote!=='string'||!n.quote.trim()||n.quote.length>1200){invalid++;continue;}
+  const body=scenes[ids.get(r.scene_id)]?.body;if(typeof body==='string'&&body.length&&!body.includes(n.quote)){invalid++;continue;}
+  const key=JSON.stringify([match[1],historicalEvidenceKey(r)]);const old=seen.get(key);if(old){grouped++;if(normalized(old.title)!==normalized(n.summary)&&!old.alternative_summaries.some(x=>normalized(x)===normalized(n.summary))&&old.alternative_summaries.length<3)old.alternative_summaries.push(n.summary);continue;}
+  const row={title:n.summary,status:'historical_review',kind:n.kind,quote:n.quote,alternative_summaries:[],source:{scene_id:r.scene_id,world_time:scenes[ids.get(r.scene_id)]?.world_time??null},order:ids.get(r.scene_id)};seen.set(key,row);groups[match[1]].push(row);
  }
- return {canonical:false,scan_complete:complete,...Object.fromEntries(Object.entries(groups).map(([k,v])=>[k,page(v.sort((a,b)=>b.order-a.order).map(({order,...x})=>x))])),policy:'Reviewed source annotations, not current tasks, qualifications, formal shifts or ledger events.'};
+ return {canonical:false,scan_complete:complete,grouped_duplicates:grouped,invalid_records:invalid,...Object.fromEntries(Object.entries(groups).map(([k,v])=>[k,page(v.sort((a,b)=>b.order-a.order).map(({order,...x})=>x))])),policy:'Reviewed source annotations, not current tasks, qualifications, formal shifts or ledger events.'};
 }

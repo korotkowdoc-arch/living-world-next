@@ -16,3 +16,5 @@ test('partial scan reports incomplete and respects note limit',()=>{
  const r=historicalNoteIndex([row('a','a','книга',['Лия']),row('b','b','книга',['Лия'])],scenes,{queries:['книга'],maxNotes:1});
  assert.equal(r.scan_complete,false);assert.equal(r.omitted,1);assert.equal(r.notes[0].scene_id,'b');
 });
+
+test('group identical evidence while retaining alternate interpretations and actor boundaries',()=>{const a=row('a','one','Книга',['Лия']),b={...row('a','two','Другая версия книги',['Лия']),note:{...a.note,summary:'Другая версия книги'}},c=row('b','three','Книга',['Лия']),d=row('a','four','Книга',['Гарри']);const h=historicalNoteIndex([a,b,c,d],scenes,{queries:['книга']});assert.equal(h.matching_note_count,4);assert.equal(h.total_matching,3);assert.equal(h.grouped_duplicate_count,1);assert.equal(h.notes.find(x=>x.scene_id==='a'&&x.actors.includes('Лия')).alternative_count,1);});
