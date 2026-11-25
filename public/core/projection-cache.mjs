@@ -6,17 +6,23 @@ export function createProjectionCache({maxEntries=4,maxBytes=12*1024*1024,ttlMs=
  const rows=new Map();let bytes=0;
  const remove=k=>{const e=rows.get(k);if(e){rows.delete(k);bytes-=e.size;}};
  const expire=()=>{for(const [k,e] of rows)if(now()>=e.expires)remove(k);};
+ const reusable=(scope,world,branch,scenes)=>[...rows.values()].reverse().find(entry=>entry.scope===scope&&entry.world===world&&entry.branch===branch&&scenes[entry.count-1]?.id===entry.head);
  return {
-  project(scope,world,branch,history){
+  hasReusable(scope,world,branch,history){expire();return !!(scope&&history?.complete&&reusable(scope,world,branch,history.scenes));},
+  project(scope,world,branch,history,externalCheckpoint=null){
    const scenes=history.scenes;
-   if(!scope||!world||!branch||!history.complete||!scenes.length)return {projection:replay(scenes,[],{evidencePrevalidated:true}),checkpoint:null,reused_scenes:0,replayed_scenes:scenes.length};
+   if(!scope||!world||!branch||!history.complete||!scenes.length)return {projection:replay(scenes,[],{evidencePrevalidated:true}),checkpoint:null,reused_scenes:0,replayed_scenes:scenes.length,cache_source:'replay'};
    expire();
    const head=scenes.at(-1).id,key=JSON.stringify([scope,world,branch,head]);
    let prior=rows.get(key);
    if(!prior){
-    for(const entry of [...rows.values()].reverse())if(entry.scope===scope&&entry.world===world&&entry.branch===branch&&scenes[entry.count-1]?.id===entry.head){prior=entry;break;}
+    prior=reusable(scope,world,branch,scenes);
    }
-   const result=replayWithCheckpoint(scenes,{evidencePrevalidated:true,checkpoint:prior?JSON.parse(prior.payload):null});
+   const local=prior?JSON.parse(prior.payload):null;
+   const external=externalCheckpoint&&externalCheckpoint.scene_count<=scenes.length&&scenes[externalCheckpoint.scene_count-1]?.id===externalCheckpoint.head_scene_id?externalCheckpoint:null;
+   const useExternal=!!external&&(!local||external.scene_count>local.scene_count);
+   const result=replayWithCheckpoint(scenes,{evidencePrevalidated:true,checkpoint:useExternal?external:local});
+   result.cache_source=result.reused_scenes?(useExternal?'durable':'process'):'replay';
    if(rows.has(key)){const e=rows.get(key);rows.delete(key);rows.set(key,e);return result;}
    const payload=JSON.stringify(result.checkpoint),size=payload.length*2;
    if(size<=maxBytes){
