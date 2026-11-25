@@ -54,6 +54,7 @@ try{
   await page.locator('.menu-tile-button').filter({has:page.getByText(label,{exact:true})}).click();
   await page.locator('.menu-screen-heading h2').filter({hasText:label}).waitFor({timeout:10000});
   assert.equal(await page.locator('.menu-directory').isVisible(),false);
+  const screenText=await page.locator('.menu-screen').innerText();assert.doesNotMatch(screenText,/\b(?:memory_complete|recorded_status|requires_scene_check|scene_id|player_life_version)\b/);
   assert.equal(await page.locator('.menu-screen .notice').filter({hasText:'Не удалось открыть этот раздел'}).count(),0,label);
  };
  const back=async()=>{await page.getByRole('button',{name:'‹ Главное меню',exact:true}).click();await page.locator('.menu-directory').waitFor();};
