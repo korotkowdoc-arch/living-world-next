@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {wealthIndex} from '../public/core/wealth-world.mjs';
+import {replay,validateStateAppend} from '../public/core/continuity.mjs';
+import {playerMenuOverview,menuActionIntent} from '../public/core/game-menu.mjs';
+const evidence='Observed a fictional agreement.';
+const w=(k,i,x)=>({id:k+'_'+i,type:'world',wealth_version:1,wealth_kind:k,record_id:i,key:'wealth:'+k+':'+i,evidence,...x});
+const sc=(id,events)=>({id,events,body:evidence,world_time:'2000-01-01 12:00'});
+const cash=(id,actor,counterparty,n)=>({id,type:'money',operation:'transfer',actor,counterparty,currency:'GBP',delta:-n,evidence});
+const estate=w('estate_case','case',{actor:'Executor',decedent:'Ancestor',title:'Estate',authority:'Recorded appointment',status:'opened'});
+const ben=w('beneficiary','ben',{actor:'Executor',case_id:'case',recipient:'Hero',basis:'Recorded will',status:'named'});
+const gift=w('bequest','gift',{actor:'Executor',case_id:'case',beneficiary_id:'ben',asset_kind:'cash',asset_ref:'cash_share_1',title:'Cash share',amount:100,currency:'GBP',status:'proposed'});
+const base=[sc('s1',[estate,ben]),sc('s2',[{...estate,status:'administering'},{...ben,status:'accepted'},gift])];
+const ix=h=>wealthIndex(h,replay(h));
+test('inheritance requires separate authorized exact transfer and unique allocation',()=>{
+ const paid={...gift,status:'distributed',event_ref:'payment'};
+ assert.deepEqual(ix(base).warnings,[]);
+ assert.equal(validateStateAppend(base,[paid],evidence).ok,false);
+ assert.equal(validateStateAppend(base,[{...estate,status:'settled'}],evidence).ok,false);
+ assert.equal(validateStateAppend(base,[cash('payment','Ancestor','Hero',99),paid],evidence).ok,false);
+ const h=[...base,sc('s3',[cash('payment','Ancestor','Hero',100),paid,{...estate,status:'settled'}])],v=ix(h);
+ assert.deepEqual(v.warnings,[]);assert.equal(v.view('Hero').inheritance.bequests.records[0].status,'distributed');assert.equal(v.view('Other').inheritance.cases.total,0);
+ assert.equal(validateStateAppend(h,[cash('payment','Ancestor','Hero',100),paid],evidence).ok,false);
+ const o=playerMenuOverview(replay(base),'Executor',null,{scenes:base});assert.equal(menuActionIntent({action:'settle_bequest',bequest_id:'gift',detail:'Distribute'},o).bequest_id,'gift');
+});
+test('treasury rejects raw account movement and contributor withdrawals; account is a real balance',()=>{
+ // Existing household records are provided as accepted history for the extension unit test.
+ const household={id:'house',type:'world',player_life_version:1,life_kind:'household',key:'player-life:household:h',record_id:'h',actor:'Host',status:'active',evidence};
+ const member={id:'member',type:'world',player_life_version:1,life_kind:'household_member',key:'player-life:household_member:m',record_id:'m',household_id:'h',actor:'Guest',status:'joined',evidence};
+ const t=w('treasury','fund',{actor:'Host',household_id:'h',title:'Family',account:'treasury:fund',currency:'GBP',status:'active'});
+ const m=w('treasury_member','m',{actor:'Host',treasury_id:'fund',member:'Guest',role:'contributor',status:'invited'});
+ const init={id:'zero',type:'money',operation:'reconcile',actor:'treasury:fund',currency:'GBP',delta:0,balance:0,evidence};
+ const h=[sc('s1',[household,member,t,init,m]),sc('s2',[{...m,status:'accepted'}])];
+ const dep=w('treasury_payment','p',{actor:'Guest',treasury_id:'fund',counterparty:'Guest',amount:30,currency:'GBP',title:'Contribution',direction:'deposit',status:'proposed'});
+ const h2=[...h,sc('s3',[dep]),sc('s4',[{...dep,status:'approved'}]),sc('s5',[cash('deposit','Guest','treasury:fund',30),{...dep,status:'settled',transfer_event_id:'deposit'}])];
+ const projection={balances:[{actor:'treasury:fund',currency:'GBP',known:true,balance:30,delta:30}]};
+ const v=wealthIndex(h2,projection);assert.deepEqual(v.warnings,[]);assert.equal(v.view('Guest').treasury.accounts.records[0].balance,30);assert.equal(v.view('Other').treasury.accounts.total,0);
+ assert.ok(wealthIndex([...h2,sc('s6',[cash('raw','treasury:fund','Guest',1)])],projection).warnings.some(x=>x.scene_id==='s6'));
+ assert.ok(wealthIndex([...h2,sc('s6',[{...dep,record_id:'withdraw',key:'wealth:treasury_payment:withdraw',direction:'withdrawal',status:'proposed'}])],projection).warnings.some(x=>x.scene_id==='s6'));
+});
