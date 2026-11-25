@@ -72,7 +72,7 @@ export function buildLongLifeIndex(scenes=[],projection={}, {complete=true}={}){
  const recent=(a,b)=>(positions.get(b.source.scene_id)??-1)-(positions.get(a.source.scene_id)??-1);
  for(const [a,p] of profiles){
   for(const cat of ['interests','goals','threads','circles','experience','causes'])p[cat].sort(recent);
-  for(const r of p.interests)if(r.kind==='habit'&&r.status==='active'&&r.title||r.kind==='preference'&&r.title){
+  for(const r of p.interests)if((r.kind==='habit'&&r.status==='active'||r.kind==='preference')&&r.title&&r.title.length<180){
    // Exact recorded text only. Skills alone do not imply a hobby.
    if(!interestPeers.has(r.title))interestPeers.set(r.title,new Map());
    const peers=interestPeers.get(r.title);if(!peers.has(a))peers.set(a,r);
@@ -88,26 +88,26 @@ export function buildLongLifeIndex(scenes=[],projection={}, {complete=true}={}){
  const opportunities=()=>{
   if(!complete)return [];
   const result=[];
+  const aversionsByActor=new Map([...profiles].map(([a,p])=>[a,new Set(p.interests.filter(i=>i.kind==='aversion').map(i=>i.title))]));
   for(const [actor,p] of profiles){
-   const goals=new Set(p.goals.map(g=>g.title).filter(Boolean));
+   const goals=new Set([...p.goals,...p.threads].map(g=>g.title).filter(Boolean));
    const aversions=new Set(p.interests.filter(i=>i.kind==='aversion').map(i=>i.title));
    const interest=p.interests.find(i=>i.kind==='preference'&&i.title&&!goals.has(i.title)&&!aversions.has(i.title));
    if(interest)result.push({kind:'interest_project',row:{actor,key:key('interest_project',actor,interest.title),title:interest.title,status:'opportunity',source:interest.source},info:{record_key:key(actor,'preference'),long_life:{interest:interest.title},timing:'requires_character_choice',guidance:'Consider a concrete independent hobby or project only if the character chooses it in the story. No automatic plan, skill or progress.'}});
-   const review=p.goals.find(g=>g.kind==='project'&&['active','planned'].includes(g.status)&&g.next_step);
-   if(review)result.push({kind:'life_goal_review',row:{actor,key:key('life_goal_review',actor,review.key),title:review.title,status:review.status,source:review.source,obstacle:review.obstacle,next_step:review.next_step},info:{record_key:review.key,long_life:{goal_kind:review.kind,due_at:review.due_at},timing:'requires_character_choice',guidance:'Review this existing project’s recorded next step and obstacles, not a second project or a completed milestone.'}});
+
   }
   // At most one candidate per actor from shared recorded interests, no quadratic pairs.
   const seen=new Set();
   const relations=new Map((projection.relationships||[]).map(r=>[key(r.a,r.b),r]));
   const blocked=(a,b)=>[relations.get(key(a,b)),relations.get(key(b,a))].some(r=>r?.relationship_fields?.some(f=>f.field==='boundary'&&['distance','no_contact'].includes(f.value)));
   const pending=new Set();
-  for(const r of records)if(r.life_kind==='invitation'&&['sent','accepted'].includes(r.status)){pending.add(key(r.actor,r.recipient));pending.add(key(r.recipient,r.actor));}
+  for(const r of records){if(r.life_kind==='invitation'&&['sent','accepted'].includes(r.status)){pending.add(key(r.actor,r.recipient));pending.add(key(r.recipient,r.actor));}if(r.life_kind==='appointment'&&['proposed','confirmed'].includes(r.status)){const members=(r.participants||[]).slice(0,12);for(const a of members)for(const b of members)if(a!==b)pending.add(key(a,b));}}
   for(const [interest,peers] of interestPeers){
    if(peers.size<2)continue;
    const sample=[...peers].slice(0,8);
    for(const [actor,r] of peers){
-    if(seen.has(actor)||profiles.get(actor).interests.some(i=>i.kind==='aversion'&&i.title===interest))continue;
-    const other=sample.find(([b])=>b!==actor&&!blocked(actor,b)&&!pending.has(key(actor,b))&&!profiles.get(b).interests.some(i=>i.kind==='aversion'&&i.title===interest));
+    if(seen.has(actor)||aversionsByActor.get(actor).has(interest))continue;
+    const other=sample.find(([b])=>b!==actor&&!blocked(actor,b)&&!pending.has(key(actor,b))&&!aversionsByActor.get(b).has(interest));
     if(!other)continue;seen.add(actor);
     result.push({kind:'shared_interest',row:{actor,counterparty:other[0],key:key('shared_interest',actor,interest),title:interest,status:'opportunity',source:r.source},info:{record_key:r.key??key(actor,'preference'),long_life:{interest,other:other[0],other_source:other[1].source},timing:'requires_character_choice',guidance:'Narrator-only matching recorded interests; neither character automatically knows this about the other. Establish an actual encounter and willingness before joint activity.'}});
    }
@@ -120,7 +120,7 @@ export function buildLongLifeIndex(scenes=[],projection={}, {complete=true}={}){
  * Only candidates whose explicit date falls in this segment enter its due list. */
 export function backgroundTimeReview(candidates=[],{clock,target,segmentUntil,protectedActors=[],complete=true,pace='dynamic',pending=false}={}){
  const from=date(clock),to=date(target),stop=date(segmentUntil),protectedSet=new Set(protectedActors);
- if(!complete||!from||!to||from.precision!=='minute'||to.precision!=='minute'||to.order<=from.order)return null;
+ if(!complete||!protectedSet.size||!from||!to||from.precision!=='minute'||to.precision!=='minute'||to.order<=from.order)return null;
  if(pending)return {status:'player_choice_pending',from:from.literal,target:to.literal,segments:[],policy:'Answer the current choice first.'};
  const cap={slow:120,normal:480,dynamic:1440,fast:4320}[pace]??1440;
  const end=Math.min(to.order,from.order+cap,stop?.order??Infinity);
