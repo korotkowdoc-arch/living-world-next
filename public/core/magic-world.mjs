@@ -63,7 +63,7 @@ export function magicIndex(scenes=[],projection={}, {complete=true}={}){
     if(!get('tradition',e.tradition_id)||!same(['actor','tradition_id','title'])||old&&['validated','rejected'].includes(old.status)||e.technique_id!=null&&get('technique',e.technique_id)?.tradition_id!==e.tradition_id)err='Research identity or technique invalid';
     else if(e.status==='validated'&&old?.status!=='testing')err='Validation requires previously recorded testing';
    }
-   if(!err&&k==='reserve'&&(!same(['actor','pool'])||old&&e.status==='restored'&&e.remaining<old.remaining))err='Reserve identity or restoration invalid';
+   if(!err&&k==='reserve'&&(!same(['actor','pool'])||e.status==='depleted'&&e.remaining!==0||old&&e.status==='restored'&&e.remaining<old.remaining))err='Reserve identity or restoration invalid';
    if(!err&&k==='casting'){
     const t=get('technique',e.technique_id),r=e.reserve_id?get('reserve',e.reserve_id):null,learned=training.get(key(e.actor,e.technique_id));
     if(old||!t||t.status==='retired')err='Casting requires unique episode and usable technique';
@@ -141,5 +141,5 @@ export function magicActionRows(input,v){
 export function validateMagicAction(input,overview){
  const f=MAGIC_ACTION_IDS[input.action];if(!f)return;
  const r=magicActionRows(input,overview.magic_system).find(r=>r.id===input[f]);if(!r)throw Error('Magical record is not visible');
- if(input.action==='continue_magic_research'&&!['hypothesis','testing','paused'].includes(r.status)||input.action==='respond_magic_course'&&r.status!=='proposed'||input.action==='continue_magic_course'&&!['accepted','active','paused'].includes(r.status)||input.action==='consider_therapy'&&!activeCase.includes(r.status)||input.action==='cast_magic'&&r.status==='retired')throw Error('Magical record status does not permit action');
+ if(input.action==='respond_magic_course'&&r.patient!==overview.actor||input.action==='continue_magic_research'&&!['hypothesis','testing','paused'].includes(r.status)||input.action==='respond_magic_course'&&r.status!=='proposed'||input.action==='continue_magic_course'&&!['accepted','active','paused'].includes(r.status)||input.action==='consider_therapy'&&!activeCase.includes(r.status)||input.action==='cast_magic'&&r.status==='retired')throw Error('Magical record status does not permit action');
 }
