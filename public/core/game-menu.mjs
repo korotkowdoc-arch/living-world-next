@@ -51,14 +51,48 @@ export function menuPreferences(directives=[],branchId){
   priorities:focus.length===1?focus[0].priorities:[],focus_directive_id:focus.length===1?focus[0].id:null,
   focus_status:focus.length===1?'saved':focus.length?'conflict':'default',warnings,can_edit:!warnings.length};
 }
+const SECTION_META={
+ character:['hero','user-round'],health:['hero','heart-pulse'],wardrobe:['hero','shirt'],inventory:['hero','backpack'],
+ relationships:['social','users'],contacts:['social','contact'],letters:['social','mail'],
+ finances:['life','wallet'],property:['life','house'],work:['life','briefcase-business'],education:['life','graduation-cap'],skills:['life','sparkles'],
+ calendar:['world','calendar-days'],places:['world','map'],tasks:['world','list-checks'],journal:['story','book-open'],memories:['story','history'],settings:['story','settings']
+};
+export function dashboardSummary(overview){
+ const l=overview.life,s=overview.social_dashboard,h=overview.home_systems,w=overview.work_systems;
+ const notices=[];
+ const add=(kind,section,title,source,priority='normal',extra={})=>notices.push({kind,section,title,source:source??null,priority,...extra});
+ for(const n of l?.needs||[])if(['critical','urgent'].includes(n.forecast?.estimated_status??n.status))add('need','health',n.label,n.source,n.forecast?.estimated_status==='critical'||n.status==='critical'?'urgent':'normal',{status:n.status,estimate:n.forecast?.estimated_status??null});
+ for(const e of s?.health.records||[])if(e.status!=='resolved'&&e.severity==='severe')add('health','health',e.title,e.source,'urgent');
+ for(const e of s?.invitations.incoming.records||[])if(e.status==='sent')add('invitation','relationships',e.title,e.source,'normal',{invitation_id:e.id});
+ for(const e of l?.letters.incoming.records||[])if(e.status==='delivered')add('letter','letters','Непрочитанное письмо от '+e.from,e.source,'normal',{letter_id:e.id});
+ for(const e of l?.calendar?.entries||[])if(['due_now','past_unresolved','same_day_uncertain'].includes(e.timing))add(e.kind,'calendar',e.title,e.source,e.timing==='same_day_uncertain'?'normal':'urgent',{record_id:e.id,when:e.when});
+ for(const e of w?.shifts.records||[])if(e.actor===overview.actor&&e.settlement==='unpaid')add('wage','work',e.title,e.source,'normal',{shift_id:e.id});
+ for(const e of h?.budgets.records||[])if(e.status==='active'&&e.over_recorded_limit===true)add('budget','finances',e.title,e.source,'normal');
+ notices.sort((a,b)=>Number(b.priority==='urgent')-Number(a.priority==='urgent'));
+ const field=name=>overview.character?.fields.find(x=>x.field===name)??null;
+ return {actor:overview.actor,clock:overview.clock,location:field('location'),appearance:field('appearance'),notifications:{records:notices.slice(0,15),total:notices.length,omitted:Math.max(0,notices.length-15)},quick_actions:overview.opportunities?.options.slice(0,6)??[],counts:{inventory:overview.inventory.total,tasks:overview.tasks.total,contacts:s?.contacts.total??0,letters:l?.letters.incoming.total??0},policy:'Notifications are derived from visible recorded state, not automatic events; a past unresolved date is not proof of failure.'};
+}
+export function menuSection(overview,section){
+ const l=overview.life,s=overview.social_dashboard,h=overview.home_systems,w=overview.work_systems,t=overview.travel;
+ const sections={character:{character:overview.character,needs:l.needs},health:{needs:l.needs,episodes:s.health,quick_actions:l.quick_actions},wardrobe:{wardrobe:l.wardrobe,outfit:l.outfit,presets:l.presets},relationships:s,contacts:{contacts:s.contacts},inventory:overview.inventory,finances:{balances:overview.balances,budgets:h.budgets},property:{housing:h.housing},work:{employment:t.work,businesses:t.businesses,shifts:w.shifts,recipes:w.recipes},education:{enrollment:h.enrollment,assessments:h.assessments,practice:h.practice},skills:overview.skills,calendar:l.calendar,places:{opportunities:overview.opportunities,travel:t,transport:w.transport,reservations:h.reservations},letters:l.letters,tasks:overview.tasks,journal:{read:'get_branch_history'},memories:{read:'get_actor_memory'},settings:{read:'get_world_context'}};
+ if(!Object.hasOwn(sections,section))throw Error('Unknown menu section');
+ return {section,data:sections[section]};
+}
+
 export function gameMenuContext({world,directives=[],context}){
  const p=menuPreferences(directives,world.active_branch_id);
  return {version:1,world_id:world.id,branch_id:world.active_branch_id,expected_head:context.head_scene_id??null,
   expected_rules_version:world.directive_version,history_complete:context.memory_complete,preferences:p,
   clock:context.recorded_agenda?.latest_recorded_time??null,clock_is_current:context.recorded_agenda?.anchor_is_latest_scene===true,
   pending_choice:context.player_choice?.status??'unknown',
-  sections:[
+  layout_version:2,sections:[
    {id:'character',label:'Персонаж',read:'get_character_state',actions:['change_appearance','equip_item','remove_item','eat','drink','rest','wash','relax','save_outfit','apply_outfit','remove_outfit']},
+   {id:'health',label:'Здоровье',read:'get_character_state',actions:['eat','drink','rest','wash','relax','seek_care']},
+   {id:'wardrobe',label:'Гардероб',read:'get_character_state',actions:['change_appearance','equip_item','remove_item','save_outfit','apply_outfit','remove_outfit']},
+   {id:'relationships',label:'Отношения',read:'get_relationship_history',actions:['contact','invite_contact','respond_invitation','withdraw_invitation','review_reputation']},
+   {id:'work',label:'Работа',read:'get_world_dynamics',actions:['seek_work','respond_employment','perform_work','start_shift','finish_shift','claim_wage','manage_business','manage_recipe']},
+   {id:'education',label:'Учёба',read:'get_character_growth',actions:['apply_education','take_assessment','practice']},
+   {id:'memories',label:'Воспоминания',read:'get_actor_memory',actions:[]},
    {id:'inventory',label:'Инвентарь',read:'get_world_economy',actions:['use_item','equip_item']},
    {id:'finances',label:'Финансы',read:'get_world_economy',actions:['plan_purchase','seek_work','respond_employment','perform_work','manage_business','start_shift','finish_shift','claim_wage','manage_recipe','set_budget','review_budget']},
    {id:'contacts',label:'Знакомые',read:'get_actor_memory',actions:['contact','review_reputation','invite_contact','respond_invitation','withdraw_invitation']},
@@ -70,7 +104,7 @@ export function gameMenuContext({world,directives=[],context}){
    {id:'letters',label:'Письма',read:'get_character_knowledge',actions:['send_letter','read_letter']},
    {id:'tasks',label:'Дела',read:'get_world_agenda',actions:['set_priority','clear_priority','create_task','edit_task','pause_task','resume_task','abandon_task']},
    {id:'settings',label:'Настройки',read:'get_world_context',actions:['save_settings','reset_settings']}
-  ],policy:'Read only; menu navigation never advances fictional time or answers the pending choice. No unobserved player information in immersive mode. Gameplay actions are explicit intents, resolved through the normal choice and scene workflow.'};
+  ].map(s=>({...s,group:SECTION_META[s.id]?.[0]??'world',icon:SECTION_META[s.id]?.[1]??'circle'})),policy:'Read only; menu navigation never advances fictional time or answers the pending choice. No unobserved player information in immersive mode. Gameplay actions are explicit intents, resolved through the normal choice and scene workflow.'};
 }
 export function menuRecordFromInput(input,branchId){
  if(input?.kind==='settings')return parseMenuDirective(MENU_PREFIX+JSON.stringify({kind:'settings',settings:input.settings}));
@@ -112,7 +146,8 @@ export function playerMenuOverview(projection={},actor,clock=null,options={}){
  for(const x of projection.relationships||[])if(own(x.a,actor)&&typeof x.b==='string')contacts.add(x.b);
  for(const x of projection.worldFacts||[])if(x.interaction_version===1&&x.actors?.includes(actor))for(const name of x.actors)if(name!==actor)contacts.add(name);
  const bounded=rows=>({records:rows.slice(0,30),total:rows.length,omitted:Math.max(0,rows.length-30)});
- return {actor,clock,social_dashboard:socialDashboard(projection,actor,options.scenes),home_systems:homeView(projection,actor,clock),work_systems:workView(projection,actor,clock),travel:travelServiceView(projection,actor),opportunities:playerOpportunities(projection,actor,{...options,clock}),life:playerLifeView(projection,actor,{...options,clock}),character:character?{name:actor,fields}:null,inventory:bounded(held.map(x=>({id:x.item_id,name:x.name??null,source:sourceOf(x)}))),balances:bounded((projection.balances||[]).filter(x=>own(x.actor,actor)).map(x=>({currency:x.currency,known:x.known===true,balance:x.known===true?x.balance:null,source:sourceOf(x)}))),tasks:bounded(goals),skills:bounded(skills),contacts:bounded([...contacts].map(name=>({name}))),policy:'Recorded observations only. Last location and appearance may be stale; missing fields are unknown. Contacts are not a guarantee of availability. No hidden NPC plans or incoming feelings.'};
+ const overview={actor,clock,social_dashboard:socialDashboard(projection,actor,options.scenes),home_systems:homeView(projection,actor,clock),work_systems:workView(projection,actor,clock),travel:travelServiceView(projection,actor),opportunities:playerOpportunities(projection,actor,{...options,clock}),life:playerLifeView(projection,actor,{...options,clock}),character:character?{name:actor,fields}:null,inventory:bounded(held.map(x=>({id:x.item_id,name:x.name??null,source:sourceOf(x)}))),balances:bounded((projection.balances||[]).filter(x=>own(x.actor,actor)).map(x=>({currency:x.currency,known:x.known===true,balance:x.known===true?x.balance:null,source:sourceOf(x)}))),tasks:bounded(goals),skills:bounded(skills),contacts:bounded([...contacts].map(name=>({name}))),policy:'Recorded observations only. Last location and appearance may be stale; missing fields are unknown. Contacts are not a guarantee of availability. No hidden NPC plans or incoming feelings.'};
+ return {...overview,dashboard:dashboardSummary(overview)};
 }
 export function menuActionIntent(input,overview){
  const action=input?.action;
