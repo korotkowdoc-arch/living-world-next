@@ -151,7 +151,11 @@ async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
  const cached=!!result;
  if(!result){
   const reader=createAncestryReader(head,{maxScenes});
-  for(let page=reader.next();page;page=reader.next())reader.accept(await rpc(env,token,'nw_active_memory_page',{p_world_id:world.id,p_expected_head:head,p_limit:page.limit,p_offset:page.offset}));
+  const prior=ancestryCache.recent(scope,world.id,world.active_branch_id,maxScenes);
+  for(let page=reader.next();page;page=reader.next()){
+   reader.accept(await rpc(env,token,'nw_active_memory_page',{p_world_id:world.id,p_expected_head:head,p_limit:page.limit,p_offset:page.offset}));
+   if(prior&&reader.reusePrefix(prior.scenes))break;
+  }
   result=reader.result();
  }
  if(head!=null){
