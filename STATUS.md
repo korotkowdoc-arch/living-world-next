@@ -2,7 +2,7 @@
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
 ## v0.53.0 — трекер заданий и автоматическая синхронизация меню
-- [x] Candidate: project accepted plan history as current tasks and archive; stable IDs, next step, obstacle, deadline, source links, no fabricated percentages. Include task transition IDs in scene receipt and plan context in next-turn candidates. Extend narrator extraction guidance to update touched records rather than create duplicates.
+- [x] Candidate: project accepted plan history as current tasks and archive; stable IDs, next step, obstacle, deadline, source links, no fabricated percentages. Include task transition IDs, stable record identities and affected sections in scene receipt and plan context in next-turn candidates. Extend narrator extraction guidance to update touched records rather than create duplicates.
 - [x] Candidate: safe auto-refresh of open read-only menu after new cloud scene; preserves section, refuses dirty forms, dialogs, settings and branch changes; polling every 15 seconds. Regression tests added.
 - [ ] CI, merge, deployment and live gameplay verification. No new canonical milestone/checklist schema yet; existing plan transitions are the tracker.
 

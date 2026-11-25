@@ -78,13 +78,39 @@ const cuePatterns={
  character:/\b(?:changed clothes|wore|hungry|tired|appearance)\b|переодел|устал|голод|внешност|одежд/iu,
  goals:/\b(?:decided|planned|intended|goal)\b|решил|намерен|запланир|цель/iu
 };
+/** Identify the records a typed event targets. This is not a second write path:
+ * the existing canonical fold performs the operation; the receipt exposes its identity. */
+export function eventRecordTargets(event){
+ if(!event||eventRoute(event).layer!=='canonical_event')return [];
+ const e=normalizeLegacyKnowledge(event),out=[];
+ const add=(registry,identity,operation,fields=[])=>{
+  if(identity.every(v=>typeof v==='string'&&v.trim()))out.push({registry,identity,operation,fields});
+ };
+ const fields=p=>p&&typeof p==='object'&&!Array.isArray(p)?Object.keys(p):[];
+ switch(e.type){
+ case 'character':add('people',[e.name],'patch',fields(e.state_patch));break;
+ case 'relationship':add('relationships',[e.a,e.b],'patch',fields(e.relationship_patch));break;
+ case 'knowledge':add('knowledge',[e.actor,e.knowledge_version===1?'topic':'legacy',e.knowledge_version===1?e.topic_id:e.fact],'upsert',['fact','status']);break;
+ case 'money':add('balances',[e.actor,e.currency],e.operation||'adjust',['balance']);if(e.operation==='transfer')add('balances',[e.counterparty,e.currency],'transfer_counterparty',['balance']);break;
+ case 'item':add('items',[e.item_id],e.action||'change',['custody']);break;
+ case 'commitment':add('obligations',[e.commitment_id],'upsert',['status','description','due_at']);break;
+ case 'plan':add('plans',[e.actor,e.plan_id],e.action,fields(e.plan_patch));break;
+ case 'world':if(typeof e.key==='string'&&e.key.trim())add('worldFacts',[e.key],'upsert',['status']);else if(e.interaction_version===1)add('relationship_history',[e.id],'append');break;
+ case 'offscreen':add('offscreen',[e.id],'append');break;
+ }
+ return out;
+}
 export function sceneSaveAudit(body,events=[]){
- const rows=Array.isArray(events)?events:[],by=new Map(),unclassified=[],semantic=[],updates=[];
+ const rows=Array.isArray(events)?events:[],by=new Map(),unclassified=[],semantic=[],updates=[],recordTargets=[],affected=new Map();
  for(const e of rows){
   const route=eventRoute(e);
   if(route.layer==='interpretive_memory'){semantic.push(e);continue;}
   if(!by.has(route.domain))by.set(route.domain,{domain:route.domain,destinations:route.destinations,count:0,event_ids:[]});
   const r=by.get(route.domain);r.count++;if(r.event_ids.length<10)r.event_ids.push(e?.id??null);
+  if(route.layer==='canonical_event'){
+   for(const section of route.destinations)affected.set(section,(affected.get(section)||0)+1);
+   for(const target of eventRecordTargets(e))recordTargets.push({...target,event_id:e.id,domain:route.domain});
+  }
   if(route.layer==='canonical_event'&&e.type==='plan')updates.push({actor:e.actor,plan_id:e.plan_id,action:e.action,event_id:e.id,destinations:route.destinations,changed_fields:Object.keys(e.plan_patch||{}),performed_event_id:e.performed_event_id??null});
   if(route.layer==='unclassified_event'||route.layer==='invalid_memory')unclassified.push(e?.id??null);
  }
@@ -125,8 +151,8 @@ export function sceneSaveAudit(body,events=[]){
  const cues=[],groups=[...cueGroups.values()];const totalCues=groups.reduce((n,g)=>n+g.length,0);
  for(let i=0;cues.length<12&&i<segments.length;i++)for(const group of groups){if(cues.length>=12)break;if(group[i])cues.push(group[i]);}
  return {event_count:rows.length,canonical_candidates:rows.length-semantic.length,interpretive_memory_count:semantic.length,routes:[...by.values()],unclassified_event_ids:unclassified.slice(0,20),unclassified_count:unclassified.length,
-  task_updates:updates.slice(0,40),omitted_task_updates:Math.max(0,updates.length-40),review_cues:cues,omitted_cues:Math.max(0,totalCues-cues.length),source_segments:segments.length,
-  policy:'Routing reports intended destinations, not proof that an event is true or every detail was extracted. Review lexical cues in context; do not manufacture a transition. Supplemental memory is not canonical knowledge.'};
+  record_updates:recordTargets.slice(0,100),omitted_record_updates:Math.max(0,recordTargets.length-100),affected_sections:[...affected].map(([section,event_count])=>({section,event_count})),task_updates:updates.slice(0,40),omitted_task_updates:Math.max(0,updates.length-40),review_cues:cues,omitted_cues:Math.max(0,totalCues-cues.length),source_segments:segments.length,
+  policy:'Routing reports intended destinations and record identities, not a second write, proof that every event is true or every detail was extracted. Review lexical cues in context; do not manufacture a transition. Supplemental memory is not canonical knowledge.'};
 }
 export function sceneMemoryDuplicateKey(e){return JSON.stringify([e.memory_kind,e.domain,e.actor??null,[...(e.actors||[])].sort(),e.place??null,e.summary,e.evidence]);}
 /** Recall explicitly saved semantic notes, not generated summaries of old prose.
