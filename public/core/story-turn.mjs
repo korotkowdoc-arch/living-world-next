@@ -6,6 +6,7 @@ import {routineWindow} from './living-world.mjs';
 import {characterAge} from './character-state.mjs';
 import {familyDutyWindow,paymentScheduleWindow} from './world-dynamics.mjs';
 import {storyDrivers} from './story-drivers.mjs';
+import {menuPreferences} from './game-menu.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 const closed=new Set(['completed','complete','abandoned','resolved','ended','cancelled','canceled','decided','closed','fulfilled','done']);
 const clip=v=>typeof v==='string'?v.slice(0,300):null;
@@ -176,7 +177,11 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(before?.status==='calendar_derived'&&after?.status==='calendar_derived'&&after.years>before.years)
    add('age_milestone',{actor:person.name,title:'День рождения: '+person.name,source:after.source,status:'calendar_derived'},{timing:'reached_requires_story',previous_age:before.years,age_years:after.years,birthdays_crossed:after.years-before.years});
  }
- const rank=x=>x.timing==='reached_requires_story'?0:x.focus_match?1:x.timing==='future'?3:2;
+ const preferences=menuPreferences(directives,opts.branchId);
+ const priorityIndex=x=>x.focus_match?preferences.priorities.findIndex(p=>p===x.title):-1;
+ for(const x of all){const i=priorityIndex(x);if(i>=0)x.player_priority=i+1;}
+ // Due events remain first; exact player focus elevates matching opportunities, never executes them.
+ const rank=x=>x.timing==='reached_requires_story'?0:x.player_priority?0.5+x.player_priority/10:x.focus_match?1:x.timing==='future'?3:2;
  for(const xs of byKind.values())xs.sort((a,b)=>rank(a)-rank(b)||(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
  const matches=x=>scope==='all'||(scope==='focus'?x.focus_match:!x.focus_match);
  const categories=[...byKind.values()].map(xs=>xs.filter(matches)).filter(xs=>xs.length).sort((a,b)=>rank(a[0])-rank(b[0]));
@@ -259,7 +264,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(clock&&proposed&&!comparable)warnings.push('Точность дат различается: длительность перехода неизвестна.');
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
-  memory_complete:opts.complete!==false,focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
+  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
   relationship_context,relationship_context_omitted,life_context,actor_context,actor_context_omitted:omittedActors.size,
   drivers:storyDrivers(projection,directives,{max:8,actors:[...focus]}),warnings,
   workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
