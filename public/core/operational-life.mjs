@@ -48,13 +48,14 @@ export function operationalIndex(projection={}, {complete=true}={}){
   if(r.player_life_version===1&&r.life_kind==='program_enrollment'&&['active','completed'].includes(r.status)){
    const program=get(records,'study_program',r.program_id),enrollment=get(records,'enrollment',r.enrollment_id);
    if(!program||!enrollment||enrollment.actor!==r.actor||enrollment.institution_id!==program.institution_id||!Array.isArray(program.modules))continue;
-   const results=academicResults.get(r.record_id)||[],exams=assessments.get(r.enrollment_id)||[];
+   const results=academicResults.get(r.record_id)||[],exams=(assessments.get(r.enrollment_id)||[]).filter(x=>x.actor===r.actor);
+   const linked=new Set(results.map(x=>x.assessment_id)),titleCounts=new Map();for(const m of program.modules)titleCounts.set(m.title,(titleCounts.get(m.title)||0)+1);
    const modules=program.modules.map(m=>{
-    const passed=results.some(x=>x.module_id===m.id&&x.status==='passed');
-    const linked=new Set(results.filter(x=>x.module_id===m.id).map(x=>x.assessment_id));
-    const completed=exams.find(x=>x.title===m.title&&['passed','failed'].includes(x.status)&&!linked.has(x.record_id));
-    const scheduled=exams.find(x=>x.title===m.title&&x.status==='scheduled');
-    return {id:m.id,title:m.title,status:passed?'passed':completed?'result_pending':scheduled?'scheduled':'not_recorded',assessment_id:passed?null:completed?.record_id??scheduled?.record_id??null,source:completed?.source??scheduled?.source??null};
+    const passed=results.find(x=>x.module_id===m.id&&x.status==='passed');
+    const ambiguous=titleCounts.get(m.title)>1;
+    const completed=!ambiguous&&exams.find(x=>x.title===m.title&&['passed','failed'].includes(x.status)&&!linked.has(x.record_id));
+    const scheduled=!ambiguous&&exams.find(x=>x.title===m.title&&x.status==='scheduled');
+    return {id:m.id,title:m.title,status:passed?'passed':ambiguous?'module_link_requires_review':completed?'result_pending':scheduled?'scheduled':'not_recorded',assessment_id:passed?.assessment_id??completed?.record_id??scheduled?.record_id??null,source:passed?.source??completed?.source??scheduled?.source??null};
    });
    const view={id:r.record_id,program_id:program.record_id,title:clean(program.title),actor:r.actor,organizer:program.actor,status:r.status,modules,passed:modules.filter(m=>m.status==='passed').length,total_modules:modules.length,source:r.source};
    push(programs,r.actor,view);

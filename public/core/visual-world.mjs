@@ -24,6 +24,7 @@ export function visualSubjects(overview,sceneId){
  for(const c of overview.world_depth?.social?.nodes||[])if(c.name!==actor)add('character',c.name,c.name);
  for(const x of overview.inventory?.records||[])add('item',x.id,x.name||x.id);
  for(const x of overview.property_systems?.estates?.records||[])add('place',x.id,x.title);
+ for(const x of overview.market_home?.rooms?.records||[])add('place','room:'+x.id,x.label+' — '+(x.title||'Жильё'),[x.purpose,x.description,x.walls,x.flooring,x.lighting].filter(Boolean).join('; '));
  for(const x of overview.world_depth?.places?.places?.records||[]){const label=x.title||x.place||x.name;if(typeof label==='string'&&!/^(без постоянного жилья|временный оплаченный ночлег|вторая оплаченная ночь)/iu.test(label)&&!/оплачена; пробный срок/iu.test(label))add('place',x.id||x.place||x.name,label);}
  for(const k of ['library','newspapers','documents','archives','authored','notebooks','catalogues','medical_records','bank_records','gallery'])for(const x of overview.documents?.[k]?.records||[]){add('document',x.id,x.title,x.summary);for(const ch of x.contents||[])if(ch.read)add('chapter',x.id+':'+ch.id,x.title+' — '+ch.title);}
  for(const x of overview.magic_system?.society?.ecology?.species?.records||[])add('creature',x.id,x.title||x.name,x.description);

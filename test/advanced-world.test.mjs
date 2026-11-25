@@ -69,3 +69,15 @@ test('timeline pagination returns distinct pages and exact totals',()=>{
  assert.equal(first.total,55);assert.equal(first.next_offset,24);assert.equal(second.next_offset,48);
  assert.notEqual(first.records[0].value,second.records[0].value);
 });
+
+test('an active news subscription motivates reception but never reveals unseen edition to player',()=>{
+ const subscription=adv('subscription','sub',{actor:'Hero',channel_id:'paper',status:'active'});
+ const history=[scene('s1',[channel,edition,subscription])],p=replay(history);
+ const idx=advancedIndex(history,p),candidate=idx.opportunities().find(x=>x.kind==='news_subscription_review');
+ assert.equal(candidate.row.actor,'Hero');assert.equal(candidate.info.news_subscription.edition_id,'first');
+ assert.equal(idx.view('Hero').channels.editions.total,0);
+ assert.doesNotMatch(JSON.stringify(idx.view('Hero')),/Secret headline|Unseen text/);
+ const learned={id:'read',type:'knowledge',knowledge_version:1,actor:'Hero',topic_id:'gazette_first',status:'knows',fact:'Read actual report',channel:'Gazette',evidence:'Confirmed event.'};
+ const next=[...history,scene('s2',[learned])];
+ assert.equal(advancedIndex(next,replay(next)).opportunities().filter(x=>x.kind==='news_subscription_review').length,0);
+});

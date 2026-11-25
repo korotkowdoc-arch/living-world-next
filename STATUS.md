@@ -1,10 +1,15 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## v0.45.0 — Living Civilization: координация систем (candidate)
+## v0.45.1 — комнаты и непрерывность (candidate)
+- [x] Room observations with stable area identity, purpose, walls/flooring/lighting, current title epoch, own-room menu, effective furniture, known condition, and image subjects; no implicit repairs or spending. Reconfirm after ownership changes. No new MCP tool or SQL schema.
+- [x] Explicit tests of subscription visibility and academic assessment identity; ambiguous same-title modules no longer auto-match.
+- [ ] Combined CI, live deployment and gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
+
+## v0.45.0 — Living Civilization: координация систем
 - [x] Narrator-only coordination of overlapping canonical lessons, assessments, shifts and appointments, including teacher participation but not fictitious employer attendance. Bounded sweep, exact windows, no automatic action.
 - [x] Aggregate unreviewed scheduled payments per payer/currency against recorded balance, with explicit unknowns and no debt or transfer assumption. Segment-scoped due queue with canonical sources, exact clock and pending-choice gate.
-- [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; Node CI 45650053662 and PostgreSQL CI 45650053799 passed before integration; combined CI/live verification pending. No new database schema or tool discovery required.
+- [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; Node CI 45650053662 and PostgreSQL CI 45650053799 passed before integration; combined Node CI 45655104215 and SQL CI 45655104294 passed; PR #38 merged (f26aea2). Live verification pending. No new database schema or tool discovery required.
 - [x] Candidate ordering now respects global urgency tiers with fair category rounds; NPC initiative rotation accounts for accepted offscreen participation; bounded old-source callback anchors match exact active-ancestry participants/place/record or words. All remain proposals, not simulation outcomes. Regression coverage added.
 - [x] Operational queues for actual submitted assignments, module/qualification review, property condition/current title, aggregate completed unpaid shifts and accepted service/production resource exposure. Own dashboard notifications and education/work/property menu data. Active subscriptions can motivate seeking issues, never imply delivery. Tests added; combined CI pending.
 - [ ] Continue autonomous event resolution, institutional life, housing, media, deeper university simulation and full private asset backups. Existing menu settings and NPC psychology remain canonical; do not duplicate them.
