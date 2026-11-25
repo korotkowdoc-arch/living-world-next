@@ -983,4 +983,23 @@ begin
  if has_function_privilege('authenticated','public.nw_room_layout_step(jsonb,jsonb)','EXECUTE') then raise exception 'Private layout guard exposed';end if;
 end $floorplan$;
 reset role;
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+do $scene_memory$
+declare wid uuid;bid uuid;h uuid;bad boolean;body text:='Anna said she intended to travel tomorrow.';
+n jsonb:='{"id":"note","type":"world","scene_memory_version":1,"memory_kind":"intention","domain":"travel","actors":["Anna"],"actor":"Anna","summary":"Anna intends to travel","evidence":"Anna said she intended to travel tomorrow."}';
+p jsonb:='{"id":"plan","type":"plan","actor":"Anna","plan_id":"p","action":"start","goal":"Travel","evidence":"Anna said she intended to travel tomorrow."}';
+begin
+ wid:=public.nw_create_world('Scene memory rollback','Synthetic test','2000-01-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(p,n),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n||'{"key":"player-life:journey:fake"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Mixed state memory accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n-'actor'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Missing speaker accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n,n||'{"id":"duplicate"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Duplicate note accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n,p||'{"action":"complete","performed_event_id":"note"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Note completed plan';end if;
+ if (select head_scene_id from public.nw_branches where id=bid) is distinct from h then raise exception 'Invalid note changed head';end if;
+ if has_function_privilege('authenticated','public.nw_assert_scene_memory_append(jsonb)','EXECUTE') then raise exception 'Private note guard exposed';end if;
+end $scene_memory$;
+reset role;
 rollback;

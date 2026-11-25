@@ -1,3 +1,4 @@
+import {sceneSaveAudit,isSceneMemory} from './scene-memory-routing.mjs';
 /** Read exact historical passages for narrator-assisted annotation. Never infer facts
  * from word patterns and never mutate the original scene. Offsets are UTF-16 indices.
  */
@@ -44,7 +45,7 @@ export function memoryReviewPage(rows,{head,offset=0,limit=20}={}){
  if(rows.length&&expected!==null&&rows.length<limit+1+Number(offset>0))throw Error('Incomplete history page');
  const page=rows.slice(Number(offset>0),limit+Number(offset>0));
  const items=page.map(s=>({scene_id:s.id,world_time:s.world_time??null,event_count:Array.isArray(s.events)?s.events.length:0,
-  annotation_state:s.events?.length?'has_structured_events':'no_structured_events'}));
+  annotation_state:s.events?.some(e=>!isSceneMemory(e))?'has_structured_events':'no_structured_events',interpretive_memory_count:(s.events||[]).filter(isSceneMemory).length,domain_routing:sceneSaveAudit('',s.events||[]).routes.map(r=>({domain:r.domain,count:r.count}))}));
  return {items,next_offset:rows.length>limit+Number(offset>0)?offset+limit:null,policy:'Review candidates only. Event count does not prove semantic coverage; notes may already exist. Read exact source, distinguish claims and facts, and save derived notes separately if enabled.'};
 }
 /** Literal coverage is a diagnostic, not a semantic classifier or required quota. */

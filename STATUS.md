@@ -1,10 +1,15 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.49.0 — смысловое сохранение и адресная память (candidate)
+- [x] Scene extraction protocol: full-scene semantic extraction by narrator, existing canonical domain schemas, supplemental isolated evidence-backed scene memory for claims/intentions/descriptions/uncertainty. Receipt and preflight domain routing, unclassified records and lexical review cues (not facts), coverage counts, focused old-source recall by actors/place/topic. No external AI API and no automatic inference into canon. Atomic note events stored with scene; no state or plan-completion effects.
+- [x] SQL append guard for isolated note shape, duplicate note detection and prohibition as plan completion; JS/SQL regression tests. Existing saved scenes unchanged; historical annotation still separate and noncanonical.
+- [ ] Final CI, production migration, live and gameplay validation; old-source semantic review and verified historical backfill remain open.
+
 ## v0.48.0 — планы жилья и управление комнатами
 - [x] Canonical measured room rectangles with floors, non-overlap, explicit door/passage/stair connections, current access/title epoch, no generated geometry. Own-room interactive floorplan and pinned room actions, with missing measurements visibly unknown. Migration 033 extends private SQL fold and tests. No real construction or expenditure without played evidence.
 - [x] PR #42 merged (16d3da6); Node CI 45664567283 and SQL CI 45664567319 passed. Migration 033 installed; production owner-RPC rollback assertions passed, private guard confirmed, two worlds and 23 scenes unchanged.
-- [ ] Published MCP floorplan field not yet observed; device and gameplay verification, structural renovation projects and landlord authorization remain open.
+- [ ] Published MCP floorplan field confirmed with 23 scenes and same pending choice. Device and gameplay verification, structural renovation projects and landlord authorization remain open.
 
 ## v0.47.0 — студенческая жизнь, спорт и культура
 - [x] Canonical community events, invitations/RSVP/attendance, distinct results and communicated reports. Capacity, recorded team membership, immutable schedule, confirmed scores and actor-specific partial match statistics. Integrated with communities/education, calendar, NPC opportunities, menu intents, release and cache version. No automatic attendance, payment or invented scores.

@@ -1,3 +1,4 @@
+import {isSceneMemory,sceneMemoryError,sceneMemoryDuplicateKey} from './scene-memory-routing.mjs';
 import {wealthIndex,isWealth,wealthShapeError} from './wealth-world.mjs';
 import {documentIndex,isDocument,documentShapeError} from './documents-world.mjs';
 import {isMagicSociety} from './magic-society.mjs';
@@ -43,7 +44,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
   if(typeof body==='string'&&body.length>200000)errors.push('Сцена длиннее 200 000 символов.');
   if(!Array.isArray(events)||events.length>100)errors.push('Слишком много событий или неверный формат.');
   const locks=new Map(extractLocks(directives).map(x=>[pairKey(x.a,x.b),x]));
-  const ids=new Set(),paymentTransfers=new Set(),usedStock=new Set();let pendingChoices=0,answeredChoices=0;
+  const ids=new Set(),paymentTransfers=new Set(),usedStock=new Set(),memoryKeys=new Set();let pendingChoices=0,answeredChoices=0;
   for(const [i,event] of (Array.isArray(events)?events:[]).entries()){
     const prefix=`Событие ${i+1}`;
     if(!event||typeof event!=='object'||Array.isArray(event)){errors.push(`${prefix}: неверный объект.`);continue;}
@@ -52,6 +53,11 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(!asText(event.id)||ids.has(event.id))errors.push(`${prefix}: требуется уникальный ID.`);
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
+    if(isSceneMemory(event)){
+      const error=sceneMemoryError(event);if(error)errors.push(prefix+': '+error);
+      else {const k=sceneMemoryDuplicateKey(event);if(memoryKeys.has(k))errors.push(prefix+': duplicate interpretive memory');memoryKeys.add(k);}
+      continue;
+    }
     const wealthShape=wealthShapeError(event);if(wealthShape)errors.push(prefix+': '+wealthShape);
     const docShape=documentShapeError(event);if(docShape)errors.push(prefix+': '+docShape);
     const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
@@ -114,7 +120,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
           errors.push(prefix+': неверное изменение цели, срока, следующего шага или препятствия.');
       }
       if(event.action==='complete'){
-        const actual=Array.isArray(events)&&events.find(x=>x?.id===event.performed_event_id&&x!==event&&['world','offscreen'].includes(x.type)&&x.dynamics_kind!=='player_choice');
+        const actual=Array.isArray(events)&&events.find(x=>x?.id===event.performed_event_id&&x!==event&&['world','offscreen'].includes(x.type)&&x.dynamics_kind!=='player_choice'&&!isSceneMemory(x));
         if(!actual)errors.push(`${prefix}: завершённый план требует ID доказанного действия world/offscreen из этой сцены.`);
       }
     }
