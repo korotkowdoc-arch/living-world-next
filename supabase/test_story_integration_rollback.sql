@@ -624,4 +624,46 @@ begin
  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-02 10:00',jsonb_build_array(delivery,pay,closed,settled),0);
  if (select count(*) from public.nw_scenes where world_id=wid)<>5 then raise exception 'Rejected scene persisted';end if;
 end $curriculum$;
+-- Household consent, exact contributions, recorded requirements and care.
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $household$
+declare wid uuid; bid uuid; h uuid; bad boolean; body text:='Anna recorded an event.';
+ common jsonb:='{"type":"world","player_life_version":1,"evidence":"Anna recorded an event."}';
+ estate jsonb:='{"id":"estate","life_kind":"estate","record_id":"home","key":"player-life:estate:home","actor":"Lia","title":"Home","place":"London","estate_kind":"house","status":"owned"}';
+ household jsonb:='{"id":"household","life_kind":"household","record_id":"home","key":"player-life:household:home","actor":"Lia","title":"Home","home_kind":"estate","home_id":"home","status":"active"}';
+ member jsonb:='{"id":"member","life_kind":"household_member","record_id":"anna","key":"player-life:household_member:anna","actor":"Anna","host":"Lia","household_id":"home","status":"invited"}';
+ contribution jsonb:='{"id":"contribution","life_kind":"household_contribution","record_id":"rent","key":"player-life:household_contribution:rent","actor":"Anna","host":"Lia","household_id":"home","title":"Rent share","amount":20,"currency":"GBP","transfer_event_id":"pay","status":"recorded"}';
+ cash jsonb:='{"id":"cash","type":"money","actor":"Anna","currency":"GBP","operation":"reconcile","delta":0,"balance":100,"evidence":"Anna recorded an event."}';
+ pay jsonb:='{"id":"pay","type":"money","actor":"Anna","counterparty":"Lia","currency":"GBP","operation":"transfer","delta":-20,"evidence":"Anna recorded an event."}';
+ sale jsonb:='{"id":"sale","life_kind":"estate_sale","record_id":"sale","key":"player-life:estate_sale:sale","actor":"Lia","buyer":"Other","estate_id":"home","amount":0,"currency":"GBP","status":"offered"}';
+ job jsonb:='{"id":"job","type":"world","dynamics_version":1,"dynamics_kind":"employment","record_id":"job","key":"dynamics:employment:job","actor":"Anna","counterparty":"Employer","title":"Clerk","amount":5,"currency":"GBP","pay_period":"hour","status":"offered","description":"Work","evidence":"Anna recorded an event."}';
+ req jsonb:='{"id":"req","life_kind":"job_requirement","record_id":"job","key":"player-life:job_requirement:job","actor":"Employer","employment_id":"job","skills":[{"name":"Accounting","level":"competent"}],"status":"active"}';
+ skill jsonb:='{"id":"skill","type":"world","growth_version":1,"growth_kind":"skill","record_id":"accounting","key":"growth:skill:accounting","actor":"Anna","name":"Accounting","status":"learning","description":"Learning","evidence":"Anna recorded an event."}';
+ episode jsonb:='{"id":"episode","life_kind":"health_episode","record_id":"cold","key":"player-life:health_episode:cold","actor":"Anna","title":"Cold","health_kind":"illness","severity":"moderate","status":"observed","description":"Symptoms"}';
+ service jsonb:='{"id":"service","life_kind":"venue_service","record_id":"care","key":"player-life:venue_service:care","actor":"Doctor","place":"Clinic","title":"Visit","category":"health","amount":0,"currency":"GBP","duration_minutes":20,"status":"available"}';
+ visit jsonb:='{"id":"visit","life_kind":"service_visit","record_id":"care","key":"player-life:service_visit:care","actor":"Anna","provider":"Doctor","service_id":"care","place":"Clinic","title":"Visit","amount":0,"currency":"GBP","status":"accepted"}';
+ care jsonb:='{"id":"care","life_kind":"care_record","record_id":"care","key":"player-life:care_record:care","actor":"Anna","episode_id":"cold","visit_id":"care","description":"Consulted","status":"recorded"}';
+begin
+ wid:=public.nw_create_world('Household test','Synthetic family and career','1994-08-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ estate:=estate||common;household:=household||common;member:=member||common;contribution:=contribution||common;sale:=sale||common;req:=req||common;episode:=episode||common;service:=service||common;visit:=visit||common;care:=care||common;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(estate,household,member,cash,job,req,skill,episode,service,visit),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(pay,contribution),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Unjoined member contributed';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(job||'{"status":"active"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Unqualified applicant hired';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(care),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Care before completed service';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(member||'{"status":"joined","outcome":"Agreed"}',skill||'{"status":"competent"}',job||'{"status":"active"}',visit||'{"status":"completed","outcome":"Consulted"}',care),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(contribution),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Contribution without payment';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(pay,contribution,sale),0);
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(sale||'{"status":"accepted"}'),0);
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(sale||'{"status":"settled","outcome":"Transferred"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(pay,contribution||'{"id":"again","record_id":"again","key":"player-life:household_contribution:again"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Contribution to inaccessible household';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(member||'{"status":"left","outcome":"Moved away"}',skill||'{"status":"limited"}',job||'{"status":"active"}'),0);
+ if (select count(*) from public.nw_scenes where world_id=wid)<>6 then raise exception 'Rejected scene persisted';end if;
+end $household$;
 rollback;
