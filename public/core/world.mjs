@@ -47,6 +47,7 @@ export function buildWorldDraft(raw) {
 
 export function promptForNarrator({world, directives = [], history = [], projection = null, timeContext = null}={}) {
   if (!world?.seed) throw new Error('Нет описания выбранного мира.');
+  let memoryIndex=-1,sceneIndex=-1;
   const blocks = [
     'Ты — рассказчик интерактивного причинного мира. Художественный текст — на русском от третьего лица.',
     'ОСНОВА МИРА:\n' + world.seed,
@@ -59,6 +60,7 @@ export function promptForNarrator({world, directives = [], history = [], project
   if(locks.length)blocks.push('ЖЁСТКИЕ ОГРАНИЧЕНИЯ ОТНОШЕНИЙ — НЕ ПЕРЕОСМЫСЛЯЙ:\n' + locks.map(x=>`${x.a} ↔ ${x.b}: ${x.forbid_reconciliation?'нет примирения/дружбы; ':''}${x.forbid_respect?'нет взаимного уважения; ':''}совместная опасность/помощь не меняет эту установку`).join('\n'));
   if (projection){
     const sample=limitedNarratorMemory(projection,{maxChars:12000,maxEntriesPerCategory:10});
+    memoryIndex=blocks.length;
     blocks.push('ДОКАЗАТЕЛЬНАЯ ПАМЯТЬ ДЛЯ СЛЕДУЮЩЕЙ СЦЕНЫ (выборка, не исчерпывающий архив):\n' + JSON.stringify(sample));
     const omitted=Object.entries(sample.omitted||{});
     if(omitted.length)blocks.push('ПРОПУЩЕННЫЕ ЗАПИСИ ДЛИННОЙ ПАМЯТИ (не значит, что событий не было): '+omitted.map(([key,count])=>key+': '+count).join('; ')+'. Запроси первоисточники через MCP перед утверждением фактов.');
@@ -70,7 +72,7 @@ export function promptForNarrator({world, directives = [], history = [], project
   }
   if (projection) blocks.push(storyDriverPrompt(storyDrivers(projection,active)));
   if (timeContext || (projection&&history.length))blocks.push(agendaNarrationGuidance(timeContext||recordedWorldAgenda(history,projection)));
-  if (history.length) blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ (большие тексты показываются фрагментами):\n' + history.slice(-3).map(x=>narratorSceneExcerpt(x,{maxChars:Math.floor(9000/Math.min(3,history.length))})).join('\n\n'));
+  if (history.length) {sceneIndex=blocks.length;blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ (большие тексты показываются фрагментами):\n' + history.slice(-3).map(x=>narratorSceneExcerpt(x,{maxChars:Math.floor(9000/Math.min(3,history.length))})).join('\n\n'));}
   if(history.length>3)blocks.push('Показаны последние три сцены; более ранние доступны в хронологии и поиске MCP.');
   blocks.push('ПЕРЕД ВАЖНОЙ СЦЕНОЙ В ДЛИННОЙ ИСТОРИИ: используй get_scene_context с именами участвующих героев и короткими словами, связывающими эпизод с прошлым. Он возвращает только релевантную доказательную выборку и отдельные буквальные цитаты. Не выдавай тайну одного героя за знание другого; прежде чем опереться на старое событие, открой его сцену. Не вызывай лишние инструменты для каждой обычной фразы.');
   blocks.push('ЖИЗНЬ МИРА: используй get_living_world для подтверждённых мест, привычного распорядка NPC и событий вне кадра. Когда сцена реально устанавливает место, запиши world event с world_record_version=1, record_kind=place, record_id (устойчивый ID), key=place:<ID>, name, status=open/closed/restricted/damaged/destroyed/unknown, при наличии description, access, parent_place. Для явно известного распорядка: record_kind=routine, record_id, key=routine:<ID>, actor, activity, place (точное имя места), status=active/paused/ended, weekdays (1–7, понедельник=1), start/end HH:MM. Обновление использует тот же ключ и полный актуальный набор полей. Расписание даёт повод для самостоятельного действия, но не доказывает присутствие; не телепортируй NPC и не превращай намерения в события. Место может меняться, закрываться или разрушаться. Для действительно показанного события вне кадра записывай offscreen с actor, при наличии actors, place и description. Для разбора давних сцен get_annotation_passages возвращает точные фрагменты, не новые факты. Не требуй ручных анкет.');
@@ -89,7 +91,28 @@ export function promptForNarrator({world, directives = [], history = [], project
   blocks.push('ИНТЕРАКТИВНАЯ ИСТОРИЯ: игрок управляет главным героем, рассказчик — NPC и миром. Цель обычного эпизода 1500–2500 слов, крупного до 4000 и больше по ситуации; это ориентир, не минимум, не растягивай текст. Останавливайся до значимого решения игрока (не после него); обычные действия, уже разрешённые игроком, могут быть описаны без отдельных вопросов. Не выбирай за героя реплики, согласие, важные поступки или чувства. Дай 3–5 естественных вариантов без спойлеров плюс свободный ответ; при необходимости 2 варианта. Отдельный интерактивный интерфейс ChatGPT если доступен, иначе номера и свободный текст. Не включай меню, технические ID и ещё не сыгранные действия в художественный body. Сохраняй конец эпизода как world event dynamics_version=1, dynamics_kind=player_choice, record_id=новый ID, key=dynamics:player_choice:<ID>, actor, status=pending, description, question, options=[{id,text}], evidence=точная последняя фраза body. Свободный вариант custom предоставляется автоматически. Получив фактический ответ игрока, сверяй сохранённый выбор через validate_player_choice (read-only), при устаревшем head/ветке/правилах не продолжай до обновления. В следующей сохранённой сцене первое событие player_choice с тем же key/record_id/actor, status=answered, description, selected_option, action_text и точной цитатой реально описанной попытки/реплики. Выбранное намерение не гарантирует успех. Не сохраняй ответ до сообщения пользователя. При свободном обычном сообщении с действием героя передай selected_option=custom и точный текст намерения; не считай обсуждение или вопрос о механике выбором. После сохранения pending используй полученный scene_id как expected_head для кнопок. При доступном интерактивном интерфейсе нажатие отправляет новое сообщение с choice_id, branch_id, world_id, expected_head, expected_rules_version, selected_option и при необходимости action_text. Без интерактивного интерфейса достаточно номера или собственного текста; используй текущий сохранённый выбор. В новом чате восстанови pending из get_world_context.player_choice до начала следующей сцены. Затем продолжай цельный эпизод, новый pending при необходимости ставь последним. Если autosave отключён, выбор в чате возможен, но не называй его сохранённым.');
   blocks.push('РИТМ И ГОЛОС: продолжай начатую сцену столько, сколько диктует её внутреннее действие. Не заменяй эмоциональную реакцию объяснением морали. Различай словарь, манеру речи и цели персонажей; они могут молчать, перебивать, спорить, шутить, ошибаться, уходить, отказываться и менять решение по обстоятельствам. Не повторяй одинаковые завершающие вопросы и клише. Не форсируй смену темы или жанра. Сохраняй решения игрока и границы участников, а не ритуальные реплики.');
   blocks.push('Не вводи новые подтверждённые факты без сцены. Создавай важных новых NPC постепенно, когда того требует история. Не сглаживай заранее установленные антагонизмы. Не требуй выбора после каждого абзаца. Если точных сведений нет, сохраняй неопределённость.');
-  return blocks.join('\n\n');
+  // Reserve fixed instructions and all user rules. Scale optional evidence excerpts
+  // against their real combined budget as the engine gains new mechanics.
+  const target=52000;
+  const render=()=>blocks.join('\n\n');
+  if(render().length>target){
+    const fixed=blocks.reduce((n,b,i)=>n+(i===memoryIndex||i===sceneIndex?0:b.length)+2,0);
+    const available=Math.max(0,target-fixed-600);
+    if(memoryIndex>=0){
+      const cap=Math.max(2500,Math.min(12000,Math.floor(available*(sceneIndex>=0?0.57:1))));
+      const sample=limitedNarratorMemory(projection,{maxChars:cap,maxEntriesPerCategory:10});
+      blocks[memoryIndex]='ДОКАЗАТЕЛЬНАЯ ПАМЯТЬ ДЛЯ СЛЕДУЮЩЕЙ СЦЕНЫ (выборка, не исчерпывающий архив):\n'+JSON.stringify(sample);
+      // Omission notice follows the memory sample and must reflect the new sample.
+      const omitted=Object.entries(sample.omitted||{});
+      if(blocks[memoryIndex+1]?.startsWith('ПРОПУЩЕННЫЕ ЗАПИСИ'))blocks[memoryIndex+1]='ПРОПУЩЕННЫЕ ЗАПИСИ ДЛИННОЙ ПАМЯТИ (не значит, что событий не было): '+omitted.map(([key,count])=>key+': '+count).join('; ')+'. Запроси первоисточники через MCP перед утверждением фактов.';
+    }
+    if(sceneIndex>=0){
+      const remainder=Math.max(0,target-(render().length-blocks[sceneIndex].length)-500);
+      const per=Math.max(500,Math.min(9000,Math.floor(remainder/Math.min(3,history.length))));
+      blocks[sceneIndex]='ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ (большие тексты показываются фрагментами):\n'+history.slice(-3).map(x=>narratorSceneExcerpt(x,{maxChars:per})).join('\n\n');
+    }
+  }
+  return render();
 }
 
 export function inspectSeedForDirective(seed){
