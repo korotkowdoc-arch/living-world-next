@@ -29,10 +29,14 @@ import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
 import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
 
 import {sceneReaderUrl} from '../public/core/scene-links.mjs';
+import {gameMenuContext,MENU_GUIDANCE,menuRecordFromInput,assertMenuAnchor,playerMenuOverview,menuActionIntent,menuPreferences,isMenuDirective} from '../public/core/game-menu.mjs';
 
 const version='2025-06-18';
-const narratorWorkflow='When the user plays or continues a saved world, read get_world_context with the intended actors, place and fictional target_time before writing; use its next_turn proposal. Use prepare_story_turn for different filters or additional candidate pages. Retrieve exact source scenes or focused context when relevant memory is missing. Focused context includes bounded derived historical hints when storage is available; verify their source scenes and never confuse them with canonical knowledge. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. Long-form play by default: aim for 1500–2500 words where appropriate, never pad, pause BEFORE a meaningful decision of the player character. Present 2–5 meaningful options plus unrestricted free text, using clickable chat controls if supported (plain numbered fallback otherwise). Save only the narrated prefix with a pending player_choice event, then wait. When the user responds, validate the saved choice with validate_player_choice and record the answered event first in the next actual scene. Never treat menu options as actions or user consent. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals. When an older story has gaps, use get_memory_review_queue to locate sources and get_annotation_passages/get_story_scene to read them. If historical note storage is available, save_memory_notes can record evidence-backed retrieval aids; do not turn them into retroactive canonical events.';
+const narratorWorkflow=MENU_GUIDANCE+'\n'+ 'When the user plays or continues a saved world, read get_world_context with the intended actors, place and fictional target_time before writing; use its next_turn proposal. Use prepare_story_turn for different filters or additional candidate pages. Retrieve exact source scenes or focused context when relevant memory is missing. Focused context includes bounded derived historical hints when storage is available; verify their source scenes and never confuse them with canonical knowledge. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. Long-form play by default: aim for 1500–2500 words where appropriate, never pad, pause BEFORE a meaningful decision of the player character. Present 2–5 meaningful options plus unrestricted free text, using clickable chat controls if supported (plain numbered fallback otherwise). Save only the narrated prefix with a pending player_choice event, then wait. When the user responds, validate the saved choice with validate_player_choice and record the answered event first in the next actual scene. Never treat menu options as actions or user consent. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals. When an older story has gaps, use get_memory_review_queue to locate sources and get_annotation_passages/get_story_scene to read them. If historical note storage is available, save_memory_notes can record evidence-backed retrieval aids; do not turn them into retroactive canonical events.';
 const toolsList=[
+  {name:'get_game_menu',description:'Read menu, evidence-backed own character, inventory, tasks, skills, contacts and settings. No scene or time change. Specify the exact player-controlled actor.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140}},required:['world_id','actor'],additionalProperties:false}},
+  {name:'save_game_menu_preferences',description:'After explicit owner confirmation atomically save settings or ordered branch priorities. Reject stale menus. No fictional event or choice consumption.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null'],format:'uuid'},expected_rules_version:{type:'integer',minimum:0},kind:{type:'string',enum:['settings','focus']},settings:{type:'object',properties:{pace:{enum:['slow','normal','dynamic','fast']},detail:{enum:['brief','normal','high','maximum']},agency:{enum:['low','normal','high']},events:{enum:['low','normal','high']},choices:{enum:['frequent','important','free']},visibility:{enum:['immersive','rpg','director']},hud:{type:'boolean'},skip_routine:{type:'boolean'}},required:['pace','detail','agency','events','choices','visibility','hud','skip_routine'],additionalProperties:false},priorities:{type:'array',maxItems:3,items:{type:'string',maxLength:200}}},required:['world_id','branch_id','expected_head','expected_rules_version','kind'],additionalProperties:false}},
+  {name:'validate_game_menu_action',description:'Validate explicitly selected gameplay intent, not its outcome, against pinned current world and confirmed player inventory. Use ordinary validate_player_choice and save_scene afterwards. Never call merely for menu navigation.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null'],format:'uuid'},expected_rules_version:{type:'integer',minimum:0},actor:{type:'string',maxLength:140},action:{type:'string',enum:['change_appearance','use_item','equip_item','plan_purchase','contact','plan_time','travel','practice','manage_property','send_letter']},detail:{type:'string',maxLength:1500},item_id:{type:'string',maxLength:140}},required:['world_id','branch_id','expected_head','expected_rules_version','actor','action','detail'],additionalProperties:false}},
   {name:'list_worlds',description:'List the authenticated owner’s worlds.',inputSchema:{type:'object',properties:{},additionalProperties:false}},
   {name:'get_world_context',description:'Read authoritative world seed, directives, active branch, structured evidence, recent scenes and a focused next-turn proposal in one ancestry read. Reports incomplete history. Supply actors/place/target_time to avoid a separate prepare_story_turn call.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actors:{type:'array',maxItems:8,items:{type:'string',maxLength:140}},place:{type:'string',maxLength:140},target_time:{type:'string',maxLength:16},scope:{type:'string',enum:['all','focus','background']}},required:['world_id']}},
   {name:'search_story_memories',description:'Search the ENTIRE active branch by exact text substring, including scenes older than 1000. Returns scene IDs and evidence excerpts, never other branches.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},query:{type:'string',minLength:2,maxLength:180},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:40}},required:['world_id','query']}},
@@ -165,6 +169,33 @@ async function readFocusedNotes(env,token,world,head,actors){
 async function callTool(name,args,env,token){
  switch(name){
   case 'list_worlds':return await rest(env,token,'nw_worlds?select=id,title,seed,start_marker,active_branch_id,auto_save,updated_at&order=updated_at.desc');
+  case 'get_game_menu':
+  case 'validate_game_menu_action':{
+   const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
+   if(name==='validate_game_menu_action')assertMenuAnchor(args,world,active);
+   const [rules,history]=await Promise.all([directives(env,token,world.id),readStructuredMemory(env,token,world,active.head_scene_id)]);
+   const projection=replay(history.scenes,[],{evidencePrevalidated:true});
+   const clock=recordedWorldAgenda(history.scenes,projection);
+   const choice=playerChoiceView(history.scenes,projection,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:history.complete});
+   if(choice.pending&&choice.pending.actor!==args.actor)throw Error('Actor does not match the current player choice');
+   const overview=playerMenuOverview(projection,args.actor,clock.latest_recorded_time);
+   const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
+   if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id||current.directive_version!==world.directive_version)throw Error('Menu changed during read; refresh.');
+   const anchor={world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version};
+   if(name==='validate_game_menu_action'){
+    if(!history.complete)throw Error('Incomplete history; use source-backed free story action.');
+    return {...anchor,...menuActionIntent(args,overview),pending_choice:choice.pending??null};
+   }
+   return {...gameMenuContext({world,directives:rules,context:{head_scene_id:active.head_scene_id,memory_complete:history.complete,player_choice:choice,recorded_agenda:clock}}),overview,choice,auto_save:current.auto_save};
+  }
+  case 'save_game_menu_preferences':{
+   const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
+   assertMenuAnchor(args,world,active);
+   const rules=await directives(env,token,world.id);
+   if(!menuPreferences(rules,world.active_branch_id).can_edit)throw Error('Conflicting menu records; resolve before saving.');
+   const record=menuRecordFromInput(args,world.active_branch_id);
+   return await rpc(env,token,'nw_save_menu_preferences',{p_world_id:world.id,p_branch_id:args.branch_id,p_expected_head:args.expected_head,p_expected_version:args.expected_rules_version,p_record:record});
+  }
   case 'get_world_context':{
    const world=await ownerWorld(env,token,args.world_id);
    const [rules,active]=await Promise.all([directives(env,token,world.id),branch(env,token,world)]);
@@ -178,7 +209,7 @@ async function callTool(name,args,env,token){
    const finalWorld=await ownerWorld(env,token,world.id),finalBranch=await branch(env,token,finalWorld);
    if(finalWorld.active_branch_id!==world.active_branch_id||finalBranch.head_scene_id!==active.head_scene_id||finalWorld.directive_version!==world.directive_version)throw Error('Story or rules changed while preparing world context; retry.');
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
-   return {...ctx,next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints},memory:compactMemory,memory_is_sample:true,
+   return {...ctx,game_menu:gameMenuContext({world,directives:rules,context:ctx}),next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints},memory:compactMemory,memory_is_sample:true,
     memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn','validate_player_choice'],
     narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:finalWorld.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
@@ -325,7 +356,7 @@ async function callTool(name,args,env,token){
     if(Object.hasOwn(args,'expected_head')&&args.expected_head!==active.head_scene_id)throw Error('Story changed; restart candidate pagination.');
     if(Object.hasOwn(args,'expected_rules_version')&&args.expected_rules_version!==world.directive_version)throw Error('Rules changed; restart candidate pagination.');
     const rules=await directives(env,token,world.id);
-    const turn=prepareStoryTurn(memory.scenes,p,rules,options);
+    const turn=prepareStoryTurn(memory.scenes,p,rules,{...options,branchId:world.active_branch_id});
     const hints=await readFocusedNotes(env,token,world,active.head_scene_id,turn.actor_context.map(x=>x.actor));
     const latest=await ownerWorld(env,token,world.id),latestBranch=await branch(env,token,latest);
     if(latest.active_branch_id!==world.active_branch_id||latestBranch.head_scene_id!==active.head_scene_id||latest.directive_version!==world.directive_version)throw Error('Story or rules changed; retry.');
@@ -392,7 +423,7 @@ async function callTool(name,args,env,token){
    return {world_id:id,initial_description:draft.seed,initial_rule_saved_atomically:!!rule};
   }
   case 'add_world_directive':{
-   const world=await ownerWorld(env,token,args.world_id);const directive=classifyDirective(args.text);
+   const world=await ownerWorld(env,token,args.world_id);if(isMenuDirective(args.text?.trim()))throw Error('Use save_game_menu_preferences for menu settings');const directive=classifyDirective(args.text);
    const directiveId=await rpc(env,token,'nw_add_directive',{p_world_id:world.id,p_text:directive.text,p_category:directive.category,p_metadata:{tags:directive.tags,relationship_lock:directive.relationship_lock,relationship_locks:directive.relationship_locks}});
    return {directive_id:directiveId,stored_verbatim:true,classification:directive.category};
   }
@@ -454,6 +485,7 @@ async function callTool(name,args,env,token){
   }
   case 'edit_world_directive':{
    await ownerWorld(env,token,args.world_id);
+   if(isMenuDirective(args.text?.trim()))throw Error('Use save_game_menu_preferences for menu settings');
    const rule=classifyDirective(args.text);
    await rpc(env,token,'nw_edit_directive',{p_world_id:args.world_id,p_directive_id:assertUuid(args.directive_id),p_text:rule.text,p_category:rule.category,
     p_metadata:{tags:rule.tags,relationship_lock:rule.relationship_lock,relationship_locks:rule.relationship_locks},p_expected_version:args.expected_rules_version});
