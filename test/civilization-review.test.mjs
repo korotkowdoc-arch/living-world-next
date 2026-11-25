@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {civilizationReview} from '../public/core/civilization-review.mjs';
+import {npcInitiativeView} from '../public/core/npc-initiatives.mjs';
+import {civilizationReview,orderTurnCandidates,continuityAnchors} from '../public/core/civilization-review.mjs';
 const source={scene_id:'s1',event_id:'e1'};
 const clock='1994-07-01 09:00',until='1994-07-01 15:00';
 const life=(kind,id,fields)=>({player_life_version:1,life_kind:kind,key:'player-life:'+kind+':'+id,record_id:id,source,...fields});
@@ -23,4 +24,27 @@ test('never advances pending choice or incomplete clock; only segment deadlines 
  assert.equal(civilizationReview({},[a,b],{clock,until,pending:true}).status,'player_choice_pending');
  assert.equal(civilizationReview({},[a,b],{clock,until,complete:false}).status,'unavailable');
  const result=civilizationReview({},[a,b,a],{clock,until});assert.equal(result.due_queue.total,1);assert.equal(result.due_queue.records[0].certainty,'same_day_time_unknown');
+});
+
+test('all urgent items precede ordinary opportunities, fair category rounds and stable pagination',()=>{
+ const a=[{key:'a1',kind:'lesson',rank:0},{key:'a2',kind:'lesson',rank:0},{key:'a3',kind:'lesson',rank:2}];
+ const b=[{key:'b1',kind:'work',rank:0},{key:'b2',kind:'work',rank:1}];
+ const c=[{key:'c1',kind:'habit',rank:2}];
+ assert.deepEqual(orderTurnCandidates([a,b,c],x=>x.rank).map(x=>x.key),['a1','b1','a2','b2','a3','c1']);
+ assert.deepEqual(orderTurnCandidates([a,b,c],x=>x.rank,{offset:2,limit:2}).map(x=>x.key),['a2','b2']);
+});
+test('rotation prefers a less recently active equally urgent NPC, without changing mandatory order',()=>{
+ const scenes=[{id:'s0'},{id:'s1'},{id:'s2'},{id:'s3'}];
+ const c=(actor,key,timing='requires_character_choice')=>({actor,actors:[actor],kind:'intention',key,title:key,timing,source:{scene_id:'s0'},status:'active'});
+ const opts={player:'Hero',scenes,offscreen:[{actor:'A',source:{scene_id:'s3'}}],settings:{agency:'low',events:'low'}};
+ assert.equal(npcInitiativeView([c('A','a'),c('B','b')],opts).initiatives[0].actor,'B');
+ assert.equal(npcInitiativeView([c('A','a','reached_requires_story'),c('B','b')],opts).initiatives[0].actor,'A');
+});
+test('older callback anchors use only active source event IDs and focus, deduplicate and ignore unrelated text',()=>{
+ const scenes=['s0','s1','s2','s3','s4','s5'].map(id=>({id}));
+ const old={actor:'A',goal:'Find hidden library',source:{scene_id:'s0',event_id:'e1'}};
+ const p={plans:[old,{...old,actor:'B',source:{scene_id:'s1',event_id:'e2'}},{...old,source:{scene_id:'other-branch',event_id:'e3'}}],knowledge:[old,{...old,source:{scene_id:'s5',event_id:'recent'}}]};
+ const r=continuityAnchors(scenes,p,{focus:['A'],candidates:[{actors:['A'],title:'Hidden library'}]});
+ assert.equal(r.total,1);assert.equal(r.records[0].source.event_id,'e1');assert.deepEqual(r.records[0].matched_words,['hidden','library']);
+ assert.equal(continuityAnchors(scenes,p,{focus:['A'],complete:false}).status,'unavailable');
 });

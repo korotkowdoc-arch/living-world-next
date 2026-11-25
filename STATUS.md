@@ -5,7 +5,8 @@
 - [x] Narrator-only coordination of overlapping canonical lessons, assessments, shifts and appointments, including teacher participation but not fictitious employer attendance. Bounded sweep, exact windows, no automatic action.
 - [x] Aggregate unreviewed scheduled payments per payer/currency against recorded balance, with explicit unknowns and no debt or transfer assumption. Segment-scoped due queue with canonical sources, exact clock and pending-choice gate.
 - [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; CI and live verification pending. No new database schema or tool discovery required.
-- [ ] Continue autonomous event resolution, institutional life, cross-system evidence search, housing, media, deeper university simulation and full private asset backups. Existing menu settings and NPC psychology remain canonical; do not duplicate them.
+- [x] Candidate ordering now respects global urgency tiers with fair category rounds; NPC initiative rotation accounts for accepted offscreen participation; bounded old-source callback anchors match exact active-ancestry participants/place/record or words. All remain proposals, not simulation outcomes. Regression coverage added.
+- [ ] Continue autonomous event resolution, institutional life, housing, media, deeper university simulation and full private asset backups. Existing menu settings and NPC psychology remain canonical; do not duplicate them.
 
 ## v0.44.1 — перенос изображений ChatGPT без платного API
 - [x] Официальный MCP file parameter save_chatgpt_illustration: реальный авторизованный файл из ChatGPT Library, временная HTTPS ссылка files.oaiusercontent.com, ограничение 8 МБ, проверка формата, запрет произвольных URL/redirect и перезаписи. Передача байтов в существующий приватный Storage с OAuth пользователя, finalize подтверждает наличие. Повторная отправка идентичных байтов безопасна, иной файл не заменяет готовый.

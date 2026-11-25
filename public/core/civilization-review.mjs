@@ -91,3 +91,66 @@ export function civilizationReview(projection={},candidates=[],{clock,until,comp
   due_queue:page(reviewQueue(candidates,from,to),limit),
   policy:'Narrator only. Review overlapping recorded appointments and aggregate scheduled payments before selecting autonomous actions. A schedule is not attendance, debt, payment, or proof of knowledge; same-day deadlines are not midnight deadlines. Resolve by evidence and character choice, never by automatic completion. Recompute from the next saved head.'};
 }
+
+/** Strict priority tiers, then fair rounds across categories. Previously the
+ * second urgent item in a busy category could sit behind unrelated leisure. */
+export function orderTurnCandidates(categories,rank,{offset=0,limit=16}={}){
+ const tiers=new Map();
+ for(const category of categories)for(const row of category){
+  const priority=rank(row);
+  if(!tiers.has(priority))tiers.set(priority,new Map());
+  const groups=tiers.get(priority),kind=row.kind;
+  if(!groups.has(kind))groups.set(kind,[]);
+  groups.get(kind).push(row);
+ }
+ const out=[];
+ for(const [,groups] of [...tiers.entries()].sort((a,b)=>a[0]-b[0])){
+  const queues=[...groups.values()];
+  for(let i=0;queues.some(q=>q.length>i);i++)for(const q of queues){
+   if(q[i])out.push(q[i]);
+   if(out.length>=offset+limit)return out.slice(offset);
+  }
+ }
+ return out.slice(offset);
+}
+// Match complete words, not substring guesses about a character or a place.
+const terms=v=>new Set((String(v??'').toLocaleLowerCase('ru').match(/[\p{L}\p{N}]{4,}/gu)||[]).slice(0,40));
+const excerpt=r=>clip(r.goal||r.title||r.description||r.fact||r.stance||r.evidence);
+const participants=r=>names([r.actor,r.a,r.b,r.counterparty,r.sender,r.recipient,r.responsible,...(Array.isArray(r.actors)?r.actors:[])]);
+/** Source retrieval for the narrator, not semantic proof or actor knowledge.
+ * Use only projection records with an actual source in the supplied ancestry.
+ * An old shared topic is a reason to open the exact scene, not to assume recall. */
+export function continuityAnchors(scenes=[],projection={}, {focus=[],place=null,candidates=[],complete=true,limit=8}={}){
+ if(!complete||!scenes.length||(!focus.length&&!place))return {records:[],total:0,omitted:0,status:'unavailable'};
+ const positions=new Map(scenes.map((s,i)=>[s.id,i])),actors=new Set(focus);
+ const wanted=new Set(),keys=new Set();
+ for(const c of candidates.filter(c=>c.actors?.some(a=>actors.has(a))||place&&c.place===place).slice(0,12)){
+  if(c.key)keys.add(c.key);if(c.record_key)keys.add(c.record_key);
+  for(const t of terms(c.title))if(wanted.size<60)wanted.add(t);
+ }
+ const matches=new Map(),categories=['plans','obligations','relationships','relationship_history','knowledge','offscreen','worldFacts'];
+ for(const category of categories)for(const r of projection[category]||[]){
+  const source=r.source,pos=positions.get(source?.scene_id);
+  if(pos==null||!source?.event_id||scenes.length-1-pos<3)continue;
+  const people=participants(r),actorMatch=people.filter(a=>actors.has(a)),placeMatch=!!place&&r.place===place;
+  const related=keys.has(r.key)||keys.has(r.plan_id)||keys.has(r.commitment_id);
+  if(!actorMatch.length&&!placeMatch&&!related)continue;
+  const title=excerpt(r),shared=[...terms(title)].filter(t=>wanted.has(t)).slice(0,5);
+  const score=(related?8:0)+(placeMatch?3:0)+Math.min(3,actorMatch.length)*2+Math.min(5,shared.length)*2;
+  const identity=key(source.scene_id,source.event_id);
+  const row={category,actors:actorMatch,excerpt:title,source,matched_words:shared,exact_record_link:related,exact_place_match:placeMatch,score,position:pos};
+  if(!matches.has(identity)||matches.get(identity).score<score)matches.set(identity,row);
+ }
+ const sorted=[...matches.values()].sort((a,b)=>b.score-a.score||a.position-b.position||String(a.source.event_id).localeCompare(String(b.source.event_id)));
+ limit=Math.max(1,Math.min(12,Number.isInteger(limit)?limit:8));
+ // At most two excerpts from a scene, so an old conversation cannot swamp
+ // the source links for different parts of a character's history.
+ const counts=new Map(),selected=[];
+ for(const row of sorted){
+  const id=row.source.scene_id,n=counts.get(id)||0;if(n>=2)continue;
+  const {score,position,...result}=row;selected.push(result);counts.set(id,n+1);
+  if(selected.length>=limit)break;
+ }
+ return {status:'source_hints_only',records:selected,total:sorted.length,omitted:sorted.length-selected.length,
+  policy:'Open the exact source scene before callbacks. Lexical matches and shared participants are clues, not new facts, private knowledge or proof of causal connection.'};
+}

@@ -116,12 +116,14 @@ export function recordedMarketOpportunities(records=[],scenes=[],clock=null){
  }
  return out;
 }
-export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[],settings={},scenes=[],complete=true,elapsed=null}={}){
+export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[],settings={},scenes=[],offscreen=[],complete=true,elapsed=null}={}){
  const known=[...new Set([player,...players].filter(Boolean))];
  const protectedActors=new Set(known.length?known:focus);
  // Without a named player or focus, a separate character must not be guessed.
  if(!protectedActors.size||!complete)return {initiatives:[],omitted:0,policy:'Player identity or complete history required; no inferred autonomous action.'};
  const byActor=new Map(),seen=new Set(),positions=new Map(scenes.map((s,i)=>[s.id,i]));
+ const lastIndependent=new Map();
+ for(const e of offscreen){const pos=positions.get(e.source?.scene_id);if(pos==null)continue;for(const actor of new Set([e.actor,...(Array.isArray(e.actors)?e.actors:[])].filter(Boolean)))lastIndependent.set(actor,Math.max(lastIndependent.get(actor)??-1,pos));}
  const base={low:1,normal:3,high:6}[settings.agency]??3;
  const density={low:0,normal:1,high:2}[settings.events]??1;
  const timeBonus=Number.isFinite(elapsed)&&elapsed>=1440?2:Number.isFinite(elapsed)&&elapsed>=480?1:0;
@@ -135,13 +137,15 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[]
   const identity=JSON.stringify([actor,c.kind,c.key]);if(seen.has(identity))continue;seen.add(identity);
   const checks=(c.checks||[]).filter(x=>blockers.has(x.kind));
   const stale=c.source?.scene_id&&positions.has(c.source.scene_id)?scenes.length-1-positions.get(c.source.scene_id):null;
-  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,player_involved:c.actors.some(x=>protectedActors.has(x))||[c.learner,c.employee,c.other_party,c.affected,...(c.participants||[]),...(c.introduction?.contacts||[]),c.magic_context?.patient].some(x=>protectedActors.has(x)),reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length||c.checks_omitted?3:c.kind==='habit_opportunity'&&c.habit_history?.calendar_days_since_match===0||c.kind==='contact_opportunity'&&c.contact?.same_day?3:c.kind==='need_review'?1:optional(c)?2:1,scenes_since_update:stale,record_key:c.record_key??null,context:c.record_key||c.kind==='habit_opportunity'?Object.fromEntries(['wealth_context','document_context','magic_context','capital','publication','motive','introduction','information','reflection','financial_review','long_life','need_review','contact','frequency','habit_history','market_activity','consequence_id','consequence_kind','affected','resource','participants','learner','employee','other_party','group_id','group_name','role','purpose','group_source','institution_source','business_kind','peer_count','peers','guidance'].filter(k=>c[k]!=null).map(k=>[k,c[k]])):null,certainty:'candidate_only_not_performed'};
+  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,player_involved:c.actors.some(x=>protectedActors.has(x))||[c.learner,c.employee,c.other_party,c.affected,...(c.participants||[]),...(c.introduction?.contacts||[]),c.magic_context?.patient].some(x=>protectedActors.has(x)),reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length||c.checks_omitted?3:c.kind==='habit_opportunity'&&c.habit_history?.calendar_days_since_match===0||c.kind==='contact_opportunity'&&c.contact?.same_day?3:c.kind==='need_review'?1:optional(c)?2:1,scenes_since_update:stale,last_independent_scene_age:lastIndependent.has(actor)?scenes.length-1-lastIndependent.get(actor):null,record_key:c.record_key??null,context:c.record_key||c.kind==='habit_opportunity'?Object.fromEntries(['wealth_context','document_context','magic_context','capital','publication','motive','introduction','information','reflection','financial_review','long_life','need_review','contact','frequency','habit_history','market_activity','consequence_id','consequence_kind','affected','resource','participants','learner','employee','other_party','group_id','group_name','role','purpose','group_source','institution_source','business_kind','peer_count','peers','guidance'].filter(k=>c[k]!=null).map(k=>[k,c[k]])):null,certainty:'candidate_only_not_performed'};
   if(!byActor.has(actor))byActor.set(actor,[]);
   byActor.get(actor).push(row);
  }
  const compare=(a,b)=>a.priority-b.priority||(b.scenes_since_update??-1)-(a.scenes_since_update??-1)||String(a.key).localeCompare(String(b.key));
+ // Rotate equally urgent NPCs by accepted offscreen participation, not raw mentions.
+ const actorCompare=(a,b)=>a.priority-b.priority||((lastIndependent.get(a.actor)??-1)-(lastIndependent.get(b.actor)??-1))||compare(a,b)||a.actor.localeCompare(b.actor);
  const groups=[...byActor.values()];for(const xs of groups)xs.sort(compare);
- groups.sort((a,b)=>compare(a[0],b[0])||a[0].actor.localeCompare(b[0].actor));
+ groups.sort((a,b)=>actorCompare(a[0],b[0]));
  const total=groups.reduce((n,x)=>n+x.length,0),result=[];
  // Urgent duties first. Then give each actor one nonurgent opportunity before
  // repeating another actor, using priority and evidence recency within each round.
@@ -149,7 +153,7 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[]
  for(let i=0;result.length<limit&&urgent.some(xs=>xs.length>i);i++)for(const xs of urgent){if(xs[i])result.push(xs[i]);if(result.length>=limit)break;}
  const remaining=groups.map(xs=>xs.filter(x=>x.priority!==0)).filter(xs=>xs.length);
  for(let i=0;result.length<limit&&remaining.some(xs=>xs.length>i);i++){
-  const round=remaining.map(xs=>xs[i]).filter(Boolean).sort((a,b)=>compare(a,b)||a.actor.localeCompare(b.actor));
+  const round=remaining.map(xs=>xs[i]).filter(Boolean).sort(actorCompare);
   for(const row of round){result.push(row);if(result.length>=limit)break;}
  }
  return {initiatives:result,omitted:Math.max(0,total-result.length),budget:limit,policy:'Narrator-only candidates grounded in each NPC own goal, schedule or responsibility; blocked actions require resolution. May happen independently of player, but do not act for player, manufacture consent, invent resources or claim a candidate already happened.'};
