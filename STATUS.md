@@ -1,25 +1,26 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## v0.46.0 — общественные институты (candidate)
+## v0.46.0 — общественные институты
 - [x] Seven canonical civic record types: recorded appointment/revocation, court case and handover, delivered notice, submission, decision, fixed-electorate motion, unique informed ballot. Existing institution/group/membership gate, immutable identities, separate decision before closure, verified quorum and vote outcome. No automatic sanctions or laws.
 - [x] Own civic records and delivered notices in communities menu, NPC review opportunities without committing choices. Regression tests, app shell, release marker. Application preflight; specialized SQL parity remains open.
-- [x] Initial Node CI 45656206722 and SQL CI 45656206741 passed. Additional fail-closed duplicate membership, assigned case access, visible menu actions and explicit ballot choice implemented with regressions; final CI pending.
-- [ ] Final CI, merge, cloud and real-world verification. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
+- [x] Initial Node CI 45656206722 and SQL CI 45656206741 passed. Additional fail-closed duplicate membership, assigned case access, visible menu actions and explicit ballot choice implemented with regressions; final Node CI 45656460671 and SQL CI 45656460618 passed; PR #40 merged (3941e19).
+- [ ] Cloud deployment and gameplay verification of v0.46.0. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
 
 ## v0.45.1 — комнаты и непрерывность
 - [x] Room observations with stable area identity, purpose, walls/flooring/lighting, current title epoch, own-room menu, effective furniture, known condition, and image subjects; no implicit repairs or spending. Reconfirm after ownership changes. No new MCP tool or SQL schema.
 - [x] Explicit tests of subscription visibility and academic assessment identity; ambiguous same-title modules no longer auto-match.
 - [x] Fixed growing narrator prompt budget: complete schema instructions remain in narrator_workflow, connected/oversized prose prompt uses compact core guidance without truncating player rules; regression tests.
 - [x] PR #39 merged (0aad93d); Node CI 45655801001 and SQL CI 45655800891 passed.
-- [ ] Live deployment and gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
+- [x] Live MCP read-only verification: rooms and operational queues available; 23 scenes, original head and awaiting_player unchanged.
+- [ ] Gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
 
 ## v0.45.0 — Living Civilization: координация систем
 - [x] Narrator-only coordination of overlapping canonical lessons, assessments, shifts and appointments, including teacher participation but not fictitious employer attendance. Bounded sweep, exact windows, no automatic action.
 - [x] Aggregate unreviewed scheduled payments per payer/currency against recorded balance, with explicit unknowns and no debt or transfer assumption. Segment-scoped due queue with canonical sources, exact clock and pending-choice gate.
-- [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; Node CI 45650053662 and PostgreSQL CI 45650053799 passed before integration; combined Node CI 45655104215 and SQL CI 45655104294 passed; PR #38 merged (f26aea2). Live verification pending. No new database schema or tool discovery required.
+- [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; Node CI 45650053662 and PostgreSQL CI 45650053799 passed before integration; combined Node CI 45655104215 and SQL CI 45655104294 passed; PR #38 merged (f26aea2). Live read-only verification passed. No new database schema or tool discovery required.
 - [x] Candidate ordering now respects global urgency tiers with fair category rounds; NPC initiative rotation accounts for accepted offscreen participation; bounded old-source callback anchors match exact active-ancestry participants/place/record or words. All remain proposals, not simulation outcomes. Regression coverage added.
-- [x] Operational queues for actual submitted assignments, module/qualification review, property condition/current title, aggregate completed unpaid shifts and accepted service/production resource exposure. Own dashboard notifications and education/work/property menu data. Active subscriptions can motivate seeking issues, never imply delivery. Tests added; combined CI pending.
+- [x] Operational queues for actual submitted assignments, module/qualification review, property condition/current title, aggregate completed unpaid shifts and accepted service/production resource exposure. Own dashboard notifications and education/work/property menu data. Active subscriptions can motivate seeking issues, never imply delivery. Tests added; combined CI passed.
 - [ ] Continue autonomous event resolution, institutional life, housing, media, deeper university simulation and full private asset backups. Existing menu settings and NPC psychology remain canonical; do not duplicate them.
 
 - [x] Player-facing dashboard reports conflicts from its own existing calendar projection. No narrator-private records are exposed.
