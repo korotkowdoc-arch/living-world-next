@@ -19,7 +19,7 @@ export function societyShapeError(e){
  if(!isMagicSociety(e))return null;
  const k=e.magic_society_kind;
  if(e.type!=='world'||e.magic_society_version!==1||!K.includes(k)||(!id(e.record_id)||e.record_id.length>50)||e.key!=='magic-society:'+k+':'+e.record_id||!str(e.actor)||!str(e.evidence,12000))return 'Invalid magical civilization record';
- if(['magic_version','advanced_version','world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Magic society record must be separate';
+ if(['archive_version','magic_version','advanced_version','world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Magic society record must be separate';
  if(k==='ritual'&&(!str(e.title)||!id(e.technique_id)||!list(e.stages,x=>x&&id(x.id)&&str(x.title)&&ingredients(x.ingredients)&&int(x.min_members,1,20))||!unique(e.stages,x=>x.id)||!str(e.requirements,600)||!str(e.risks,600)||!one(e.status,['active','retired'])))return 'Invalid ritual protocol';
  if(k==='ritual_session'&&(!id(e.ritual_id)||!str(e.place)||!str(e.title)||!one(e.status,['planned','active','paused','completed','failed','cancelled'])||['completed','failed'].includes(e.status)&&(!id(e.casting_id)||!str(e.outcome,600))))return 'Invalid ritual session';
  if(k==='ritual_member'&&(!id(e.session_id)||!str(e.participant)||!str(e.role)||!one(e.status,['invited','accepted','declined','withdrawn'])))return 'Invalid ritual participant';
