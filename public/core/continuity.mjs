@@ -1,3 +1,4 @@
+import {archiveIndex,isArchive,archiveShapeError} from './world-archive.mjs';
 import {isMagicSociety} from './magic-society.mjs';
 import {magicIndex,isMagic} from './magic-world.mjs';
 import {advancedIndex,isAdvanced} from './advanced-world.mjs';
@@ -50,6 +51,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(!asText(event.id)||ids.has(event.id))errors.push(`${prefix}: требуется уникальный ID.`);
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
+    const archiveShape=archiveShapeError(event);if(archiveShape)errors.push(prefix+': '+archiveShape);
     const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
     const familyGoalFailure=familyGoalSceneError(event,events,i,worldTime);if(familyGoalFailure)errors.push(prefix+': '+familyGoalFailure);
     const expenseCareFailure=expenseCareSceneError(event,events,i,paymentTransfers);if(expenseCareFailure)errors.push(prefix+': '+expenseCareFailure);
@@ -265,13 +267,14 @@ export function validateEconomyAppend(scenes,events,body){
  * SQL still protects expected head; direct RPC and revision integration are separate.
  */
 export function needsStatePreflight(events=[]){
- return events.some(e=>isMagicSociety(e)||isMagic(e)||isAdvanced(e)||(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
+ return events.some(e=>isArchive(e)||isMagicSociety(e)||isMagic(e)||isAdvanced(e)||(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
 }
 export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null}={}){
  const draftId='__pending_state_scene__',history=[...scenes,{id:draftId,body,events,world_time:worldTime}];
  const p=checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  const errors=p.validation_warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors);
  if(events.some(e=>isMagic(e)||isMagicSociety(e)))errors.push(...magicIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
+ if(events.some(isArchive))errors.push(...archiveIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  if(events.some(isAdvanced))errors.push(...advancedIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  return {ok:errors.length===0,errors};
 }
