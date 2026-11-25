@@ -20,7 +20,7 @@ export function magicShapeError(e){
  if(!isMagic(e))return null;
  const k=e.magic_kind;
  if(e.type!=='world'||e.magic_version!==1||!K.includes(k)||!id(e.record_id)||e.key!=='magic:'+k+':'+e.record_id||!str(e.evidence,12000))return 'Invalid magical record envelope';
- if(['advanced_version','world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Magic record must be separate';
+ if(['craft_version','advanced_version','world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Magic record must be separate';
  if(k==='tradition'&&(!str(e.actor)||!str(e.title)||!one(e.domain,domains)||!str(e.description,600)||!str(e.limits,600)||!one(e.status,['active','restricted','lost'])))return 'Invalid magical tradition';
  if(k==='technique'&&(!str(e.actor)||!str(e.title)||!id(e.tradition_id)||!one(e.form,['spell','ritual','potion','enchantment','counterspell','diagnostic','healing','innate','other'])||!str(e.effect,600)||!str(e.requirements,600)||!str(e.limits,600)||!str(e.risks,600)||!one(e.status,['experimental','established','restricted','retired'])||e.cost!=null&&!integer(e.cost)))return 'Invalid magical technique';
  if(k==='training'&&(!str(e.actor)||!id(e.technique_id)||!one(e.status,levels)||!str(e.description,600)))return 'Invalid technique training';
