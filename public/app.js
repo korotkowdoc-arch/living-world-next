@@ -1,3 +1,4 @@
+import {readUI,saveUI,filterSections,hudStates} from './core/ui-preferences.mjs';
 import {sectionScrollTarget,WORLD_TABS} from './core/section-navigation.mjs';
 import {gameMenuContext,playerMenuOverview,menuSection,menuPreferences,menuRecordFromInput,menuActionIntent,DEFAULT_MENU_SETTINGS,MENU_ACTION_LABELS} from './core/game-menu.mjs';
 import {PERSONAL_ACTIONS,PERSONAL_ACTION_IDS} from './core/personal-menu.mjs';
@@ -47,7 +48,10 @@ const title=(text)=>node('h2','',text);
 const para=(text,cls='small')=>node('p',cls,text);
 const busy=async(action)=>{if(state.pending)return;state.pending=true;try{await action();}catch(e){console.error(e);toast(e.message||'Ошибка операции',true);}finally{state.pending=false;}};
 const readerStorage=(()=>{try{return window.localStorage;}catch{return null;}})();
-let readerPrefs=readReaderPrefs(readerStorage);
+let readerPrefs=readReaderPrefs(readerStorage),uiPrefs=readUI(readerStorage);
+function applyUI(){document.documentElement.dataset.theme=uiPrefs.theme;document.documentElement.dataset.density=uiPrefs.density;document.documentElement.dataset.textScale=uiPrefs.textScale;}
+function updateUI(change){uiPrefs=saveUI(readerStorage,{...uiPrefs,...change});applyUI();}
+applyUI();
 function updateSceneTypography(){
  for(const element of document.querySelectorAll('.scene-body')){
   element.style.fontSize=readerPrefs.fontSize+'px';
@@ -248,14 +252,43 @@ function renderLongProfile(current,w){
  for(const [key,label] of [['interests','Интересы'],['goals','Цели и проекты'],['threads','Сюжетные линии'],['circles','Социальные круги'],['experience','Жизненный опыт'],['causes','Причинные связи']]){
   out.append(node('h3','',label),renderMenuData(current.long_life?.[key],0,w));
  }
- out.append(node('h3','','Изменения личности'),renderMenuData(current.personality_history,0,w));return out;
+ out.append(node('h3','','Изменения личности'),renderMenuData(current.personality_history,0,w));if(current.world_depth?.memory_complete){out.append(title('Психология и убеждения'),renderMenuData(current.world_depth.psychology),title('Круг общения'),networkView(current.world_depth.social,current.actor),title('Хронология жизни'),timelineView(current.world_depth.timeline));}return out;
 }
+function hudView(overview){
+ const box=node('div','hud-grid');
+ for(const n of hudStates(overview.life.needs,uiPrefs.hudFields)){
+  const card=node('div','hud-item'),bar=node('div','hud-bar');
+  for(let i=0;i<4;i++){const cell=node('span');const level=['comfortable','noticeable','urgent','critical'].indexOf(n.observed);if(level>=0&&i<=level)cell.dataset.level=n.observed;bar.append(cell);}
+  card.append(node('strong','',n.label),para(menuValue(n.observed)),bar);
+  if(n.estimate&&n.estimate!==n.observed)card.append(para('Прогноз без удовлетворения: '+menuValue(n.estimate)));
+  box.append(card);
+ }return box;
+}
+function networkView(graph,actor){
+ const out=node('div','network-view');if(!graph?.nodes?.length)return para('Нет записанных связей.');
+ const focus=node('div','network-focus',actor),list=node('div','network-nodes'),detail=node('div','rule');
+ out.append(focus,list,detail);
+ const show=name=>detail.replaceChildren(node('strong','',name),renderMenuData(graph.edges.records.filter(e=>e.to===name||e.from===name)));
+ for(const n of graph.nodes.filter(n=>!n.focus))list.append(button(n.name,()=>show(n.name),'btn secondary'));
+ if(graph.nodes.length>1)show(graph.nodes.find(n=>!n.focus).name);else detail.append(para('Другие связи не установлены.'));
+ if(graph.omitted_contacts)out.append(para('Дополнительных контактов: '+graph.omitted_contacts));
+ return out;
+}
+function placesView(graph){
+ const out=node('div','places-view');if(!graph?.places?.records?.length)return para('Известные места пока не записаны.');
+ const places=graph.places.records,detail=node('div','rule'),links=new Map(graph.links.map(l=>[l.from,l.to]));
+ const show=p=>detail.replaceChildren(node('strong','',p.name),renderMenuData(p),renderMenuData(graph.links.filter(l=>l.from===p.name||l.to===p.name)));
+ const list=node('div','place-grid');
+ for(const p of places)list.append(button((links.has(p.name)?links.get(p.name)+' → ':'')+p.name,()=>show(p),'btn secondary'));
+ out.append(para('Схема известных мест, без вымышленных координат и расстояний.'),list,detail);show(places[0]);return out;
+}
+function timelineView(data){const out=node('div','life-timeline');for(const e of data?.records||[])out.append(add(node('article','timeline-entry'),node('strong','',e.source?.world_time||'Дата не установлена'),renderMenuData([e])));if(!data?.records?.length)out.append(para('Нет подтверждённых событий.'));if(data?.omitted)out.append(para('Ещё записей: '+data.omitted));return out;}
 const menuUiState=new Map();
 function renderGameMenu(){
  const w=state.world,key=w.id+':'+w.active_branch_id;
- const saved=menuUiState.get(key)||{section:'dashboard',actor:''};menuUiState.set(key,saved);
+ const saved=menuUiState.get(key)||{section:uiPrefs.lastSection,actor:''};menuUiState.set(key,saved);
  const box=panel(title('Игровое меню'),para('Просмотр и настройки не продвигают время. Игровые действия передаются в ChatGPT как намерение, не как уже выполненное событие.'));
- const output=node('div'),actor=node('select','field'),nav=node('div','game-grid');
+ const output=node('div'),actor=node('select','field'),nav=node('div','game-grid'),search=node('input','field'),favorites=node('div','favorite-row');search.type='search';search.placeholder='Найти раздел или действие';
  let scenes=state.scenes,complete=state.historyComplete,projection=replay(scenes),verified=false;
  const selectActor=()=>{
   const choice=(projection.worldFacts||[]).find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending');
@@ -277,7 +310,10 @@ function renderGameMenu(){
   for(const [k,label] of [['hud','Показывать HUD'],['skip_routine','Сжимать рутину']]){const check=node('input');check.type='checkbox';check.checked=values[k];check.addEventListener('change',()=>values[k]=check.checked);controls.append(add(node('label','menu-check'),check,document.createTextNode(label)));}
   const save=button('Сохранить настройки',()=>busy(()=>savePreference({kind:'settings',settings:values})));save.disabled=!prefs.can_edit;
   const reset=button('Вернуть значения по умолчанию',()=>busy(()=>savePreference({kind:'settings',settings:{...DEFAULT_MENU_SETTINGS}})),'btn secondary');reset.disabled=!prefs.can_edit;
-  controls.append(row(save,reset));for(const warning of prefs.warnings)controls.append(para(warning));return controls;
+  controls.append(row(save,reset),title('Интерфейс на этом устройстве'));
+  const uiOptions={theme:['Тема',{dark:'Тёмная',light:'Светлая',system:'Системная'}],density:['Размер элементов',{compact:'Компактный',normal:'Обычный',large:'Крупный'}],textScale:['Размер текста',{small:'Мелкий',normal:'Обычный',large:'Крупный'}]};
+  for(const [k,[label,items]] of Object.entries(uiOptions)){const sel=node('select','field');for(const [v,l] of Object.entries(items)){const o=node('option','',l);o.value=v;sel.append(o);}sel.value=uiPrefs[k];sel.addEventListener('change',()=>updateUI({[k]:sel.value}));controls.append(add(node('label','input-label',label),sel));}
+  controls.append(node('h3','','Показатели HUD'));for(const [k,label] of [['hunger','Голод'],['thirst','Жажда'],['energy','Энергия'],['hygiene','Гигиена'],['comfort','Комфорт'],['stress','Стресс']]){const ch=node('input');ch.type='checkbox';ch.checked=uiPrefs.hudFields.includes(k);ch.addEventListener('change',()=>updateUI({hudFields:ch.checked?[...uiPrefs.hudFields,k]:uiPrefs.hudFields.filter(x=>x!==k)}));controls.append(add(node('label','menu-check'),ch,document.createTextNode(label)));}for(const warning of prefs.warnings)controls.append(para(warning));return controls;
  }
  function priorityView(overview,prefs){
   const out=node('div'),selected=[...prefs.priorities],choices=node('div');
@@ -303,15 +339,20 @@ function renderGameMenu(){
   output.replaceChildren();nav.replaceChildren();const prefs=menuPreferences(state.directives,w.active_branch_id);
   const menu=gameMenuContext({world:w,directives:state.directives,context:{head_scene_id:w.head_scene_id,memory_complete:complete}});
   const sections=[{id:'dashboard',label:'Обзор'},...menu.sections];
-  for(const s of sections){const b=button(s.label,()=>{const y=window.scrollY;const top=nav.getBoundingClientRect().top+y;saved.section=s.id;show();window.scrollTo({top:Math.min(y,top),behavior:'instant'});},'game-tile'+(saved.section===s.id?' active':''));b.setAttribute('aria-pressed',String(saved.section===s.id));nav.append(b);}
+  const go=s=>{const y=window.scrollY,top=nav.getBoundingClientRect().top+y;saved.section=s.id;updateUI({lastSection:s.id});show();window.scrollTo({top:Math.min(y,top),behavior:'instant'});};
+  const drawNav=()=>{nav.replaceChildren();favorites.replaceChildren();for(const s of filterSections(sections.map(s=>({...s,actions:(s.actions||[]).flatMap(a=>[a,MENU_ACTION_LABELS[a]||a])})),search.value)){
+   const tile=node('div','game-tile-wrap');const b=button(s.label,()=>go(s),'game-tile'+(saved.section===s.id?' active':''));b.setAttribute('aria-pressed',String(saved.section===s.id));
+   const star=button(uiPrefs.favorites.includes(s.id)?'★':'☆',()=>{const on=uiPrefs.favorites.includes(s.id);if(!on&&uiPrefs.favorites.length>=8){toast('До восьми избранных разделов.',true);return;}updateUI({favorites:on?uiPrefs.favorites.filter(x=>x!==s.id):[...uiPrefs.favorites,s.id]});drawNav();},'favorite-star');star.setAttribute('aria-label','Избранное: '+s.label);star.setAttribute('aria-pressed',String(uiPrefs.favorites.includes(s.id)));tile.append(b,star);nav.append(tile);
+  }for(const id of uiPrefs.favorites){const s=sections.find(x=>x.id===id);if(s)favorites.append(button(s.label,()=>go(s),'btn secondary'));}};
+  search.oninput=drawNav;drawNav();
   if(saved.section==='settings'){output.append(settingsView(prefs));return;}
   if(!complete){output.append(node('div','notice','История загружена частично. Нажми «Вся память», чтобы проверить доступные действия.'));return;}
   if(!saved.actor){output.append(para('Герой определяется по сохранённому выбору игрока. Пока он не установлен, доступна настройка мира.'));return;}
   const overview=playerMenuOverview(projection,saved.actor,scenes.at(-1)?.world_time??null,{scenes,complete});
-  if(saved.section==='dashboard'){output.append(title('Обзор'),renderMenuData(overview.dashboard.notifications),renderMenuData(overview.dashboard.counts));for(const q of overview.dashboard.quick_actions||[])output.append(button(q.label||MENU_ACTION_LABELS[q.action]||q.action,()=>busy(()=>copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+q.detail+'. Проверь актуальный get_game_menu и validate_game_menu_action: '+JSON.stringify(q)+'. Не выполняй автоматически.')),'btn secondary'));return;}
+  if(saved.section==='dashboard'){output.append(title('Обзор'));if(prefs.settings.hud)output.append(hudView(overview));output.append(title('Уведомления'));for(const n of overview.dashboard.notifications.records){output.append(button(n.title||n.kind,()=>{const s=sections.find(x=>x.id===n.section);if(s)go(s);},'btn secondary'));}output.append(renderMenuData(overview.dashboard.counts));for(const q of [...(overview.life.quick_actions||[]),...(overview.dashboard.quick_actions||[])])output.append(button(q.label||MENU_ACTION_LABELS[q.action]||q.action,()=>busy(()=>copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+(q.detail||q.label)+'. Проверь актуальный get_game_menu и validate_game_menu_action: '+JSON.stringify(q)+'. Не выполняй автоматически.')),'btn secondary'));return;}
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
   output.append(title(section.label));
-  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else output.append(renderMenuData(menuSection(overview,section.id).data));
+  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   output.append(personalActions(section,overview));
   const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a));
@@ -328,7 +369,7 @@ function renderGameMenu(){
   if(section.actions.length)output.append(button('Открыть этот раздел в ChatGPT',()=>busy(()=>copy('/меню '+section.label+' — мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Прочитай актуальное меню и покажи доступные действия без продвижения времени.')),'btn secondary'));
  }
  actor.addEventListener('change',()=>{saved.actor=actor.value;show();});
- selectActor();box.append(actor,row(button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);scenes=m.scenes;complete=m.complete;verified=true;projection=replay(scenes,[],{evidencePrevalidated:verified});selectActor();show();}),'btn secondary')),nav,output);root.append(box);show();
+ selectActor();box.append(actor,row(button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);scenes=m.scenes;complete=m.complete;verified=true;projection=replay(scenes,[],{evidencePrevalidated:verified});selectActor();show();}),'btn secondary')),search,favorites,nav,output);root.append(box);show();
 }
 
 function renderStory(){const w=state.world;
@@ -804,6 +845,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
   const key=JSON.stringify([turnScenes.at(-1)?.id,filters]);if(key!==turnFilterKey){turnOffset=0;turnFilterKey=key;}
   const v=prepareStoryTurn(turnScenes,projection,state.directives,{...filters,offset:turnOffset});
   turnOut.replaceChildren(para('Игровое время: '+(v.clock||'не установлено')+(v.target_time?' → '+v.target_time:'')+(v.elapsed_story_minutes!==null?' · '+v.elapsed_story_minutes+' мин.':'')));
+  if(v.world_chronicle?.records.length)turnOut.append(panel(title('Режиссёрская хроника мира'),timelineView(v.world_chronicle)));
   if(v.background_time_review)turnOut.append(panel(title('Ближайший этап перемотки'),renderMenuData(v.background_time_review)));
   if(v.npc_initiatives?.initiatives.length)turnOut.append(panel(title('Самостоятельные инициативы NPC'),renderMenuData(v.npc_initiatives.initiatives)));
   for(const warning of v.warnings)turnOut.append(node('div','notice',warning));
