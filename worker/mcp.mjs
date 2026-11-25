@@ -1,3 +1,4 @@
+import {recordedPlayerActors} from '../public/core/social-dashboard.mjs';
 import {createAncestryCache} from '../public/core/ancestry-cache.mjs';
 import {planTimeAdvance} from '../public/core/life-calendar.mjs';
 /**
@@ -228,7 +229,8 @@ async function callTool(name,args,env,token){
    const finalWorld=await ownerWorld(env,token,world.id),finalBranch=await branch(env,token,finalWorld);
    if(finalWorld.active_branch_id!==world.active_branch_id||finalBranch.head_scene_id!==active.head_scene_id||finalWorld.directive_version!==world.directive_version)throw Error('Story or rules changed while preparing world context; retry.');
    const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
-   const playerActor=ctx.player_choice?.pending?.actor;
+   const controlledActors=recordedPlayerActors(ctx.memory);
+   const playerActor=ctx.player_choice?.pending?.actor??(controlledActors.length===1?controlledActors[0]:null);
    const menu=gameMenuContext({world,directives:rules,context:ctx});
    if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete});
    return {...ctx,game_menu:menu,next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints},memory:compactMemory,memory_is_sample:true,
