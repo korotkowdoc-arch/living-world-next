@@ -1,3 +1,4 @@
+import {causalMemory} from './causal-memory.mjs';
 import {recentRegistryState} from './state-delta.mjs';
 import {activeTaskRecall} from './task-tracker.mjs';
 import {characterAge} from './character-state.mjs';
@@ -52,7 +53,7 @@ export function focusedSceneContext(projection,focus,{complete=true,maxChars=180
  }
  selected.events_replayed=projection.events_replayed;
  selected.validation_warnings=projection.validation_warnings||[];
- return {focus:input,memory_complete:complete,memory:limitedNarratorMemory(selected,{maxChars,maxEntriesPerCategory:20,scenes,rankRecord:queries.length?queryScore:null}),recent_state:recentRegistryState(projection,scenes,{actors:input.actors,complete}),active_tasks:activeTaskRecall(projection,input.actors,{clock:worldTime,complete,limit:12,maxChars:7000}),
+ return {focus:input,memory_complete:complete,memory:limitedNarratorMemory(selected,{maxChars,maxEntriesPerCategory:20,scenes,rankRecord:queries.length?queryScore:null}),causal_memory:causalMemory(projection,scenes,{actors:input.actors,keys:input.queries,complete,clock:worldTime,limit:8,maxChars:7000}),recent_state:recentRegistryState(projection,scenes,{actors:input.actors,complete}),active_tasks:activeTaskRecall(projection,input.actors,{clock:worldTime,complete,limit:12,maxChars:7000}),
   life_context:input.actors.flatMap(name=>{const age=characterAge((projection.people||[]).find(p=>p.name===name),worldTime);return age?[{actor:name,age}]:[];}),
   matched_actor_names:input.actors.filter(name=>(projection.people||[]).some(p=>p.name===name)),
   identity_policy:'Names are exact recorded labels. Unmatched names and missing fields do not prove that a character or fact is absent. Search the source text for variants.',
