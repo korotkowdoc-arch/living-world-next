@@ -4,7 +4,7 @@
 ## v0.50.0 — native application game menu (candidate)
 - [x] Grouped home directory, search across all 47 sections, favorites, direct section screens with back navigation, icon tiles and responsive style. No browser reload or hash routing for internal menu navigation. In-place source reader, journal, historical memory reader, direct settings and priorities. Automatically loads complete pinned structured memory when needed; one active snapshot cache. No automatic choice, fictional time or gameplay write.
 - [x] Optional narrative intent forms separated from reading; duplicate action selectors removed. Lazy section galleries and CSP blob image support. Existing actual narrator remains ChatGPT; no paid API.
-- [ ] CI, published app verification, actual device/browser visual test. Narrative actions still require ChatGPT, not a standalone narrator.
+- [x] Browser smoke scenario for 47 sections, source modal, historical memory and actual preference RPC contract, no document navigation or unintended writes. [ ] CI, published app verification, actual device/browser visual test. Narrative actions still require ChatGPT, not a standalone narrator.
 
 ## Historical memory search
 - [x] Actual active story historical review: 23/23 scenes, 120 separate unique evidence-backed historical notes saved and re-read. Live v0.49 projection confirmed: 9 recovered knowledge records; current head and pending choice unchanged. No canonical edits or retroactive payments.

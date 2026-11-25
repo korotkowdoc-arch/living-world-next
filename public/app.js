@@ -117,7 +117,7 @@ async function openLinkedScene(link){
   updateSceneTypography();
  }catch(e){clear();add(root,title('Не удалось открыть сцену'),para(e.message||'Сцена недоступна.'),row(button('Повторить',()=>busy(openLanding)),button('Все миры',()=>busy(openWorlds),'btn secondary')));}
 }
-async function openWorlds(){clearReaderHash();if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
+async function openWorlds(){menuMemoryCache=null;menuMemoryJob=null;clearReaderHash();if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
 function renderWorlds(){state.screen='worlds';clear();add(root,node('div','eyebrow','Интерактивные вселенные'),add(node('h1','hero-title'),document.createTextNode('Придумай мир. '),node('em','','Он оживёт.')),para('Никаких анкет и обязательных биографий. Опиши идею своими словами — детали мира сформируются по мере истории.','subtitle'));
   const prompt=field('Например: Гарри Поттер, 1991 год. Начинаем с Хогвартса. Гарри и Малфой — непримиримые враги. Никакого взаимного уважения.','field large-field');
   const preview=para('Сначала создаём основу, не придумывая за тебя скрытые события.','helper');
@@ -423,7 +423,7 @@ async function openMenuSource(worldId,sceneId){
   const known=state.scenes.find(s=>s.id===sceneId&&typeof s.body==='string');
   const source=known||await getScene(worldId,sceneId);
   if(!dialog.open)return;
-  if(state.screen!=='world'||menuSnapshotKey(state.world)!==key){dialog.close();return;}
+  if(state.screen!=='world'||state.tab!=='menu'||menuSnapshotKey(state.world)!==key){dialog.close();return;}
   heading.textContent=source.world_time||'Сохранённая сцена';
   body.replaceChildren(node('div','scene-body',source.body));
  }catch(e){if(dialog.open)body.replaceChildren(para('Не удалось прочитать источник: '+e.message));}
@@ -589,7 +589,7 @@ function renderGameMenu(){
  search.type='search';search.placeholder='Найти раздел';search.setAttribute('aria-label','Найти раздел меню');actor.setAttribute('aria-label','Герой');
  nav.append(groups,search,tiles);
  const snap=menuSnapshotKey(w),cached=menuMemoryCache?.key===snap?menuMemoryCache:null;
- let scenes=cached?.scenes??state.scenes,complete=cached?.complete??state.historyComplete,verified=!!cached,projection=cached?.projection??replay(scenes),loadingMemory=false;
+ let scenes=cached?.scenes??state.scenes,complete=cached?.complete??state.historyComplete,projection=cached?.projection??replay(scenes),loadingMemory=false;
  const alive=()=>box.isConnected&&state.screen==='world'&&state.tab==='menu'&&menuSnapshotKey(state.world)===snap;
  async function loadMemory(){
   if(loadingMemory)return;loadingMemory=true;status.replaceChildren(para('Загружаю полную память мира…'));
@@ -597,7 +597,7 @@ function renderGameMenu(){
    if(menuMemoryJob?.key!==snap){const job={key:snap,promise:fullStructuredMemory(w)};menuMemoryJob=job;job.promise.finally(()=>{if(menuMemoryJob===job)menuMemoryJob=null;}).catch(()=>{});}
    const m=await menuMemoryJob.promise;
    if(!alive())return;
-   scenes=m.scenes;complete=m.complete;verified=true;projection=replay(scenes,[],{evidencePrevalidated:true});
+   scenes=m.scenes;complete=m.complete;projection=replay(scenes,[],{evidencePrevalidated:true});
    menuMemoryCache={key:snap,scenes,complete,projection};selectActor();show();
   }catch(e){if(alive())status.replaceChildren(para('Не удалось загрузить память: '+e.message),button('Повторить',()=>void loadMemory(),'btn secondary'));}
   finally{loadingMemory=false;}
@@ -659,7 +659,7 @@ function renderGameMenu(){
   saved.section=menuSectionTransition(sections,'dashboard',saved.section);
   const home=saved.section==='dashboard';
   nav.hidden=!home;
-  const go=s=>{const next=menuSectionTransition(sections,saved.section,s.id);if(next===saved.section)return;saved.section=next;saved.offset=0;updateUI({lastSection:next});show();box.scrollIntoView({block:'start',behavior:'instant'});};
+  const go=s=>{const next=menuSectionTransition(sections,saved.section,s?.id);if(next===saved.section)return;saved.section=next;saved.offset=0;updateUI({lastSection:next});show();box.scrollIntoView({block:'start',behavior:'instant'});};
   const back=button('‹ Главное меню',()=>go(sections[0]),'menu-back');
   if(!home){const current=sections.find(s=>s.id===saved.section);breadcrumb.append(back,node('span','menu-breadcrumb-label',current.label));}
   const drawNav=()=>{
@@ -1356,7 +1356,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  add(root,panel(title('Автосохранение через MCP'),para('После публикации и подключения OAuth-моста ChatGPT сможет сохранять сцены при включённом разрешении. Эта настройка не запускает модель в фоне.'),row(button(w.auto_save?'Автосохранение включено':'Автосохранение выключено',()=>busy(async()=>{await setAutosave(w.id,!w.auto_save);await reloadWorld(w.id);renderWorld();}),'btn secondary'))));
  add(root,panel(title('Удалить мир'),para('Удаление безвозвратное. Старый LIVING WORLD не затрагивается.'),row(button('Удалить этот мир',()=>busy(async()=>{if(!confirm(`Удалить мир «${w.title}» вместе с его ветками?`))return;await deleteWorld(w.id);await openWorlds();toast('Мир удалён.');}),'btn danger'))));
 }
-accountButton.addEventListener('click',()=>busy(async()=>{if(readSession()){await signOut();showAuth();}else showAuth();}));
+accountButton.addEventListener('click',()=>busy(async()=>{if(readSession()){menuMemoryCache=null;menuMemoryJob=null;menuUiState.clear();await signOut();showAuth();}else showAuth();}));
 document.querySelector('#homeLink').addEventListener('click',e=>{e.preventDefault();busy(openWorlds);});
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Ошибка подключения. Попробуй обновить страницу.',true);});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void checkCloudChanges();});
