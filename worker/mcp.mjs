@@ -740,7 +740,7 @@ export default {
     let hint='Bearer';try{hint=challenge(env);}catch{}
     return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
    }
-   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.51.0'},instructions:narratorWorkflow})));
+   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.52.0'},instructions:narratorWorkflow})));
    if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
    if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
    if(msg.method==='resources/templates/list')return response(JSON.stringify(done(msg.id,{resourceTemplates:[]})));
