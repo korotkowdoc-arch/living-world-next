@@ -17,7 +17,7 @@ export function advancedShapeError(e){
  if(!isAdvanced(e))return null;
  const k=e.advanced_kind;
  if(e.type!=='world'||e.advanced_version!==1||!kinds.includes(k)||!id(e.record_id)||e.key!=='advanced:'+k+':'+e.record_id||!txt(e.evidence,12000))return 'Invalid advanced record key, type or evidence';
- if(['world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Advanced record must be separate';
+ if(['magic_version','world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Advanced record must be separate';
  if(k==='instrument'&&(!txt(e.actor)||!txt(e.title)||!txt(e.currency,20)||e.record_id.length>69||!positive(e.total_units)||!positive(e.unit_price)||!one(e.instrument_kind,['share','bond','fund','deposit','other'])||!one(e.status,['open','suspended','closed'])))return 'Invalid instrument';
  if(k==='lot'&&(!txt(e.actor)||!id(e.instrument_id)||!positive(e.units)||!positive(e.amount)||!txt(e.currency,20)||!id(e.transfer_event_id)||!one(e.status,['held','sold'])))return 'Invalid investment lot';
  if(k==='lot_transfer'&&(!txt(e.actor)||!txt(e.counterparty)||e.actor===e.counterparty||!id(e.lot_id)||!id(e.new_lot_id)||e.lot_id===e.new_lot_id||!one(e.transfer_kind,['sale','gift','inheritance'])||e.status!=='settled'||e.transfer_kind==='sale'&&(!positive(e.amount)||!txt(e.currency,20)||!id(e.transfer_event_id))||e.transfer_kind!=='sale'&&(e.amount!=null||e.transfer_event_id!=null)||e.transfer_kind==='inheritance'&&!txt(e.authorization,600)))return 'Invalid secondary ownership transfer';
@@ -104,7 +104,7 @@ export function advancedIndex(scenes=[],projection={}, {complete=true}={}){
    if(!err&&k==='map_point'&&!same(['actor','map_id','title']))err='Map observation identity cannot change';
    if(err){error(s,e,err);continue;}
    const r={...e,source:source(s,e)};
-   if(k==='lot')r.purchase_amount=old?.purchase_amount??e.amount;
+   if(k==='lot')r.purchase_amount=old?old.purchase_amount:e.amount;
    records.set(e.key,r);if(k==='edition')editionTopics.add(e.topic_id);
   }
  }
