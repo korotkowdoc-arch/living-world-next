@@ -58,7 +58,7 @@ export function promptForNarrator({world, directives = [], history = [], project
   const locks=extractLocks(active);
   if(locks.length)blocks.push('ЖЁСТКИЕ ОГРАНИЧЕНИЯ ОТНОШЕНИЙ — НЕ ПЕРЕОСМЫСЛЯЙ:\n' + locks.map(x=>`${x.a} ↔ ${x.b}: ${x.forbid_reconciliation?'нет примирения/дружбы; ':''}${x.forbid_respect?'нет взаимного уважения; ':''}совместная опасность/помощь не меняет эту установку`).join('\n'));
   if (projection){
-    const sample=limitedNarratorMemory(projection);
+    const sample=limitedNarratorMemory(projection,{maxChars:12000,maxEntriesPerCategory:10});
     blocks.push('ДОКАЗАТЕЛЬНАЯ ПАМЯТЬ ДЛЯ СЛЕДУЮЩЕЙ СЦЕНЫ (выборка, не исчерпывающий архив):\n' + JSON.stringify(sample));
     const omitted=Object.entries(sample.omitted||{});
     if(omitted.length)blocks.push('ПРОПУЩЕННЫЕ ЗАПИСИ ДЛИННОЙ ПАМЯТИ (не значит, что событий не было): '+omitted.map(([key,count])=>key+': '+count).join('; ')+'. Запроси первоисточники через MCP перед утверждением фактов.');
@@ -70,7 +70,7 @@ export function promptForNarrator({world, directives = [], history = [], project
   }
   if (projection) blocks.push(storyDriverPrompt(storyDrivers(projection,active)));
   if (timeContext || (projection&&history.length))blocks.push(agendaNarrationGuidance(timeContext||recordedWorldAgenda(history,projection)));
-  if (history.length) blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ (большие тексты показываются фрагментами):\n' + history.slice(-3).map(x=>narratorSceneExcerpt(x)).join('\n\n'));
+  if (history.length) blocks.push('ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ СЦЕНЫ (большие тексты показываются фрагментами):\n' + history.slice(-3).map(x=>narratorSceneExcerpt(x,{maxChars:Math.floor(9000/Math.min(3,history.length))})).join('\n\n'));
   if(history.length>3)blocks.push('Показаны последние три сцены; более ранние доступны в хронологии и поиске MCP.');
   blocks.push('ПЕРЕД ВАЖНОЙ СЦЕНОЙ В ДЛИННОЙ ИСТОРИИ: используй get_scene_context с именами участвующих героев и короткими словами, связывающими эпизод с прошлым. Он возвращает только релевантную доказательную выборку и отдельные буквальные цитаты. Не выдавай тайну одного героя за знание другого; прежде чем опереться на старое событие, открой его сцену. Не вызывай лишние инструменты для каждой обычной фразы.');
   blocks.push('ЖИЗНЬ МИРА: используй get_living_world для подтверждённых мест, привычного распорядка NPC и событий вне кадра. Когда сцена реально устанавливает место, запиши world event с world_record_version=1, record_kind=place, record_id (устойчивый ID), key=place:<ID>, name, status=open/closed/restricted/damaged/destroyed/unknown, при наличии description, access, parent_place. Для явно известного распорядка: record_kind=routine, record_id, key=routine:<ID>, actor, activity, place (точное имя места), status=active/paused/ended, weekdays (1–7, понедельник=1), start/end HH:MM. Обновление использует тот же ключ и полный актуальный набор полей. Расписание даёт повод для самостоятельного действия, но не доказывает присутствие; не телепортируй NPC и не превращай намерения в события. Место может меняться, закрываться или разрушаться. Для действительно показанного события вне кадра записывай offscreen с actor, при наличии actors, place и description. Для разбора давних сцен get_annotation_passages возвращает точные фрагменты, не новые факты. Не требуй ручных анкет.');
