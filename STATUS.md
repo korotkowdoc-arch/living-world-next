@@ -6,11 +6,12 @@
 - [x] Own civic records and delivered notices in communities menu, NPC review opportunities without committing choices. Regression tests, app shell, release marker. Application preflight; specialized SQL parity remains open.
 - [ ] CI, merge, cloud and real-world verification. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
 
-## v0.45.1 — комнаты и непрерывность (candidate)
+## v0.45.1 — комнаты и непрерывность
 - [x] Room observations with stable area identity, purpose, walls/flooring/lighting, current title epoch, own-room menu, effective furniture, known condition, and image subjects; no implicit repairs or spending. Reconfirm after ownership changes. No new MCP tool or SQL schema.
 - [x] Explicit tests of subscription visibility and academic assessment identity; ambiguous same-title modules no longer auto-match.
 - [x] Fixed growing narrator prompt budget: complete schema instructions remain in narrator_workflow, connected/oversized prose prompt uses compact core guidance without truncating player rules; regression tests.
-- [ ] Combined CI, live deployment and gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
+- [x] PR #39 merged (0aad93d); Node CI 45655801001 and SQL CI 45655800891 passed.
+- [ ] Live deployment and gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
 
 ## v0.45.0 — Living Civilization: координация систем
 - [x] Narrator-only coordination of overlapping canonical lessons, assessments, shifts and appointments, including teacher participation but not fictitious employer attendance. Bounded sweep, exact windows, no automatic action.
