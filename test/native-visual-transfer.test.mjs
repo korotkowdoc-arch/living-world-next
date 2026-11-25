@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {trustedFileUrl,fetchNativeImage,imageMime,transferNativeImage,nativeImageDescriptor,base64Image,limitedBytes} from '../worker/native-visual-transfer.mjs';
+const bytes=new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0]);
+const file={file_id:'file-test',download_url:'https://files.oaiusercontent.com/test?sig=secret',mime_type:'image/png'};
+test('official file parameter descriptor and strict SSRF boundary',async()=>{
+ assert.deepEqual(nativeImageDescriptor.required,['download_url','file_id']);
+ assert.deepEqual(Object.keys(nativeImageDescriptor.properties).sort(),['download_url','file_id','file_name','mime_type']);
+ for(const url of ['http://files.oaiusercontent.com/test','https://files.oaiusercontent.com.evil.test/a','https://127.0.0.1/','https://user@files.oaiusercontent.com/a','https://files.oaiusercontent.com:444/test'])assert.throws(()=>trustedFileUrl(url));
+ await assert.rejects(fetchNativeImage(file,async()=>new Response(null,{status:302,headers:{location:'http://169.254.169.254/'}})));
+ await assert.rejects(fetchNativeImage({file_id:'file-test'},async()=>{throw Error('must not fetch');}));
+ const result=await fetchNativeImage(file,async(url,opt)=>{assert.equal(opt.redirect,'manual');assert.equal(opt.credentials,'omit');assert.equal(opt.headers,undefined);return new Response(bytes);});
+ assert.equal(result.mime,'image/png');assert.deepEqual(result.bytes,bytes);
+ await assert.rejects(fetchNativeImage(file,async()=>new Response('<html>not an image</html>')));
+ await assert.rejects(limitedBytes(new Response(new Uint8Array(11)),10));
+ await assert.rejects(limitedBytes(new Response(null,{status:403})));
+ assert.equal(imageMime(bytes),'image/png');assert.deepEqual(Uint8Array.from(atob(base64Image(bytes)),c=>c.charCodeAt(0)),bytes);
+});
+test('native transfer saves bytes and verifies receipt; retries never overwrite',async()=>{
+ let stored=null,uploadCount=0;
+ const asset={id:'test',status:'pending'},ready={id:'test',status:'ready',mime_type:'image/png',byte_size:bytes.length};
+ const args={asset,file,download:async()=>({bytes,mime:'image/png'}),read:async()=>{if(!stored)throw Error('missing');return stored;},upload:async(a,b)=>{uploadCount++;if(stored)throw Error('exists');stored=b;},finish:async()=>ready};
+ let result=await transferNativeImage(args);assert.equal(result.reused,false);assert.equal(result.asset.status,'ready');
+ result=await transferNativeImage(args);assert.equal(result.reused,true);assert.equal(uploadCount,2);
+ result=await transferNativeImage({...args,asset:ready});assert.equal(result.reused,true);assert.equal(uploadCount,2);
+ const other=new Uint8Array(bytes);other[23]=2;
+ await assert.rejects(transferNativeImage({...args,asset:ready,download:async()=>({bytes:other,mime:'image/png'})}),/immutable/);
+ await assert.rejects(transferNativeImage({...args,download:async()=>({bytes:other,mime:'image/png'})}),/different image/);
+ assert.deepEqual(stored,bytes);
+ await assert.rejects(transferNativeImage({...args,finish:async()=>({...ready,byte_size:1})}),/confirm/);
+});
