@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {worldDepthIndex} from '../public/core/world-depth.mjs';
+import {normalizeUI,readUI,saveUI,filterSections,hudStates} from '../public/core/ui-preferences.mjs';
+import {prepareStoryTurn} from '../public/core/story-turn.mjs';
+import {playerMenuOverview,menuSection} from '../public/core/game-menu.mjs';
+const source=(s,e)=>({scene_id:s,event_id:e,world_time:s==='s1'?'2000-01-01 09:00':'2000-01-02 09:00'});
+const people=[{name:'Hero',state_fields:[{field:'values',value:'Honesty',source:source('s1','h')},{field:'location',value:'Library',source:source('s1','h')}]},{name:'Lia',state_fields:[{field:'temperament',value:'Careful',source:source('s1','l')}]}];
+const scenes=[{id:'s1',world_time:'2000-01-01 09:00',events:[{type:'character',name:'Hero',id:'h',state_patch:{values:'Honesty',location:'Library'}}]},{id:'s2',world_time:'2000-01-02 09:00',events:[{id:'i',type:'world',interaction_version:1,interaction_kind:'conversation',actors:['Hero','Lia'],description:'Discussed books',place:'Library'},{id:'n',type:'world',dynamics_version:1,dynamics_kind:'development',actors:['Lia'],title:'Hidden council meeting',status:'completed'},{id:'bad',type:'character',name:'Hero',state_patch:{location:'Fake place'}}]}];
+const projection={people,relationship_history:[{source:source('s2','i')}],relationships:[{a:'Hero',b:'Lia',stance:'friendly',source:source('s1','r')},{a:'Lia',b:'Other',stance:'secret',source:source('s1','r2')}],knowledge:[{actor:'Hero',topic_id:'paper',status:'knows',fact:'Library opens',channel:'Newspaper',source:source('s1','k')},{actor:'Lia',topic_id:'hidden',status:'knows',fact:'Secret news',channel:'Private letter',source:source('s1','k2')}],worldFacts:[{key:'dynamics:economic_agreement:a',record_id:'a',dynamics_version:1,dynamics_kind:'economic_agreement',actor:'Lia',counterparty:'Other',title:'Rent',amount:20,currency:'GBP',status:'active',source:source('s1','a')}],budget_flows:[{actor:'Hero',month:'2000-01',currency:'GBP',income:100,expense:25},{actor:'Hero',month:'2000-01',currency:'USD',income:'9007199254740999',expense:2}],validation_warnings:[{scene_id:'s2',event_id:'bad'}]};
+test('player graph, news, map and timeline never leak unobserved events or rejected locations',()=>{
+ const idx=worldDepthIndex(scenes,projection),v=idx.view('Hero'),d=idx.view('Lia',{director:true});
+ assert.equal(v.news.records[0].title,'Library opens');
+ assert.equal(v.social.nodes.length,2);assert.ok(!JSON.stringify(v).includes('Secret news'));
+ assert.ok(!JSON.stringify(v).includes('Hidden council meeting'));
+ assert.ok(!JSON.stringify(v).includes('Fake place'));
+ assert.ok(!JSON.stringify(v.social).includes('Other'));
+ assert.ok(d.news.records.some(r=>r.title==='Hidden council meeting'));
+ assert.ok(d.timeline.records.some(r=>r.title==='Hidden council meeting'));
+ assert.equal(v.economy.flows.records.find(r=>r.currency==='GBP').net,'75');
+ assert.equal(v.economy.flows.records.find(r=>r.currency==='USD').net,'9007199254740997');
+ assert.equal(worldDepthIndex(scenes,projection,{complete:false}).view('Hero').memory_complete,false);
+});
+test('experience, economy and information initiatives are read-only, preserve player control',()=>{
+ const before=JSON.stringify(projection),idx=worldDepthIndex(scenes,projection);
+ assert.ok(idx.opportunities().some(x=>x.kind==='experience_reflection'&&x.row.actor==='Lia'));
+ assert.ok(idx.opportunities().some(x=>x.kind==='financial_review'&&x.row.actor==='Lia'));
+ assert.ok(idx.opportunities().some(x=>x.kind==='information_opportunity'&&x.row.actor==='Hero'));
+ const t=prepareStoryTurn(scenes,projection,[],{actors:['Hero'],limit:30});
+ assert.ok(t.world_chronicle.records.length);
+ assert.ok(t.npc_initiatives.initiatives.every(x=>x.actor!=='Hero'));
+ assert.equal(JSON.stringify(projection),before);
+ const menu=playerMenuOverview(projection,'Hero',null,{scenes});
+ for(const section of ['psychology','network','news','timeline','map','finances'])assert.ok(menuSection(menu,section).data);
+});
+test('preferences validate local data, preserve selections and HUD uses ordinal states not fabricated percentages',()=>{
+ let saved='';const storage={getItem:()=>saved,setItem:(_,v)=>saved=v};
+ const v=saveUI(storage,{theme:'light',density:'large',favorites:['news','news','bad'],lastSection:'map',hudFields:['hunger','bad']});
+ assert.deepEqual(v.favorites,['news']);assert.deepEqual(readUI(storage),v);
+ assert.equal(normalizeUI({theme:'bad'}).theme,'dark');
+ assert.equal(filterSections([{id:'news',label:'Новости'},{id:'map',label:'Карта'}],'нов').length,1);
+ const h=hudStates([{need:'hunger',status:'unknown',forecast:{estimated_status:'urgent'}}],['hunger']);
+ assert.equal(h[0].observed,'unknown');assert.equal(h[0].estimate,'urgent');assert.ok(!Object.hasOwn(h[0],'percent'));
+});
