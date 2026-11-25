@@ -871,4 +871,26 @@ begin
  if (select count(*) from public.nw_projection_snapshots where world_id=wid)>4 then raise exception 'Snapshot storage cap exceeded';end if;
 end $snapshot_isolation$;
 reset role;
+set local role authenticated;
+do $extension_checks$
+declare wid uuid:=current_setting('nw.snapshot_world')::uuid;bid uuid:=current_setting('nw.snapshot_fork')::uuid;h uuid:=current_setting('nw.snapshot_head')::uuid;bad boolean;body text:='Observed the document.';
+chapter jsonb:='{"id":"chapter","type":"world","document_version":1,"document_kind":"chapter","record_id":"c","key":"document:chapter:c","actor":"Anna","edition_id":"ed","chapter_id":"one","title":"One","body":"Stable text","status":"recorded","evidence":"Observed the document."}';
+begin
+ if has_function_privilege('authenticated','public.nw_assert_extension_append(uuid,uuid,jsonb)','EXECUTE') then raise exception 'Extension helper exposed';end if;
+ bad:=false;
+ begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(chapter||'{"document_version":2}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Malformed extension accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(chapter),0);
+ bad:=false;
+ begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(chapter||'{"body":"Replacement"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Immutable chapter overwritten';end if;
+ bad:=false;
+ begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,'[{"id":"bad","type":"money","actor":"Anna","counterparty":"treasury:missing","currency":"GBP","operation":"transfer","delta":-1,"evidence":"Observed the document."}]',0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Raw shared treasury transfer accepted';end if;
+ bad:=false;
+ begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,'[{"id":"royalty","type":"world","document_version":1,"document_kind":"royalty","record_id":"r","key":"document:royalty:r","actor":"Anna","recipient":"Ben","edition_id":"ed","currency":"GBP","amount":10,"status":"paid","evidence":"Observed the document."}]',0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Missing royalty transfer accepted';end if;
+ if (select head_scene_id from public.nw_branches where id=bid) is distinct from h then raise exception 'Rejected scene changed head';end if;
+end $extension_checks$;
+reset role;
 rollback;

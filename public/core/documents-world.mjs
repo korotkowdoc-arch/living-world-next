@@ -17,7 +17,7 @@ export function documentShapeError(e){
  if(!isDocument(e))return null;
  const k=e.document_kind;
  if(e.type!=='world'||e.document_version!==1||!kinds.includes(k)||!id(e.record_id)||e.key!=='document:'+k+':'+e.record_id||!text(e.actor)||!text(e.evidence,12000))return 'Invalid document envelope';
- if(['magic_version','magic_society_version','advanced_version','world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Document must be a separate record';
+ if(['wealth_version','magic_version','magic_society_version','advanced_version','world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(v=>e[v]!==undefined))return 'Document must be a separate record';
  if(k==='document'&&(!text(e.title,240)||!one(e.category,categories)||!text(e.summary,1000)||!one(e.status,['active','archived'])||!one(e.visibility,['private','public'])||e.channel_id!=null&&!id(e.channel_id)))return 'Invalid document';
  if(k==='edition'&&(!id(e.document_id)||!positive(e.number)||!text(e.title,240)||!one(e.status,['draft','published','withdrawn'])||!Array.isArray(e.contents)||!e.contents.length||e.contents.length>100||!e.contents.every(c=>c&&id(c.id)&&text(c.title,240))||!uniq(e.contents,c=>c.id)||e.previous_id!=null&&!id(e.previous_id)))return 'Invalid edition manifest';
  if(k==='chapter'&&(!id(e.edition_id)||!id(e.chapter_id)||!text(e.title,240)||!text(e.body,16000)||e.status!=='recorded'))return 'Invalid persistent chapter';

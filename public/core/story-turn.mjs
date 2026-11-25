@@ -1,3 +1,4 @@
+import {wealthIndex} from './wealth-world.mjs';
 import {documentIndex} from './documents-world.mjs';
 import {magicIndex} from './magic-world.mjs';
 import {advancedIndex} from './advanced-world.mjs';
@@ -47,6 +48,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const timeAdvance=proposed?.precision==='minute'&&clock?.precision==='minute'&&proposed.order>clock.order&&focus.size===1?planTimeAdvance(scenes,projection,[...focus][0],proposed.literal,{complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor}):null;
  const segmentLimit=backgroundTimeReview([],{clock:clock?.literal,target:proposed?.literal,segmentUntil:timeAdvance?.proposed_until,protectedActors,complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor});
  const segmentAnchor=parseStoryDate(segmentLimit?.segment_until)||clock;
+ const wealth=wealthIndex(scenes,projection,{complete:opts.complete!==false});
  const documents=documentIndex(scenes,projection,{complete:opts.complete!==false});
  const magic=magicIndex(scenes,projection,{complete:opts.complete!==false});
  const advanced=advancedIndex(scenes,projection,{complete:opts.complete!==false});
@@ -272,6 +274,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   for(const {kind,row,info} of npcNeedOpportunities(records,scenes,(segmentLimit?segmentAnchor:anchor)?.literal))add(kind,row,info);
   for(const {kind,row,info} of npcContactOpportunities(scenes,projection,clock?.literal,{shared:all.slice()}))add(kind,row,info);
  }
+ for(const {kind,row,info} of wealth.opportunities())add(kind,row,info);
  for(const {kind,row,info} of documents.opportunities())add(kind,row,info);
  for(const {kind,row,info} of magic.opportunities())add(kind,row,info);
  for(const {kind,row,info} of advanced.opportunities())add(kind,row,info);
