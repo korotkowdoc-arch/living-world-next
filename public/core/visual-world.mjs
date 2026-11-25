@@ -22,7 +22,7 @@ export function visualSubjects(overview,sceneId){
  for(const c of overview.contacts?.records||[])add('character',c.name,c.name);
  for(const x of overview.inventory?.records||[])add('item',x.id,x.name||x.id);
  for(const x of overview.property_systems?.estates?.records||[])add('place',x.id,x.title);
- for(const x of overview.world_depth?.places?.known_places?.records||[])add('place',x.id||x.place,x.title||x.place);
+ for(const x of overview.world_depth?.places?.places?.records||[])add('place',x.id||x.place||x.name,x.title||x.place||x.name);
  for(const k of ['library','newspapers','documents','archives','authored','notebooks','catalogues','medical_records','bank_records','gallery'])for(const x of overview.documents?.[k]?.records||[]){add('document',x.id,x.title,x.summary);for(const ch of x.contents||[])if(ch.read)add('chapter',x.id+':'+ch.id,x.title+' — '+ch.title);}
  for(const x of overview.magic_system?.society?.ecology?.species?.records||[])add('creature',x.id,x.title||x.name,x.description);
  for(const x of overview.magic_system?.society?.rituals?.protocols?.records||[])add('ritual',x.id,x.title,x.description);
