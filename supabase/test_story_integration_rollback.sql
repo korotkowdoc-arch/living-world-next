@@ -1000,6 +1000,8 @@ begin
  bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n,n||'{"id":"duplicate"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Duplicate note accepted';end if;
  bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n,p||'{"action":"complete","performed_event_id":"note"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Note completed plan';end if;
  if (select head_scene_id from public.nw_branches where id=bid) is distinct from h then raise exception 'Invalid note changed head';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(jsonb_build_object('id','k','type','world','knowledge_version',1,'actor','Anna','topic_id','trip','fact','Anna intends to travel','channel','own intent','status','knows','evidence',body)),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Misrouted knowledge accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(jsonb_build_object('id','k','type','knowledge','knowledge_version',1,'actor','Anna','topic_id','trip','fact','Anna intends to travel','channel','own intent','status','knows','evidence',body)),0);
  if has_function_privilege('authenticated','public.nw_assert_scene_memory_append(jsonb)','EXECUTE') then raise exception 'Private note guard exposed';end if;
 end $scene_memory$;
 reset role;

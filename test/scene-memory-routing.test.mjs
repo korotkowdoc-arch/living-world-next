@@ -65,3 +65,15 @@ test('legacy generic records are retrievable as literal source hints without cha
  assert.equal(memoryCoverageSummary(h).counts.legacy_generic_records,1);
  assert.equal(p.balances.length,0);assert.equal(p.items.length,0);assert.equal(p.knowledge.length,0);
 });
+
+test('legacy explicit world knowledge is restored to the exact holder and source, while new misrouting is rejected',()=>{
+ const old={id:'knowledge-old',type:'world',knowledge_version:1,actor:'Анна',topic_id:'trip',fact:'Она намерена отправиться в Лондон.',channel:'own intent',status:'knows',evidence:n.evidence};
+ const h=[scene('s1',[old])],p=replay(h);
+ assert.equal(p.knowledge.length,1);assert.equal(p.knowledge[0].actor,'Анна');assert.equal(p.knowledge[0].legacy_route_recovered,true);assert.equal(p.knowledge[0].source.event_id,'knowledge-old');assert.equal(h[0].events[0].type,'world');
+ assert.equal(p.worldFacts.length,0);assert.equal(eventRoute(old).domain,'knowledge');assert.equal(memoryCoverageSummary(h).counts.recoverable_legacy_knowledge_records,1);
+ assert.equal(validateScene({body,events:[old]}).ok,false);
+ assert.equal(validateStateAppend([], [old],body).ok,false);
+ assert.equal(validateScene({body,events:[{...old,type:'knowledge'}]}).ok,true);
+ const mixed={...old,id:'invalid',key:'generic-key'};
+ const q=replay([scene('s2',[mixed,n])]);assert.equal(q.knowledge.length,0);assert.equal(q.worldFacts.length,0);assert.ok(q.validation_warnings.some(x=>x.event_id==='invalid'));assert.equal(sceneMemoryRecall([scene('s2',[mixed,n])],q,{actors:['Анна']}).notes.length,1);
+});

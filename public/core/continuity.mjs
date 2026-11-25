@@ -24,7 +24,7 @@ import {economyShapeError,applyMoney,applyItem,applyStock} from './economy.mjs';
 import {characterStateError,applyCharacter} from './character-state.mjs';
 import {lifeRecordError,livingWorldView} from './living-world.mjs';
 import {socialRecordError,socialTransitionError,socialWorldView} from './social-world.mjs';
-import {knowledgeRecordError,knowledgeKey} from './knowledge.mjs';
+import {knowledgeRecordError,knowledgeKey,knowledgeRoutingError,normalizeLegacyKnowledge} from './knowledge.mjs';
 import {relationshipError,relationshipKey,applyRelationship,interactionError} from './relationship-memory.mjs';
 import {activityError,activityTransitionError,activityView} from './activities.mjs';
 import {consequenceError,consequenceTransitionError,consequenceView} from './consequences.mjs';
@@ -38,7 +38,7 @@ const RECONCILED=new Set(['friends','reconciled','peace','close_friends','romant
 const asText=(v)=>typeof v==='string'?v.trim():'';
 
 /** Validate a proposed scene BEFORE committing it, without pretending this proves literary quality. */
-export function validateScene({body,events=[],directives=[],evidencePrevalidated=false,worldTime=undefined}) {
+export function validateScene({body,events=[],directives=[],evidencePrevalidated=false,worldTime=undefined,historical=false}) {
   const errors=[];
   if(!evidencePrevalidated&&(typeof body!=='string'||body.trim().length<10))errors.push('Текст сцены слишком короткий.');
   if(typeof body==='string'&&body.length>200000)errors.push('Сцена длиннее 200 000 символов.');
@@ -53,6 +53,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(!asText(event.id)||ids.has(event.id))errors.push(`${prefix}: требуется уникальный ID.`);
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
+    if(!historical){const routingError=knowledgeRoutingError(event);if(routingError)errors.push(prefix+': '+routingError);}
     if(isSceneMemory(event)){
       const error=sceneMemoryError(event);if(error)errors.push(prefix+': '+error);
       else {const k=sceneMemoryDuplicateKey(event);if(memoryKeys.has(k))errors.push(prefix+': duplicate interpretive memory');memoryKeys.add(k);}
@@ -149,16 +150,18 @@ function runReplay(scenes,{evidencePrevalidated=false,checkpoint=null,capture=fa
   const offset=checkpoint?.scene_count??0;
   for(let sceneIndex=offset;sceneIndex<scenes.length;sceneIndex++){
     const scene=scenes[sceneIndex];
-    const events=Array.isArray(scene.events)?scene.events:[];
+    const originalEvents=Array.isArray(scene.events)?scene.events:[];
+    const events=originalEvents.map(normalizeLegacyKnowledge);
+    const recovered=new Set(events.filter((e,i)=>e!==originalEvents[i]).map(e=>e.id));
     // Replay checks the whole saved package once; current user rules NEVER rewrite past facts.
-    const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated,worldTime:scene.world_time??null});
+    const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated,worldTime:scene.world_time??null,historical:true});
     if(!result.ok){failures.push({scene_id:scene.id,errors:result.errors});continue;}
     if(awaiting&&!(events[0]?.dynamics_kind==='player_choice'&&events[0].status==='answered'&&events[0].key===awaiting.key&&!dynamicsTransitionError(worldFacts,events[0]))){failures.push({scene_id:scene.id,errors:['Продолжение требует ответа на текущий выбор героя.']});continue;}
     const acceptedMoney=new Set(),acceptedLocations=new Map(),acceptedStock=new Map();
     for(const event of events){
       let accepted=true;
       const from={scene_id:scene.id,event_id:event.id,world_time:scene.world_time??null};
-      const value={...event,source:from};
+      const value={...event,source:from,...(recovered.has(event.id)?{legacy_route_recovered:true}:{})};
       switch(event.type){
         case 'character': if(asText(event.name)){const err=familyBirthDateError(worldFacts,event);if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;break;}const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));if(typeof event.state_patch?.location==='string')acceptedLocations.set(name,event.state_patch.location);else if(Object.hasOwn(event.state_patch||{},'location'))acceptedLocations.delete(name);}break;
         case 'relationship': {const key=relationshipKey(event);relationships.set(key,applyRelationship(relationships.get(key),event,from));break;}
@@ -174,7 +177,7 @@ function runReplay(scenes,{evidencePrevalidated=false,checkpoint=null,capture=fa
           break;
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
-        case 'world': if(asText(event.key)){
+        case 'world': if(Object.hasOwn(event,'knowledge_version')){failures.push({scene_id:scene.id,event_id:event.id,errors:['Неверно маршрутизированная старая запись знания требует проверки источника.']});accepted=false;break;} if(asText(event.key)){
           const err=dutyCrossError(worldFacts,event,events,events.indexOf(event))||employmentGate(worldFacts,event)||curriculumCrossError(worldFacts,event,events,events.indexOf(event))||socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||journeyArrivalError(event,worldFacts.get(event.key),acceptedLocations)||workReplayError(worldFacts,event,acceptedStock,acceptedMoney)||prepaidReplayError(event,acceptedMoney)||supplyReplayError(event,acceptedMoney,acceptedStock)||householdReplayError(event,acceptedMoney)||expenseCareReplayError(event,acceptedMoney)||(event.life_kind==='estate_sale'&&event.status==='settled'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Estate payment was not accepted':null)||(event.life_kind==='service_visit'&&event.status==='completed'&&event.amount>0&&event.prepayment_id==null&&!acceptedMoney.has(event.transfer_event_id)?'Service transfer was not accepted':null)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
           else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);applyPropertySettlement(worldFacts,event,value);applyMarketAdjustment(worldFacts,event,value);applyPrepaid(worldFacts,event,value);invalidateFurnishing(worldFacts,items,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
@@ -278,6 +281,7 @@ export function needsStatePreflight(events=[]){
  return events.some(e=>isWealth(e)||isDocument(e)||isMagicSociety(e)||isMagic(e)||isAdvanced(e)||(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
 }
 export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null}={}){
+ const routingErrors=events.map(knowledgeRoutingError).filter(Boolean);if(routingErrors.length)return {ok:false,errors:routingErrors};
  const draftId='__pending_state_scene__',history=[...scenes,{id:draftId,body,events,world_time:worldTime}];
  const p=checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  return validateProjectedAppend(history,p,draftId,events);

@@ -11,6 +11,21 @@ export function knowledgeRecordError(e){
  if(e.informant!=null&&(!text(e.informant)||e.informant.length>140))return 'Неверный источник информации.';
  return null;
 }
+/** Historical narrator emitted the complete explicit knowledge schema under
+ * type=world, with no state key. Recover only this exact unambiguous legacy
+ * shape in the derived projection. Do not infer facts from prose or generic
+ * records; the original saved event and its evidence remain unchanged. */
+const legacyKnowledgeFields=new Set(['id','type','knowledge_version','topic_id','actor','fact','status','channel','informant','evidence']);
+export function normalizeLegacyKnowledge(e){
+ if(e?.type!=='world'||e.knowledge_version!==1||Object.keys(e).some(k=>!legacyKnowledgeFields.has(k))||!text(e.id)||!text(e.evidence))return e;
+ const corrected={...e,type:'knowledge'};
+ return knowledgeRecordError(corrected)?e:corrected;
+}
+export function knowledgeRoutingError(e){
+ if(!e||!Object.hasOwn(e,'knowledge_version'))return null;
+ if(e.type!=='knowledge'||Object.keys(e).some(k=>k.endsWith('_version')&&k!=='knowledge_version'))return 'Запись knowledge_version должна иметь type=knowledge и не смешиваться с другими системами.';
+ return knowledgeRecordError(e);
+}
 export function knowledgeKey(e){return JSON.stringify([e.actor,e.knowledge_version===1?'topic':'legacy',e.knowledge_version===1?e.topic_id:e.fact]);}
 export function knowledgeView(projection={},opts={}){
  const actor=text(opts.actor),topic=text(opts.topic);
