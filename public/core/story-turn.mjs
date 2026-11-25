@@ -1,7 +1,7 @@
 import {taskAccessible} from './duty-career.mjs';
 import {householdAccessible,jobEligibility} from './households-careers.mjs';
 import {recordedPlayerActors} from './social-dashboard.mjs';
-import {npcInitiativeView,independentSocialOpportunities} from './npc-initiatives.mjs';
+import {npcInitiativeView,independentSocialOpportunities,recordedHabitContext,recordedMarketOpportunities} from './npc-initiatives.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
 /** A unified turn preparation view. All candidates are read-only. The narrator
@@ -79,7 +79,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
    const b=balancesByActor.get(JSON.stringify([buyer,row.currency]));checks.push({kind:b?.known?(b.balance<row.amount?'insufficient_recorded_funds':'recorded_funds_cover_price'):'funds_unknown',actor:buyer,amount:row.amount,currency:row.currency,balance:b?.known?b.balance:null,source:source(b)});
    for(const l of row.stock_lines){const s=stockByKey.get(JSON.stringify([supplier,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity<l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
-  if(kind==='service_provider'){
+  if(kind==='service_provider'||kind==='market_review'){
    const recipe=recipeById.get(row.recipe_id);
    for(const l of recipe?.stock_lines||[]){const s=stockByKey.get(JSON.stringify([row.actor,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity< -l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:-l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
@@ -155,12 +155,13 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const p of projection.plans||[])if(['active','paused'].includes(p.status)){
   if(!openPlanGoals.has(p.actor))openPlanGoals.set(p.actor,new Set());openPlanGoals.get(p.actor).add(text(p.goal));
  }
+ const habitContext=recordedHabitContext(records,scenes,clock?.literal);
  const goalFields=new Set(['personal_goal','family_goal','career_goal']);
  const structuredHabitActors=new Set(records.filter(r=>r.activity_version===1&&r.activity_kind==='habit').map(r=>r.actor));
  for(const person of projection.people||[]){
   for(const field of person.state_fields||[]){
-   if(field.field==='habit'&&text(field.value)&&field.source?.scene_id&&!structuredHabitActors.has(person.name)){
-    add('habit_opportunity',{actor:person.name,key:JSON.stringify([person.name,'character_habit']),title:field.value,status:'recorded_habit',source:field.source},{timing:'frequency_not_a_schedule',guidance:'Observed personal habit, not a schedule or a performed event.'});
+   if(field.field==='habit'&&text(field.value)&&field.source?.scene_id&&!structuredHabitActors.has(person.name)&&!habitContext(person.name,field.value)?.matching_active){
+    add('habit_opportunity',{actor:person.name,key:JSON.stringify([person.name,'character_habit']),title:field.value,status:'recorded_habit',source:field.source},{timing:'frequency_not_a_schedule',habit_history:habitContext(person.name,field.value),guidance:'Observed personal habit, not a schedule or a performed event.'});
    }
    if(!goalFields.has(field.field)||!text(field.value)||openPlanGoals.get(person.name)?.has(text(field.value)))continue;
    add('goal_opportunity',{actor:person.name,key:JSON.stringify([person.name,field.field]),title:field.value,status:'recorded_goal',source:field.source},{goal_field:field.field,timing:'requires_character_choice',guidance:'Consider whether the recorded goal warrants a new concrete plan or independent action; do not assume progress or invent a goal.'});
@@ -206,8 +207,10 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   const due=!!at&&!!anchor&&(anchor.precision==='minute'?at.order<=anchor.order:at.day<anchor.day);
   add('appointment',{...r,actors:r.participants},{timing:due?'reached_requires_story':'future',starts_at:r.starts_at,ends_at:r.ends_at,policy:'Confirmed meeting requires scene evidence for attendance or outcome.'});
  }
- for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active')
-  add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),guidance:'Optional established tendency, not a scheduled or completed action.'});
+ for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active'){
+  const history=habitContext(r.actor,r.name);
+  if(!history?.matching_active)add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),habit_history:history,guidance:'Optional established tendency, not a scheduled or completed action.'});
+ }
  // Shared circumstances offer interaction without asserting a meeting or shared knowledge.
  // Aggregate by place/group instead of generating quadratic pairs.
  const byPlace=new Map(),groups=new Map(),members=new Map();
@@ -241,6 +244,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   // record's actor-specific financial checks to the newly derived role.
   add(kind,kind==='agreement_party'?{...row,dynamics_kind:null}:row,info);
  }
+ // Review real order states, not an invented demand multiplier.
+ if(opts.complete!==false)for(const {kind,row,info} of recordedMarketOpportunities(records,scenes,clock?.literal))add(kind,row,info);
  const life_context=[];
  for(const person of projection.people||[]){
   const before=characterAge(person,clock?.literal),after=characterAge(person,anchor?.literal);
