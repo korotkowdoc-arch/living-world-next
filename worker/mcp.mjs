@@ -1,3 +1,4 @@
+import {nativeImageDescriptor,fetchNativeImage,transferNativeImage,privateImagePath,limitedBytes,imageMime,base64Image} from './native-visual-transfer.mjs';
 import {visualRequest,visualPreferences,visualSubjects,visualReferences,visualPrompt,visualUploadHash,VISUAL_GUIDANCE} from '../public/core/visual-world.mjs';
 import {WEALTH_GUIDANCE} from '../public/core/wealth-world.mjs';
 import {documentIndex,DOCUMENT_GUIDANCE} from '../public/core/documents-world.mjs';
@@ -46,6 +47,8 @@ import {menuSection,gameMenuContext,MENU_GUIDANCE,menuRecordFromInput,assertMenu
 const version='2025-06-18';
 const narratorWorkflow=VISUAL_GUIDANCE+'\n'+WEALTH_GUIDANCE+'\n'+DOCUMENT_GUIDANCE+'\n'+SOCIETY_GUIDANCE+'\n'+MAGIC_GUIDANCE+'\n'+CAPITAL_GUIDANCE+'\n'+ADVANCED_GUIDANCE+'\n'+MENU_GUIDANCE+'\n'+ 'When the user plays or continues a saved world, read get_world_context with the intended actors, place and fictional target_time before writing; use its next_turn proposal. Use prepare_story_turn for different filters or additional candidate pages. Retrieve exact source scenes or focused context when relevant memory is missing. Focused context includes bounded derived historical hints when storage is available; verify their source scenes and never confuse them with canonical knowledge. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. Long-form play by default: aim for 1500–2500 words where appropriate, never pad, pause BEFORE a meaningful decision of the player character. Present 2–5 meaningful options plus unrestricted free text, using clickable chat controls if supported (plain numbered fallback otherwise). Save only the narrated prefix with a pending player_choice event, then wait. When the user responds, validate the saved choice with validate_player_choice and record the answered event first in the next actual scene. Never treat menu options as actions or user consent. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals. When an older story has gaps, use get_memory_review_queue to locate sources and get_annotation_passages/get_story_scene to read them. If historical note storage is available, save_memory_notes can record evidence-backed retrieval aids; do not turn them into retroactive canonical events.';
 const toolsList=[
+  {name:'save_chatgpt_illustration',title:'Сохранить изображение ChatGPT в мир',description:'Save an actual generated or user-selected ChatGPT Library image to an existing illustration request. Use only the real file attachment supplied by ChatGPT (not invented IDs or URLs). No paid generation API, no story advance. If no authorized file is available, ask user to select the generated image from Library and retry.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},asset_id:{type:'string',format:'uuid'},image:nativeImageDescriptor},required:['world_id','asset_id','image'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:true},_meta:{'openai/fileParams':['image'],'openai/toolInvocation/invoking':'Сохраняю изображение в мир','openai/toolInvocation/invoked':'Проверка сохранённого изображения'}},
+  {name:'read_world_illustration_image',title:'Открыть изображение мира',description:'Return actual private saved image pixels as MCP image content to view in chat or use as visual reference when supported. Never generates an image. Use only an active-ancestry ready asset.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},asset_id:{type:'string',format:'uuid'}},required:['world_id','asset_id'],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false,destructiveHint:false}},
   {name:'list_world_illustrations',description:'List actual stored visual library in active ancestry. Pending requests are not generated images. No scene or choice changes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id'],additionalProperties:false}},
   {name:'get_visual_profile',description:'Find existing consistent visual references and saved identity notes for a subject; use before generating another image.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},subject_kind:{type:'string'},subject_id:{type:'string',maxLength:180}},required:['world_id','subject_kind','subject_id'],additionalProperties:false}},
   {name:'request_world_illustration',description:'Prepare and persist an illustration request only after explicit user desire to create image. Returns exact generation prompt, reference metadata and link to upload generated image. Does not generate or save image bytes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},actor:{type:'string',maxLength:140},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},subject_kind:{type:'string'},subject_id:{type:'string',maxLength:180},kind:{type:'string'},description:{type:'string',maxLength:3500},identity_notes:{type:'string',maxLength:4000}},required:['world_id','actor','expected_head','expected_rules_version','subject_kind','subject_id','kind','description'],additionalProperties:false}},
@@ -95,7 +98,7 @@ const toolsList=[
   {name:'switch_branch',description:'Switch active branch to an existing owner branch without copying invalid scenes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'}},required:['world_id','branch_id']}}
 ].map(t=>({...t,securitySchemes:[{type:'oauth2',scopes:['openid','email','offline_access']}],_meta:{securitySchemes:[{type:'oauth2',scopes:['openid','email','offline_access']}]}}));
 
-function result(value){return {resultType:'complete',content:[{type:'text',text:JSON.stringify(value,null,2)}],structuredContent:value,isError:false};}
+function result(value){if(value?.[VISUAL_IMAGE_RESULT])return {resultType:'complete',content:[{type:'text',text:JSON.stringify(value.metadata,null,2)},value.image],structuredContent:value.metadata,isError:false};return {resultType:'complete',content:[{type:'text',text:JSON.stringify(value,null,2)}],structuredContent:value,isError:false};}
 function fail(message){return {resultType:'complete',content:[{type:'text',text:message}],isError:true};}
 const error=(id,code,message)=>({jsonrpc:'2.0',id,error:{code,message}});
 const done=(id,result)=>({jsonrpc:'2.0',id,result});
@@ -207,6 +210,14 @@ async function readFocusedNotes(env,token,world,head,actors){
  }));
  return focusedMemoryNotes(groups);
 }
+async function visualStorageFetch(env,token,a,{method='GET',bytes,mime}={}){
+ const base=new URL(env.SUPABASE_URL);if(base.protocol!=='https:')throw Error('Invalid storage configuration');
+ const path='/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'nw-world-visuals/'+privateImagePath(a);
+ const res=await fetch(new URL(path,base),{method,headers:{apikey:env.SUPABASE_ANON_KEY,authorization:'Bearer '+token,...(method==='POST'?{'content-type':mime,'cache-control':'no-cache, no-store, max-age=0','x-upsert':'false'}:{})},body:bytes,redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(25000)});
+ if(method==='GET')return limitedBytes(res);
+ if(!res.ok){await res.body?.cancel();throw Error('Private image upload failed');}await res.body?.cancel();
+}
+const VISUAL_IMAGE_RESULT=Symbol('visual image');
 const VISUAL_APP='https://living-world-next.pages.dev/';
 const visualLink=a=>({...a,app_url:VISUAL_APP+visualUploadHash(a.world_id,a.id)});
 async function visualRows(env,token,w,limit=40,offset=0){return await rpc(env,token,'nw_list_visual_assets',{p_world_id:w.id,p_limit:limit,p_offset:offset})||[];}
@@ -226,6 +237,24 @@ async function compactVisualContext(env,token,w){
 }
 async function callTool(name,args,env,token){
  switch(name){
+  case 'save_chatgpt_illustration':
+  case 'read_world_illustration_image':{
+   const w=await ownerWorld(env,token,args.world_id),active=await branch(env,token,w);
+   const a=await findVisual(env,token,w,x=>x.id===assertUuid(args.asset_id));if(!a)throw Error('Illustration not visible in current branch');
+   if(name==='read_world_illustration_image'){
+    if(a.status!=='ready')throw Error('Image not saved yet');
+    const bytes=await visualStorageFetch(env,token,a),mime=imageMime(bytes);
+    const now=await ownerWorld(env,token,w.id),after=await branch(env,token,now);
+    if(now.active_branch_id!==w.active_branch_id||after.head_scene_id!==active.head_scene_id)throw Error('Branch changed; refresh illustration');
+    return {[VISUAL_IMAGE_RESULT]:true,metadata:visualLink(a),image:{type:'image',data:base64Image(bytes),mimeType:mime}};
+   }
+   const saved=await transferNativeImage({asset:a,file:args.image,download:fetchNativeImage,read:x=>visualStorageFetch(env,token,x),upload:async(x,bytes,mime)=>{
+    const now=await ownerWorld(env,token,w.id),after=await branch(env,token,now);
+    if(now.active_branch_id!==w.active_branch_id||after.head_scene_id!==active.head_scene_id)throw Error('Branch changed; refresh illustration');
+    return visualStorageFetch(env,token,x,{method:'POST',bytes,mime});
+   },finish:async id=>{const v=await rpc(env,token,'nw_finish_visual',{p_asset_id:id});return Array.isArray(v)?v[0]:v;}});
+   return {saved:true,reused:saved.reused,...visualLink(saved.asset),native_transfer:true};
+  }
   case 'list_world_illustrations':
   case 'get_visual_profile':
   case 'get_world_illustration':
@@ -252,7 +281,7 @@ async function callTool(name,args,env,token){
    const current=await ownerWorld(env,token,w.id);if(current.directive_version!==w.directive_version)throw Error('Rules changed; refresh visual request');
    const result=await rpc(env,token,'nw_prepare_visual',{p_world_id:w.id,p_branch_id:w.active_branch_id,p_expected_head:active.head_scene_id,p_subject_kind:v.subject_kind,p_subject_id:v.subject_id,p_kind:v.kind,p_title:v.title,p_prompt:v.prompt,p_identity_notes:v.identity_notes,p_references:v.reference_asset_ids});
    const a=Array.isArray(result)?result[0]:result;
-   return {...visualLink(a),reference_images:refs.map(visualLink),generation_required:true,policy:'Generate image with available image tool; attach actual file using app link. Do not claim ready until upload is confirmed.'};
+   return {...visualLink(a),reference_images:refs.map(visualLink),generation_required:true,policy:'Generate using ChatGPT Images. Save the actual generated/selected Library file via save_chatgpt_illustration. If host does not supply authorized file, ask user to select it from Library or use app link. Do not claim ready until confirmed.'};
   }
   case 'list_worlds':return await rest(env,token,'nw_worlds?select=id,title,seed,start_marker,active_branch_id,auto_save,updated_at&order=updated_at.desc');
   case 'get_document_authoring':
@@ -329,7 +358,7 @@ async function callTool(name,args,env,token){
    if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete});
    if(menu.overview)menu.overview.visuals={...menu.overview.visuals,...await compactVisualContext(env,token,world)};
    return {...ctx,magic_worldbuilding:magicalAuthorSeeds(world,history.scenes),game_menu:menu,next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints},memory:compactMemory,memory_is_sample:true,
-    memory_retrieval_tools:['list_world_illustrations','get_visual_profile','get_world_illustration','get_document_authoring','get_world_document','get_game_menu','get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn','validate_player_choice'],
+    memory_retrieval_tools:['read_world_illustration_image','list_world_illustrations','get_visual_profile','get_world_illustration','get_document_authoring','get_world_document','get_game_menu','get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn','validate_player_choice'],
     narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:finalWorld.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,projection_cache:history.projection_cache,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
     narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
