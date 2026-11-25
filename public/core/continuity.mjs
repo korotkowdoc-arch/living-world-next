@@ -1,3 +1,4 @@
+import {wealthIndex,isWealth,wealthShapeError} from './wealth-world.mjs';
 import {documentIndex,isDocument,documentShapeError} from './documents-world.mjs';
 import {isMagicSociety} from './magic-society.mjs';
 import {magicIndex,isMagic} from './magic-world.mjs';
@@ -51,6 +52,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(!asText(event.id)||ids.has(event.id))errors.push(`${prefix}: требуется уникальный ID.`);
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
+    const wealthShape=wealthShapeError(event);if(wealthShape)errors.push(prefix+': '+wealthShape);
     const docShape=documentShapeError(event);if(docShape)errors.push(prefix+': '+docShape);
     const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
     const familyGoalFailure=familyGoalSceneError(event,events,i,worldTime);if(familyGoalFailure)errors.push(prefix+': '+familyGoalFailure);
@@ -83,7 +85,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     }
     if(event.type==='world'){
       const error=lifeRecordError(event)||socialRecordError(event)||interactionError(event)||activityError(event)||consequenceError(event)||growthRecordError(event)||dynamicsRecordError(event);
-      const versions=['world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version','magic_version','magic_society_version','advanced_version','document_version'].filter(k=>event[k]!==undefined);
+      const versions=['world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version','magic_version','magic_society_version','advanced_version','document_version','wealth_version'].filter(k=>event[k]!==undefined);
       if(versions.length>1)errors.push(prefix+': запись не может одновременно принадлежать нескольким системам.');
       if(typeof event.key==='string'&&/^(place|routine):/.test(event.key)&&event.world_record_version!==1)errors.push(prefix+': ключ места или распорядка требует версию.');
       if(typeof event.key==='string'&&event.key.startsWith('social:')&&event.social_record_version!==1)errors.push(prefix+': социальный ключ требует версию.');
@@ -267,12 +269,13 @@ export function validateEconomyAppend(scenes,events,body){
  * SQL still protects expected head; direct RPC and revision integration are separate.
  */
 export function needsStatePreflight(events=[]){
- return events.some(e=>isDocument(e)||isMagicSociety(e)||isMagic(e)||isAdvanced(e)||(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
+ return events.some(e=>isWealth(e)||isDocument(e)||isMagicSociety(e)||isMagic(e)||isAdvanced(e)||(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
 }
 export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null}={}){
  const draftId='__pending_state_scene__',history=[...scenes,{id:draftId,body,events,world_time:worldTime}];
  const p=checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  const errors=p.validation_warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors);
+ if(events.some(e=>isWealth(e)||e.type==='money'&&[e.actor,e.counterparty].some(a=>typeof a==='string'&&a.startsWith('treasury:'))))errors.push(...wealthIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  if(events.some(isDocument))errors.push(...documentIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  if(events.some(e=>isMagic(e)||isMagicSociety(e)))errors.push(...magicIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  if(events.some(isAdvanced))errors.push(...advancedIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
