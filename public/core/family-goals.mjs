@@ -66,7 +66,7 @@ export function familyGoalSceneError(e,events,i,worldTime){
  const prior=events.slice(0,i);
  if(['child_birth','child_milestone'].includes(e.life_kind)){
   const stamp=parseStoryDate(worldTime);
-  if(!stamp||stamp.day!==(e.born_on??e.occurred_on))return 'Birth and milestone require recorded scene calendar date';
+  if(worldTime!==undefined&&(!stamp||stamp.day!==(e.born_on??e.occurred_on)))return 'Birth and milestone require recorded scene calendar date';
   if(!prior.some(x=>x.dynamics_version===1&&x.dynamics_kind==='family_event'&&x.record_id===e.family_event_id&&x.status==='completed'))return 'Family event must be completed in same scene';
  }
  if(e.life_kind==='shared_goal_step'&&!prior.some(x=>x.record_id===e.completion_id&&x.status==='completed'&&(e.completion_kind==='activity'?x.activity_version===1&&x.activity_kind==='activity':x.dynamics_version===1&&x.dynamics_kind==='family_event')))return 'Goal step requires actual completion in same scene';
