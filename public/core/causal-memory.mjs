@@ -23,13 +23,13 @@ function build(projection,scenes){
  function incident(id){
   if(!id)return {status:'not_recorded'};
   const candidates=new Map();
-  for(const r of recordIds.get(id)||[])candidates.set('key:'+r.key,{kind:'record',...node(r)});
+  for(const r of recordIds.get(id)||[])candidates.set('key:'+r.key,{...node(r),record_status:r.status??null,reference_kind:'record'});
   for(const x of eventsById.get(id)||[]){
    if(x.event.key&&byKey.has(x.event.key)&&candidates.has('key:'+x.event.key))continue;
    candidates.set(JSON.stringify([x.source.scene_id,x.source.event_id]),{kind:'event',event_type:x.event.type,source:x.source,actors:actors(x.event),title:clip(x.event.description??x.event.evidence)});
   }
   if(candidates.size!==1)return {status:candidates.size?'ambiguous':'unresolved_reference',reference:id,candidate_count:candidates.size};
-  return {status:'linked_source_not_proof_of_cause',reference:id,...candidates.values().next().value};
+  return {...candidates.values().next().value,status:'linked_source_not_proof_of_cause',reference:id};
  }
  const links=records.filter(r=>r.growth_version===1&&r.growth_kind==='cause'&&byKey.has(r.from_key)&&byKey.has(r.to_key));
  const edges=new Map();for(const r of links)for(const k of [r.from_key,r.to_key]){const list=edges.get(k)||[];list.push(r);edges.set(k,list);}
@@ -52,12 +52,12 @@ export function causalMemory(projection={},scenes=[],{actors:focus=[],keys=[],co
  const global=!selected.size&&!requested.size;
  const relevant=consequences(index,r=>global||matches(r));
  const seeds=new Set([...requested,...relevant.map(r=>r.key),...index.records.filter(matches).map(r=>r.key)].filter(k=>index.byKey.has(k)));
- const edgeRows=[],seen=new Set(),queue=[...seeds],visited=new Set(queue);
+ const edgeRows=[],seen=new Set(),queue=[...seeds],visited=new Set(queue);let cursor=0;
  // Traverse only explicit established edges, at most 2 hops. Contested
  // claims are shown but cannot propagate relevance as established facts.
- for(let depth=0;depth<3&&queue.length;depth++){
-  const count=queue.length;
-  for(let i=0;i<count;i++){const k=queue.shift();for(const e of index.edges.get(k)||[]){
+ for(let depth=0;depth<3&&cursor<queue.length;depth++){
+  const end=queue.length;
+  while(cursor<end){const k=queue[cursor++];for(const e of index.edges.get(k)||[]){
    if(!seen.has(e.key)){seen.add(e.key);edgeRows.push({key:e.key,status:e.status,claimant:e.actor??null,description:clip(e.description),from:index.node(index.byKey.get(e.from_key)),to:index.node(index.byKey.get(e.to_key)),source:source(e),distance:depth});}
    if(e.status==='established'&&depth<2){const other=e.from_key===k?e.to_key:e.from_key;if(!visited.has(other)){visited.add(other);queue.push(other);}}
   }}

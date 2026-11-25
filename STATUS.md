@@ -2,7 +2,7 @@
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
 ## v0.56.0 — причинно-следственная память
-- [x] Candidate: bounded branch-local causal recall of unresolved/resolved consequences, exact incident references, response plans/results and explicit causal graph with original/latest sources; established links only expand relevance, claims remain attributed. Expose in next turn, focused context and existing consequence tool. Draft review flags possibly missed consequence updates and pending responses after resolution. No automatic closure or state mutation.
+- [x] Candidate: bounded branch-local causal recall of unresolved/resolved consequences, exact incident references, response plans/results and explicit causal graph with original/latest sources; established links only expand relevance, claims remain attributed. Expose in next turn, focused context and existing consequence tool. Draft review flags possibly missed consequence updates and pending responses after resolution. No automatic closure or state mutation. Player task menu groups own consequences, response attempts and resolved archive; director graph remains separate.
 - [ ] CI, merge, deployment and real story verification. Historical missing causal records are not retroactively created.
 
 ## v0.55.0 — фактические изменения реестров и актуальное состояние

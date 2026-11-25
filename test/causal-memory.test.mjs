@@ -15,7 +15,7 @@ test('old open consequence retains origin and attempted response, claims never p
  const edge=rec('growth:cause:edge',{growth_version:1,growth_kind:'cause',from_key:unrelated.key,to_key:remote.key,status:'established'});
  const p={worldFacts:[incident,consequence,response,unrelated,remote,claim,edge]},scenes=[{id:'old',events:[{id:'conflict',key:incident.key,type:'world',description:'Conflict'}]}];
  const m=causalMemory(p,scenes,{actors:['Hero']});
- assert.equal(m.open_consequences.total,1);const c=m.open_consequences.records[0];assert.equal(c.incident.source.scene_id,'old');assert.equal(c.responses[0].result,'attempted');assert.equal(c.status,'active');
+ assert.equal(m.open_consequences.total,1);const c=m.open_consequences.records[0];assert.equal(c.incident.source.scene_id,'old');assert.equal(c.incident.status,'linked_source_not_proof_of_cause');assert.equal(c.responses[0].result,'attempted');assert.equal(c.status,'active');
  assert.equal(m.causal_links.total,1);assert.equal(m.causal_links.records[0].status,'claimed');assert.equal(m.causal_links.records[0].claimant,'Witness');
  assert.ok(!JSON.stringify(m).includes('Unrelated hidden chain'));
 });
@@ -30,4 +30,13 @@ test('turn recalls old consequence even when no recent event changes it',()=>{
  const e={id:'c',type:'world',key:'consequence:c',record_id:'c',consequence_version:1,consequence_kind:'material',actor:'Hero',status:'active',description:'Glasses broken',evidence:'Glasses broken'};
  const s=[{id:'a',body:'Glasses broken',events:[e],world_time:'1994-09-01 10:00'},...Array.from({length:12},(_,i)=>({id:'b'+i,body:'Nothing changed',events:[],world_time:'1994-09-05 10:00'}))];
  const p=replay(s);const t=prepareStoryTurn(s,p,[],{actors:['Hero']});assert.equal(t.causal_memory.open_consequences.records[0].source.scene_id,'a');assert.equal(t.causal_memory.open_consequences.records[0].status,'active');
+});
+
+import {playerConsequenceTracker} from '../public/core/duty-career.mjs';
+test('player consequence tracker exposes own effects and responses, not director-only causes or other actors plans',()=>{
+ const a=rec('consequence:a',{consequence_version:1,actor:'Hero',status:'active',description:'Broken glasses',cause:'Hidden conspiracy',responsible:'Other'});
+ const b=rec('consequence:b',{consequence_version:1,actor:'Other',status:'resolved',description:'Other secret'});
+ const own=rec('player-life:consequence_response:r',{player_life_version:1,life_kind:'consequence_response',actor:'Hero',consequence_id:'a',status:'performed',result:'attempted'});
+ const foreign={...own,record_id:'secret',actor:'Other',title:'Secret plan'};
+ const r=playerConsequenceTracker({worldFacts:[a,b,own,foreign]},'Hero');assert.equal(r.open.total,1);assert.equal(r.archive.total,0);assert.equal(r.open.records[0].responses[0].result,'attempted');assert.ok(!JSON.stringify(r).includes('Hidden conspiracy'));assert.ok(!JSON.stringify(r).includes('Secret plan'));assert.ok(!JSON.stringify(r).includes('Other secret'));
 });
