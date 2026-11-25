@@ -1,3 +1,4 @@
+import {householdAccessible,jobEligibility} from './households-careers.mjs';
 import {recordedPlayerActors} from './social-dashboard.mjs';
 import {npcInitiativeView} from './npc-initiatives.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
@@ -67,6 +68,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
     if(overlaps.length)checks.push({kind:'competing_schedule',actor,other_places:[...new Set(overlaps.map(r=>r.place))].slice(0,3),sources:overlaps.slice(0,3).map(source),policy:'Possible scheduling conflict, not proof of actual presence.'});
    }
   }
+  if(kind==='employment'&&row.status==='offered'){const eligibility=jobEligibility(new Map(records.map(x=>[x.key,x])),row);if(eligibility.status==='not_confirmed')checks.push({kind:'qualification_unconfirmed',missing:eligibility.missing,source:eligibility.source});}
   if(['supply_buyer','supply_supplier'].includes(kind)){
    const supplier=kind==='supply_supplier'?row.actor:row.counterparty,buyer=kind==='supply_buyer'?row.actor:row.counterparty;
    const b=balancesByActor.get(JSON.stringify([buyer,row.currency]));checks.push({kind:b?.known?(b.balance<row.amount?'insufficient_recorded_funds':'recorded_funds_cover_price'):'funds_unknown',actor:buyer,amount:row.amount,currency:row.currency,balance:b?.known?b.balance:null,source:source(b)});
@@ -161,6 +163,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='lesson'&&r.status==='scheduled'){const t=parseStoryDate(r.starts_at);add('lesson',{...r,counterparty:r.teacher},{starts_at:r.starts_at,ends_at:r.ends_at,timing:t&&anchor&&t.order<=anchor.order?'reached_requires_story':'future'});}
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='assignment'&&r.status==='assigned')add('assignment',r,{timing:timing(r)});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='estate_sale'&&['offered','accepted'].includes(r.status)&&records.some(x=>x.life_kind==='estate'&&x.record_id===r.estate_id&&x.actor===r.actor&&(x.last_sale_id??null)===(r.title_revision??null)))add('estate_sale',{...r,counterparty:r.buyer},{amount:r.amount,currency:r.currency,timing:'requires_character_choice'});
+ const householdRecords=new Map(records.map(x=>[x.key,x]));
+ for(const r of records)if(r.player_life_version===1&&r.life_kind==='household_member'&&r.status==='invited'&&householdAccessible(householdRecords,householdRecords.get('player-life:household:'+r.household_id)))add('household_invitation',{...r,counterparty:r.host,title:'Household invitation'},{timing:'requires_character_choice',household_id:r.household_id,member_id:r.record_id});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='supply_contract'&&['proposed','active','disputed'].includes(r.status)){
   add('supply_buyer',{...r,counterparty:r.supplier},{timing:timing(r),contract_id:r.record_id,stock_lines:r.stock_lines,amount:r.amount,currency:r.currency});
   add('supply_supplier',{...r,actor:r.supplier,counterparty:r.actor},{timing:timing(r),contract_id:r.record_id,stock_lines:r.stock_lines,amount:r.amount,currency:r.currency});
