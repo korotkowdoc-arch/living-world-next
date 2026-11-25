@@ -19,7 +19,11 @@ test('resumed projection equals full replay across thousands of scenes, budget a
  const history=[...prefix,tail];
  const resumed=replayWithCheckpoint(history,{checkpoint:JSON.parse(saved),evidencePrevalidated:true});
  assert.equal(resumed.replayed_scenes,1);assert.equal(resumed.reused_scenes,prefix.length);
- assert.deepEqual(resumed.projection,replay(history,[],{evidencePrevalidated:true}));
+ const full=replay(history,[],{evidencePrevalidated:true});
+ // In-memory checkpoint preserves optional undefined fields. The Worker cache
+ // serializes JSON, so its contract is exact JSON equality (undefined is absent).
+ assert.deepEqual(replayWithCheckpoint(history,{checkpoint:cp.checkpoint,evidencePrevalidated:true}).projection,full);
+ assert.deepEqual(JSON.parse(JSON.stringify(resumed.projection)),JSON.parse(JSON.stringify(full)));
  assert.equal(resumed.projection.budget_flows[0].expense,15);
  assert.equal(JSON.stringify(cp.checkpoint),saved);
  const refused=replayWithCheckpoint([...prefix,sc('wrong',[])],{checkpoint:cp.checkpoint,evidencePrevalidated:true});
