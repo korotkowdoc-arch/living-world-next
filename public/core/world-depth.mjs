@@ -29,9 +29,9 @@ export function worldDepthIndex(scenes=[],p={}, {complete=true}={}){
   const g=get(a),k=key(b,kind),r={other:b,kind,source,...extra};g.contacts.set(k,r);
   edges.set(key(a,b,kind),{from:a,to:b,kind,source,...extra});
  };
- const place=(a,n,s,kind)=>{if(!a||!n)return;get(a).places.set(n,{name:n,source:s,kind});};
+ const place=(a,n,s,kind)=>{if(!a||!n)return;const places=get(a).places,old=places.get(n);if(!old||(positions.get(s.scene_id)??-1)>=(positions.get(old.source.scene_id)??-1))places.set(n,{name:n,source:s,kind});};
  const timeline=(a,r)=>{if(a)push(get(a).timeline,r);};
- const byKey=new Map(facts.map(r=>[r.key,r]));
+
  for(const [actor,person] of people){
   for(const f of person.state_fields||[])if(knownSource(f)&&psychFields.has(f.field))get(actor).psychology.push({field:f.field,value:clip(f.value),source:f.source});
   for(const f of person.state_fields||[])if(knownSource(f)&&['location','residence'].includes(f.field)&&f.value)place(actor,f.value,f.source,f.field);
@@ -83,7 +83,7 @@ export function worldDepthIndex(scenes=[],p={}, {complete=true}={}){
    const kind=e.activity_kind||e.growth_kind||e.dynamics_kind||e.life_kind;
    for(const a of who){
     const row={kind,title,status:e.status,outcome:clip(e.outcome),source};
-    timeline(a,row);
+    timeline(a,{...row,own_record:e.actor===a||e.actors?.includes(a)});
     if(['completed','attended','worked'].includes(e.status))get(a).lastExperience=row;
    }
   }
@@ -127,7 +127,7 @@ export function worldDepthIndex(scenes=[],p={}, {complete=true}={}){
  function view(actor,{director=false}={}){
   if(!complete)return {memory_complete:false};
   const g=get(actor);
-  const time=director?g.timeline:g.timeline.filter(r=>r.kind!=='offscreen');
+  const time=director?g.timeline:g.timeline.filter(r=>['state_change','interaction','activity','project','lesson','work_shift','service_visit','appointment','career_change'].includes(r.kind)&&(r.kind==='state_change'||r.kind==='interaction'||r.own_record===true));
   return {memory_complete:true,psychology:psychology(actor),social:socialGraph(actor,{director}),places:placeGraph(actor,{director}),timeline:page(order(time),40),news:page(order(director?chronicle:newsByActor.get(actor)||[]),30),economy:economy(actor)};
  }
  function opportunities(){
