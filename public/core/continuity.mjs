@@ -1,3 +1,4 @@
+import {craftIndex,isCraft} from './magic-practice.mjs';
 import {magicIndex,isMagic} from './magic-world.mjs';
 import {advancedIndex,isAdvanced} from './advanced-world.mjs';
 import {familyGoalSceneError,familyBirthDateError} from './family-goals.mjs';
@@ -264,12 +265,13 @@ export function validateEconomyAppend(scenes,events,body){
  * SQL still protects expected head; direct RPC and revision integration are separate.
  */
 export function needsStatePreflight(events=[]){
- return events.some(e=>isMagic(e)||isAdvanced(e)||(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
+ return events.some(e=>isCraft(e)||isMagic(e)||isAdvanced(e)||(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
 }
 export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null}={}){
  const draftId='__pending_state_scene__',history=[...scenes,{id:draftId,body,events,world_time:worldTime}];
  const p=checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  const errors=p.validation_warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors);
+ if(events.some(isCraft))errors.push(...craftIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  if(events.some(isMagic))errors.push(...magicIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  if(events.some(isAdvanced))errors.push(...advancedIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  return {ok:errors.length===0,errors};
