@@ -44,7 +44,7 @@ export function playerCalendar(projection={},actor,clockTime,{days=7,limit=40}={
  for(const x of projection.plans||[])if(x.actor===actor&&['active','paused'].includes(x.status))add('task',x.plan_id,x.goal,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of projection.obligations||[])if(x.actor===actor&&active(x.status))add('commitment',x.commitment_id,x.description||x.evidence,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of records){
-  if(x.player_life_version===1&&x.life_kind==='appointment'&&x.participants.includes(actor)&&active(x.status)){
+  if(x.player_life_version===1&&x.life_kind==='appointment'&&x.participants.includes(actor)&&(x.status!=='proposed'||x.actor===actor)&&active(x.status)){
    add('appointment',x.record_id,x.title,x.starts_at,x.status,x.source,{ends_at:x.ends_at,place:x.place,participants:x.participants});
    const a=date(x.starts_at),b=date(x.ends_at);
    if(a?.precision==='minute'&&b?.precision==='minute'&&x.status==='confirmed'&&clock&&b.order>clock.order&&a.order<end)windows.push({id:'appointment:'+x.record_id,title:x.title,start:a.order,end:b.order});
@@ -75,7 +75,8 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
  const horizon=Math.max(1,Math.min(31,Math.ceil((target.order-clock.order)/DAY)+1));
  const calendar=playerCalendar(projection,actor,clock.literal,{days:horizon,limit:100});
  const gates=[];
- for(const x of calendar.entries){
+ const deadlines=[...(projection.plans||[]).filter(x=>x.actor===actor&&x.status==='active').map(x=>({kind:'task',id:x.plan_id,title:x.goal,when:x.due_at||x.deadline||x.due,status:x.status})),...(projection.obligations||[]).filter(x=>x.actor===actor&&active(x.status)).map(x=>({kind:'commitment',id:x.commitment_id,title:x.description||x.evidence,when:x.due_at||x.deadline||x.due,status:x.status})),...(projection.worldFacts||[]).filter(x=>x.player_life_version===1&&x.life_kind==='appointment'&&x.status==='confirmed'&&x.participants.includes(actor)).map(x=>({kind:'appointment',id:x.record_id,title:x.title,when:x.starts_at,status:x.status}))];
+ for(const x of deadlines){
   if(!['task','commitment','appointment'].includes(x.kind)||x.status==='paused'||x.status==='proposed')continue;
   const t=date(x.when);if(!t||t.order>target.order)continue;
   gates.push({kind:x.kind,id:x.id,title:x.title,at:t.precision==='minute'?literal(Math.max(clock.order,t.order)):clock.literal,reason:t.precision==='day'?'date_only_requires_review':'scheduled_or_unresolved'});
