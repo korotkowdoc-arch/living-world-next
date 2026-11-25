@@ -42,3 +42,35 @@ test('menu is read-only and preserves current pending selection and versions',()
  const prompt=promptForNarrator({world,directives:[rule('s',config)]});
  assert.match(prompt,/ИГРОВОЕ МЕНЮ NEXT/);assert.match(prompt,/"pace":"fast"/);
 });
+
+import {playerMenuOverview,menuActionIntent,assertMenuAnchor,menuRecordFromInput} from '../public/core/game-menu.mjs';
+import {prepareStoryTurn} from '../public/core/story-turn.mjs';
+test('player overview exposes held items, own tasks and known contacts only',()=>{
+ const p={people:[{name:'Гарри',state_fields:[{field:'appearance',value:'Куртка'},{field:'mood',value:'Не показывать'}]}],items:[{item_id:'coat',name:'Куртка',holder:'Гарри',custody_status:'held'},{item_id:'lost',holder:'Гарри',custody_status:'lost'},{item_id:'secret',holder:'Лия',custody_status:'held'}],plans:[{plan_id:'work',actor:'Гарри',goal:'Найти работу',status:'active'},{plan_id:'secret',actor:'Лия',goal:'Тайна',status:'active'}],relationships:[{a:'Гарри',b:'Лия'},{a:'Незнакомец',b:'Гарри'}],balances:[{actor:'Гарри',currency:'GBP',known:false,balance:100}]};
+ const v=playerMenuOverview(p,'Гарри');
+ assert.deepEqual(v.inventory.records.map(x=>x.id),['coat']);
+ assert.deepEqual(v.tasks.records.map(x=>x.title),['Найти работу']);
+ assert.deepEqual(v.contacts.records,[{name:'Лия'}]);assert.equal(v.balances.records[0].balance,null);
+ assert.equal(v.character.fields.length,1);
+ assert.equal(menuActionIntent({action:'equip_item',detail:'Надеть куртку',item_id:'coat'},v).saved,false);
+ assert.throws(()=>menuActionIntent({action:'equip_item',detail:'Надеть',item_id:'secret'},v));
+ assert.throws(()=>menuActionIntent({action:'unknown',detail:'x'},v));
+});
+test('stale menu requests cannot target a different branch, head or rules version',()=>{
+ const w={id:'w',active_branch_id:b,directive_version:4},a={head_scene_id:null};
+ const input={world_id:'w',branch_id:b,expected_head:null,expected_rules_version:4};
+ assert.doesNotThrow(()=>assertMenuAnchor(input,w,a));
+ for(const patch of [{branch_id:other},{expected_head:'h'},{expected_rules_version:3},{world_id:'other'}])assert.throws(()=>assertMenuAnchor({...input,...patch},w,a));
+ assert.deepEqual(menuRecordFromInput({kind:'focus',branch_id:other,priorities:['  Работа  ']},b),{kind:'focus',branch_id:b,priorities:['Работа']});
+});
+test('priorities affect candidate order without overriding urgent obligations or another branch',()=>{
+ const scenes=[{id:'s',world_time:'1994-08-02'}];
+ const projection={plans:[{actor:'Гарри',plan_id:'a',goal:'Обычная цель',status:'active'},{actor:'Гарри',plan_id:'b',goal:'Работа',status:'active'},{actor:'Гарри',plan_id:'urgent',goal:'Срочное дело',status:'active',due_at:'1994-08-01'}]};
+ const rules=[rule('f',{kind:'focus',branch_id:b,priorities:['Работа']})];
+ const t=prepareStoryTurn(scenes,projection,rules,{actors:['Гарри'],branchId:b});
+ assert.deepEqual(t.candidates.map(x=>x.title),['Срочное дело','Работа','Обычная цель']);
+ assert.equal(t.candidates[1].player_priority,1);
+ assert.ok(t.candidates.every(x=>x.certainty==='candidate_only_not_performed'));
+ const o=prepareStoryTurn(scenes,projection,rules,{actors:['Гарри'],branchId:other});
+ assert.ok(o.candidates.every(x=>!x.player_priority));
+});
