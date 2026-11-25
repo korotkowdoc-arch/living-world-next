@@ -100,7 +100,7 @@ export function archiveIndex(scenes=[],projection={}, {complete=true}={}){
   const d=docs.get(documentId);if(!d||!canRead(d,actor))throw Error('Document not available');
   const r=reading.get(key(documentId,actor))||new Map(),active=known(d,actor);
   const contents=d.contents.filter(p=>active||r.has(p.id)).map(p=>({id:p.id,title:p.title,materialized:parts.has(key(documentId,p.id)),status:r.get(p.id)?.status??'unread',bookmarked:bookmarks.get(key(documentId,actor,p.id))?.status==='active'}));
-  const result={...card(d,actor),contents,notes:rows.filter(x=>x.archive_kind==='note'&&x.actor===actor&&x.document_id===documentId&&x.status==='active').map(x=>({id:x.record_id,part_id:x.part_id??null,text:x.text,source:x.source})),reviews:rows.filter(x=>x.archive_kind==='review'&&x.document_id===documentId&&(x.actor===actor||active&&x.status==='shared')).map(x=>({id:x.record_id,actor:x.actor,text:x.text,status:x.status,source:x.source})),publication:publications.get(documentId)?.actor===actor?publications.get(documentId):null};
+  const result={...card(d,actor),contents,notes:rows.filter(x=>x.archive_kind==='note'&&x.actor===actor&&x.document_id===documentId&&x.status==='active').slice(-50).map(x=>({id:x.record_id,part_id:x.part_id??null,text:x.text,source:x.source})),reviews:rows.filter(x=>x.archive_kind==='review'&&x.document_id===documentId&&(x.actor===actor||active&&x.status==='shared')).slice(-20).map(x=>({id:x.record_id,actor:x.actor,text:x.text,status:x.status,source:x.source})),publication:publications.get(documentId)?.actor===actor?publications.get(documentId):null};
   if(partId!=null){
    const p=contents.find(x=>x.id===partId);if(!p)throw Error('Part not available');
    const part=parts.get(key(documentId,partId)),allowed=d.actor===actor||r.has(partId);
@@ -128,6 +128,7 @@ export function validateArchiveAction(input,overview){
  const d=reader(input.document_id,withPart||input.part_id!=null?input.part_id:null);
  if(d.access!=='available')throw Error('Current document access required');
  if(['write_document_part','publish_document'].includes(input.action)&&!overview.archive_owner(input.document_id))throw Error('Only document owner can author or publish');
+ if(input.action==='annotate_document'&&input.part_id!=null&&!d.part?.materialized)throw Error('Write notes on saved parts');
  if(input.action==='write_document_part'&&d.part?.materialized)throw Error('Existing part is immutable');
  if(input.action==='remove_document_bookmark'&&!d.part?.bookmarked)throw Error('No bookmark to remove');
  if(input.action==='review_document'&&!d.read_count)throw Error('Read material before reviewing');
