@@ -125,7 +125,7 @@ export function removeUnavailableGarment(outfits,items,item){
  }
 }
 const page=rows=>({records:rows.slice(0,30),total:rows.length,omitted:Math.max(0,rows.length-30)});
-export function playerLifeView(projection={},actor,{scenes=[],clock=null,complete=true,includeCalendar=true}={}){
+export function playerLifeView(projection={},actor,{scenes=[],clock=null,complete=true,includeCalendar=true,offset=0,limit=30}={}){
  const life=(projection.worldFacts||[]).filter(x=>x.player_life_version===1);
  const items=new Map((projection.items||[]).map(x=>[x.item_id,x]));
  const needs=Object.entries(NEEDS).map(([need,label])=>{
@@ -138,12 +138,13 @@ export function playerLifeView(projection={},actor,{scenes=[],clock=null,complet
  const presets=life.filter(x=>x.life_kind==='preset'&&x.actor===actor&&x.status==='active').map(x=>({id:x.record_id,title:x.title,slots:x.slots,missing:Object.entries(x.slots).filter(([slot,item])=>!wardrobe.some(g=>g.item_id===item&&g.slot===slot)).map(([slot,item_id])=>({slot,item_id})),source:x.source}));
  const impressions=life.filter(x=>x.life_kind==='impression'&&x.actor===actor&&x.known_to_actor).map(x=>({id:x.record_id,observer:x.observer,description:x.description,basis:x.basis,status:x.status,source:x.source}));
  const letters=life.filter(x=>x.life_kind==='letter');
+ const letterPage=rows=>({records:rows.slice(offset,offset+limit),total:rows.length,omitted:Math.max(0,rows.length-offset-limit),next_offset:offset+limit<rows.length?offset+limit:null});
  const incoming=letters.filter(x=>x.recipient===actor&&['delivered','read'].includes(x.status)).map(x=>({id:x.record_id,from:x.sender,subject:x.status==='read'?x.subject:null,status:x.status,message:x.status==='read'?x.message:null,source:x.status==='read'?x.source:null}));
  const outgoing=letters.filter(x=>x.sender===actor).map(x=>({id:x.record_id,to:x.recipient,subject:x.subject,status:x.sender_visible_status??(x.status==='draft'?'draft':'sent'),message:x.message,source:x.sender_visible_source??null}));
  const routines=(projection.worldFacts||[]).filter(x=>x.world_record_version===1&&x.record_kind==='routine'&&x.actor===actor&&x.status==='active').map(x=>({id:x.record_id,activity:x.activity,place:x.place,start:x.start,end:x.end,weekdays:x.weekdays,source:x.source}));
  const quick=[['eat','Поесть','hunger'],['drink','Попить','thirst'],['rest','Отдохнуть','energy'],['wash','Привести себя в порядок','hygiene'],['relax','Отвлечься','stress']].map(([action,label,need])=>({action,label,need,status:needs.find(x=>x.need===need)?.forecast?.estimated_status??needs.find(x=>x.need===need)?.status,availability:'requires_scene_check'}));
  quick.sort((a,b)=>['critical','urgent','noticeable','comfortable','unknown'].indexOf(a.status)-['critical','urgent','noticeable','comfortable','unknown'].indexOf(b.status));
- return {needs,wardrobe:page(wardrobe),outfit,presets:page(presets),impressions:page(impressions),calendar:includeCalendar?playerCalendar(projection,actor,clock??scenes.at(-1)?.world_time):null,letters:{incoming:page(incoming),outgoing:page(outgoing)},routines:page(routines),quick_actions:quick,policy:'Observed needs and separately labelled estimates from fictional time. Clothing is currently held and equipped only if recorded. Incoming unread message content and unconfirmed delivery feedback are hidden. Quick actions are proposals; time, location, resources and outcome require narration.'};
+ return {needs,wardrobe:page(wardrobe),outfit,presets:page(presets),impressions:page(impressions),calendar:includeCalendar?playerCalendar(projection,actor,clock??scenes.at(-1)?.world_time):null,letters:{incoming:letterPage(incoming),outgoing:letterPage(outgoing)},routines:page(routines),quick_actions:quick,policy:'Observed needs and separately labelled estimates from fictional time. Clothing is currently held and equipped only if recorded. Incoming unread message content and unconfirmed delivery feedback are hidden. Quick actions are proposals; time, location, resources and outcome require narration.'};
 }
 export function playerLifeTurnSummary(projection,actor,options={}){
  const v=playerLifeView(projection,actor,{...options,includeCalendar:false});
