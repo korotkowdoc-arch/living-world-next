@@ -1,4 +1,4 @@
-import {compareRegistryState,remapDeltaScene} from '../public/core/state-delta.mjs';
+import {compareRegistryState,remapDeltaScene,identityReview} from '../public/core/state-delta.mjs';
 import {reviewedMenuHistory} from '../public/core/menu-history.mjs';
 import {SCENE_MEMORY_GUIDANCE,sceneSaveAudit,sceneMemoryRecall,memoryCoverageSummary} from '../public/core/scene-memory-routing.mjs';
 import {VISUAL_PICKER_URI,VISUAL_PICKER_MIME,VISUAL_PICKER_HTML} from './visual-picker.mjs';
@@ -627,7 +627,7 @@ async function callTool(name,args,env,token){
    assertUuid(args.request_id);assertUuid(args.branch_id);
    if(args.expected_head!==null)assertUuid(args.expected_head);
    const receipt=await rpc(env,token,'nw_scene_receipt',{p_world_id:world.id,p_request_id:args.request_id});
-   let stateDelta=null,deltaDraftId=null;
+   let stateDelta=null,deltaDraftId=null,identityWarnings=null;
    // Previously accepted data can be retried even if active branch, rules or autosave changed.
    // NEVER trust a receipt alone: the SQL RPC verifies all original payload fields.
    if(!receipt?.saved){
@@ -644,14 +644,14 @@ async function callTool(name,args,env,token){
      if(!memory.complete)throw Error('State preflight requires complete structured history; retrieve and verify sources before saving.');
      const checked=validateStateAppend(memory.scenes,args.events,args.body,{checkpoint:memory.checkpoint,worldTime:args.world_time??null,includeProjection:true});
      if(!checked.ok)throw Error(checked.errors.join(' '));
-     deltaDraftId=checked.draftId;stateDelta=compareRegistryState(memory.projection,checked.projection,{sceneId:deltaDraftId});
+     deltaDraftId=checked.draftId;stateDelta=compareRegistryState(memory.projection,checked.projection,{sceneId:deltaDraftId});identityWarnings=identityReview(memory.projection,args.events||[]);
     }
    }
    const sceneId=await rpc(env,token,'nw_commit_scene',{
       p_world_id:world.id,p_branch_id:args.branch_id,p_expected_head:args.expected_head,
       p_request_id:args.request_id,p_body:args.body,p_world_time:args.world_time??null,p_events:args.events||[],p_expected_rules_version:args.expected_rules_version
    });
-   return {saved:true,reused:!!receipt?.saved,scene_id:sceneId,request_id:args.request_id,read_url:sceneReaderUrl(world.id,sceneId),extraction_routing:sceneSaveAudit(args.body,args.events||[]),state_delta:stateDelta?{...remapDeltaScene(stateDelta,deltaDraftId,sceneId),status:'validated_projection_then_committed'}:{status:receipt?.saved?'reused_receipt_no_replay':'routing_only_no_state_preflight'}};
+   return {saved:true,reused:!!receipt?.saved,scene_id:sceneId,request_id:args.request_id,read_url:sceneReaderUrl(world.id,sceneId),extraction_routing:sceneSaveAudit(args.body,args.events||[]),identity_review:identityWarnings,state_delta:stateDelta?{...remapDeltaScene(stateDelta,deltaDraftId,sceneId),status:'validated_projection_then_committed'}:{status:receipt?.saved?'reused_receipt_no_replay':'routing_only_no_state_preflight'}};
   }
   case 'fork_before_scene':{
    const world=await ownerWorld(env,token,args.world_id);

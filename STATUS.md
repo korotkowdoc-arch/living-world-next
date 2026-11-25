@@ -2,7 +2,7 @@
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
 ## v0.55.0 — фактические изменения реестров и актуальное состояние
-- [x] Candidate: compare before/after projection across ten registries, including per-field state, both transfer legs, indirect outfit changes, repeated observations and explicit unknown. Stateful MCP save returns validated projection delta after successful commit; reused receipts explicitly omit it.
+- [x] Candidate: compare before/after projection across ten registries, including per-field state, both transfer legs, indirect outfit changes, repeated observations and explicit unknown. All non-note canonical MCP events now receive state preflight and return validated projection delta after successful commit; reused receipts explicitly omit it. Identity review flags exact duplicate need/skill/open-plan/project/habit scopes without silently merging.
 - [x] Candidate: focused recent current-state recall, source-preserving; growth project/rumor/cause routing corrected. Regression tests.
 - [ ] CI, merge, deployment and actual play verification. No semantic completeness guarantee or retroactive rewriting.
 

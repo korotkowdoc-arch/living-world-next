@@ -32,3 +32,14 @@ test('recent recall returns latest fields only and preserves actor boundaries',(
  assert.deepEqual(r.records.find(x=>x.registry==='people').fields.map(x=>[x.field,x.value]),[['location','Shop']]);assert.ok(!JSON.stringify(r).includes('Secret'));assert.ok(!JSON.stringify(r).includes('Park'));
 });
 test('growth routing separates skill, project, rumor and cause',()=>{for(const [growth_kind,domain] of [['skill','education'],['project','goals'],['rumor','knowledge'],['cause','world']])assert.equal(eventRoute({type:'world',growth_version:1,growth_kind}).domain,domain);});
+
+import {identityReview} from '../public/core/state-delta.mjs';
+import {needsStatePreflight} from '../public/core/continuity.mjs';
+test('ordinary character, relationship, knowledge and commitment changes get state preflight',()=>{for(const type of ['character','relationship','knowledge','commitment','offscreen','world'])assert.equal(needsStatePreflight([{type}]),true);assert.equal(needsStatePreflight([{type:'world',scene_memory_version:1}]),false);});
+test('identity review spots duplicate need/skill/plan scopes without confusing independent actors or completed tasks',()=>{
+ const need={id:'a',type:'world',player_life_version:1,life_kind:'need',key:'need:a',actor:'Hero',need:'hunger'};
+ const skill={id:'s',type:'world',growth_version:1,growth_kind:'skill',key:'skill:a',actor:'Hero',name:'Repair'};
+ const plan={type:'plan',actor:'Hero',plan_id:'p',goal:'Find work',status:'active'};
+ const proposed=[{...need,id:'b',key:'need:b'},{...need,id:'c',key:'need:c',actor:'Other'},{...skill,id:'s2',key:'skill:b'},{...plan,id:'p2',plan_id:'p2',action:'start'},{...plan,id:'p3',plan_id:'p3',action:'start',actor:'Other'}];
+ const r=identityReview({worldFacts:[need,skill],plans:[plan]},proposed);assert.equal(r.total,3);assert.deepEqual(r.records.map(x=>x.existing_id),['need:a','skill:a','p']);
+});
