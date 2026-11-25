@@ -1,5 +1,5 @@
 import {sceneSaveAudit,isSceneMemory} from './scene-memory-routing.mjs';
-import {replay,replayWithCheckpoint,validateScene,needsStatePreflight} from './continuity.mjs';
+import {replay,replayWithCheckpoint,validateScene,needsStatePreflight,validateProjectedAppend} from './continuity.mjs';
 import {draftEvidenceCoverage} from './annotation-passages.mjs';
 import {parseStoryDate} from './world-time.mjs';
 export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time=null}={}){
@@ -13,8 +13,8 @@ export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time
  const before=memory?.projection??replay(scenes,[],{evidencePrevalidated:true});
  const history=[...scenes,{id,body,events,world_time}];
  const after=memory?.checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint:memory.checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
- const rejected=after.validation_warnings.filter(x=>x.scene_id===id);
- if(rejected.length){result.ok=false;result.errors.push(...rejected.flatMap(x=>x.errors));return result;}
+ const rejected=validateProjectedAppend(history,after,id,events);
+ if(!rejected.ok){result.ok=false;result.errors.push(...rejected.errors);return result;}
  const clock=parseStoryDate(scenes.at(-1)?.world_time),next=parseStoryDate(world_time);
  if(world_time&&!next)result.warnings.push('Время не имеет точного формата; длительность не установлена.');
  if(clock&&next&&next.order<clock.order&&(clock.precision===next.precision||clock.day!==next.day))result.warnings.push('Дата раньше последней сцены: проверь флешбэк или выбери альтернативную ветку.');

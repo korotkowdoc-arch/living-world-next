@@ -994,6 +994,7 @@ p jsonb:='{"id":"plan","type":"plan","actor":"Anna","plan_id":"p","action":"star
 begin
  wid:=public.nw_create_world('Scene memory rollback','Synthetic test','2000-01-01');select active_branch_id into bid from public.nw_worlds where id=wid;
  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(p,n),0);
+ if (select count(*) from public.nw_actor_history(wid,'Anna',40,0))<>1 or exists(select 1 from public.nw_actor_history(wid,'Anna',40,0) where event ? 'scene_memory_version') then raise exception 'Interpretive note leaked into canonical history';end if;
  bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n||'{"key":"player-life:journey:fake"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Mixed state memory accepted';end if;
  bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n-'actor'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Missing speaker accepted';end if;
  bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(n,n||'{"id":"duplicate"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Duplicate note accepted';end if;

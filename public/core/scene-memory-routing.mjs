@@ -29,7 +29,7 @@ const dynRoutes={
 const dynMap=new Map(Object.entries(dynRoutes).flatMap(([domain,words])=>words.split(' ').map(k=>[k,domain])));
 export function eventRoute(e){
  if(!e||typeof e!=='object')return {domain:'unclassified',destinations:[],layer:'unknown'};
- if(isSceneMemory(e))return {domain:e.domain,destinations:['narrator_recall'],layer:'interpretive_memory'};
+ if(isSceneMemory(e))return sceneMemoryError(e)?{domain:'unclassified',destinations:[],layer:'invalid_memory'}:{domain:e.domain,destinations:['narrator_recall'],layer:'interpretive_memory'};
  let d=null;
  if(e.type==='character')d='character';
  else if(e.type==='relationship')d='relationships';
@@ -83,18 +83,46 @@ export function sceneSaveAudit(body,events=[]){
   if(route.layer==='interpretive_memory'){semantic.push(e);continue;}
   if(!by.has(route.domain))by.set(route.domain,{domain:route.domain,destinations:route.destinations,count:0,event_ids:[]});
   const r=by.get(route.domain);r.count++;if(r.event_ids.length<10)r.event_ids.push(e?.id??null);
-  if(route.layer==='unclassified_event')unclassified.push(e?.id??null);
+  if(route.layer==='unclassified_event'||route.layer==='invalid_memory')unclassified.push(e?.id??null);
  }
- const cues=[],seen=new Set(),text=typeof body==='string'?body:'';
- // Lexical prompts only. No false requirement to turn every mentioned object
- // or quoted intention into an actual transition.
- for(const [d,pattern] of Object.entries(cuePatterns)){
-  const hit=pattern.exec(text);if(!hit||by.has(d)||semantic.some(e=>e.domain===d))continue;
-  const start=Math.max(0,hit.index-90),end=Math.min(text.length,hit.index+hit[0].length+110);
-  if(seen.has(d))continue;seen.add(d);cues.push({domain:d,destinations:domains[d],excerpt:text.slice(start,end),kind:'review_cue_not_a_fact'});
+ const text=typeof body==='string'?body:'',cueGroups=new Map(),coverage=new Map(),segments=[];
+ // Exact source offsets; evidence spanning a boundary marks both segments.
+ // A repeated quote is ambiguous and cannot certify a second occurrence.
+ let cursor=0;
+ while(cursor<text.length){
+  let end=Math.min(text.length,cursor+1200);
+  if(end<text.length){
+   const paragraph=text.lastIndexOf('\n\n',end-2),newline=text.lastIndexOf('\n',end-1),space=text.lastIndexOf(' ',end-1);
+   if(paragraph>=cursor+300)end=paragraph+2;
+   else if(newline>=cursor+600)end=newline+1;
+   else if(space>=cursor+900)end=space+1;
+   if(/[\uDC00-\uDFFF]/.test(text[end]))end--;
+  }
+  segments.push({start:cursor,end});cursor=end;
  }
+ for(const e of rows){
+  const route=eventRoute(e);
+  if(route.layer!=='canonical_event'&&route.layer!=='interpretive_memory'||typeof e.evidence!=='string'||!e.evidence.trim())continue;
+  const start=text.indexOf(e.evidence);if(start<0)continue;
+  if(!coverage.has(route.domain))coverage.set(route.domain,[]);
+  coverage.get(route.domain).push({start,end:start+e.evidence.length,layer:route.layer});
+ }
+ // Local lexical review only: no automatic fact extraction, and no quota.
+ for(const segment of segments){
+  const excerpt=text.slice(segment.start,segment.end);
+  for(const [d,pattern] of Object.entries(cuePatterns)){
+   const hit=pattern.exec(excerpt);if(!hit)continue;
+   const local=(coverage.get(d)||[]).filter(x=>x.start<segment.end&&x.end>segment.start);
+   if(local.some(x=>x.layer==='canonical_event'))continue;
+   const at=segment.start+hit.index,start=Math.max(segment.start,at-90),end=Math.min(segment.end,at+hit[0].length+110);
+   if(!cueGroups.has(d))cueGroups.set(d,[]);
+   cueGroups.get(d).push({domain:d,destinations:domains[d],start,end,excerpt:text.slice(start,end),interpretive_note_present:local.some(x=>x.layer==='interpretive_memory'),kind:'review_cue_not_a_fact'});
+  }
+ }
+ const cues=[],groups=[...cueGroups.values()];const totalCues=groups.reduce((n,g)=>n+g.length,0);
+ for(let i=0;cues.length<12&&i<segments.length;i++)for(const group of groups){if(cues.length>=12)break;if(group[i])cues.push(group[i]);}
  return {event_count:rows.length,canonical_candidates:rows.length-semantic.length,interpretive_memory_count:semantic.length,routes:[...by.values()],unclassified_event_ids:unclassified.slice(0,20),unclassified_count:unclassified.length,
-  review_cues:cues.slice(0,12),omitted_cues:Math.max(0,cues.length-12),
+  review_cues:cues,omitted_cues:Math.max(0,totalCues-cues.length),source_segments:segments.length,
   policy:'Routing reports intended destinations, not proof that an event is true or every detail was extracted. Review lexical cues in context; do not manufacture a transition. Supplemental memory is not canonical knowledge.'};
 }
 export function sceneMemoryDuplicateKey(e){return JSON.stringify([e.memory_kind,e.domain,e.actor??null,[...(e.actors||[])].sort(),e.place??null,e.summary,e.evidence]);}
@@ -105,7 +133,9 @@ export function sceneMemoryRecall(scenes=[],projection={}, {actors:focus=[],plac
  const a=new Set(focus),q=[...new Set(queries.filter(x=>typeof x==='string'&&x.trim()).map(norm))].slice(0,8);
  const failures=new Set(),badScenes=new Set();
  for(const f of projection.validation_warnings||[]){if(!f.scene_id)continue;if(f.event_id)failures.add(JSON.stringify([f.scene_id,f.event_id]));else badScenes.add(f.scene_id);}
- const queues=new Map(),matches=new Set(),seen=new Set();let total=0;
+ const queues=new Map(),seen=new Set();let total=0;
+ const cap=Math.max(1,Math.min(40,Math.floor(Number(maxNotes)||16)));maxNotes=cap;
+ const compare=(a,b)=>b.rank-a.rank||b.scene_index-a.scene_index||b.event_index-a.event_index;
  const rank=(e)=>{const overlap=actors(e).filter(x=>a.has(x)).length;const exactPlace=place&&e.place===place;const text=[e.summary,e.place,e.domain,...(e.topics||[])].filter(Boolean).map(norm).join('\n');const query=q.some(x=>text.includes(x));return overlap*4+Number(!!exactPlace)*3+Number(query)*2;};
  for(let i=scenes.length-1;i>=0;i--){
   const s=scenes[i];if(!s?.id||badScenes.has(s.id))continue;
@@ -114,10 +144,12 @@ export function sceneMemoryRecall(scenes=[],projection={}, {actors:focus=[],plac
    if(!rank(e))continue;
    const key=sceneMemoryDuplicateKey(e);if(seen.has(key))continue;seen.add(key);total++;
    const group=e.domain;if(!queues.has(group))queues.set(group,[]);
-   const bucket=queues.get(group);if(bucket.length<Math.max(1,maxNotes)*2)bucket.push({rank:rank(e),scene_index:i,event_index:j,domain:e.domain,memory_kind:e.memory_kind,actor:e.actor??null,actors:e.actors,place:e.place??null,topics:e.topics||[],summary:compact(e.summary,420),quote:compact(e.evidence,400),quote_truncated:e.evidence.length>400,source:{scene_id:s.id,event_id:e.id,world_time:s.world_time??null}});
+   const bucket=queues.get(group),score=rank(e);if(bucket.length>=cap*2&&score<=bucket.at(-1).rank)continue;
+   bucket.push({rank:score,scene_index:i,event_index:j,domain:e.domain,memory_kind:e.memory_kind,actor:e.actor??null,actors:e.actors,place:e.place??null,topics:e.topics||[],summary:compact(e.summary,420),quote:compact(e.evidence,400),quote_truncated:e.evidence.length>400,source:{scene_id:s.id,event_id:e.id,world_time:s.world_time??null}});
+   bucket.sort(compare);if(bucket.length>cap*2)bucket.pop();
   }
  }
- for(const rows of queues.values())rows.sort((a,b)=>b.rank-a.rank||b.scene_index-a.scene_index||b.event_index-a.event_index);
+ for(const rows of queues.values())rows.sort(compare);
  const notes=[],groups=[...queues.values()].sort((a,b)=>b[0].rank-a[0].rank);
  for(let i=0;i<Math.max(1,maxNotes)*2&&notes.length<maxNotes;i++)for(const group of groups){
   if(notes.length>=maxNotes)break;
@@ -128,7 +160,7 @@ export function sceneMemoryRecall(scenes=[],projection={}, {actors:focus=[],plac
  return {canonical:false,memory_complete:complete,total_matching:total,notes,omitted:Math.max(0,total-notes.length),policy:'Interpretive scene memory only. Read original source and verify speaker/context. Never grant knowledge, change ledger or treat an intention or claim as a performed action.'};
 }
 export function memoryCoverageSummary(scenes=[],{complete=true}={}){
- const counts={scenes:scenes.length,with_events:0,without_events:0,with_supplemental_memory:0,without_supplemental_memory:0,supplemental_records:0},domains={};
+ const counts={scenes:scenes.length,with_events:0,without_events:0,with_supplemental_memory:0,without_supplemental_memory:0,supplemental_records:0},domains=Object.create(null);
  for(const s of scenes){const es=Array.isArray(s.events)?s.events:[],notes=es.filter(e=>isSceneMemory(e)&&!sceneMemoryError(e));
   counts[es.some(e=>!isSceneMemory(e))?'with_events':'without_events']++;
   counts[notes.length?'with_supplemental_memory':'without_supplemental_memory']++;counts.supplemental_records+=notes.length;

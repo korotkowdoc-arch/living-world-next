@@ -40,3 +40,16 @@ test('draft includes routing before commit; existing pending choice must remain 
  const pending={id:'p',type:'world',dynamics_version:1,dynamics_kind:'player_choice',record_id:'p',key:'dynamics:player_choice:p',actor:'Анна',status:'pending',description:'Choose',question:'Что делать?',options:[{id:'a',text:'A'},{id:'b',text:'B'}],evidence:'Что делать?'};
  assert.equal(validateScene({body:body+' Что делать?',events:[pending,n]}).ok,false);
 });
+
+test('local evidence in one passage does not suppress review of a later passage in the same domain',()=>{
+ const body='Анна заплатила за книгу.\n\n'+'Описание. '.repeat(180)+'\n\nБорис купил новый котёл.';
+ const a=sceneSaveAudit(body,[{id:'m',type:'money',evidence:'Анна заплатила за книгу.'}]);
+ assert.ok(a.source_segments>1);assert.ok(a.review_cues.some(x=>x.domain==='finance'&&x.excerpt.includes('Борис купил')));
+ for(const c of a.review_cues)assert.equal(body.slice(c.start,c.end),c.excerpt);
+});
+test('recall ranks old exact actor plus topic matches above newer weak matches even when one domain is crowded',()=>{
+ const old={...n,id:'old',summary:'Лондон и особый архив',topics:['архив']};
+ const h=[scene('old',[old]),...Array.from({length:40},(_,i)=>scene('recent-'+i,[{...n,id:'r'+i,summary:'План '+i,topics:['поездка']}]))];
+ const p=replay(h),r=sceneMemoryRecall(h,p,{actors:['Анна'],queries:['архив'],maxNotes:1});
+ assert.equal(r.notes[0].source.scene_id,'old');
+});

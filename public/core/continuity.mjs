@@ -280,6 +280,10 @@ export function needsStatePreflight(events=[]){
 export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null}={}){
  const draftId='__pending_state_scene__',history=[...scenes,{id:draftId,body,events,world_time:worldTime}];
  const p=checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
+ return validateProjectedAppend(history,p,draftId,events);
+}
+/** Shared draft/save validation: no second replay, same domain-specific checks. */
+export function validateProjectedAppend(history,p,draftId,events){
  const errors=p.validation_warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors);
  if(events.some(e=>isWealth(e)||e.type==='money'&&[e.actor,e.counterparty].some(a=>typeof a==='string'&&a.startsWith('treasury:'))))errors.push(...wealthIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));
  if(events.some(isDocument))errors.push(...documentIndex(history,p).warnings.filter(w=>w.scene_id===draftId).flatMap(w=>w.errors));

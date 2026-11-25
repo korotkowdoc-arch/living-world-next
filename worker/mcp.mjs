@@ -422,15 +422,17 @@ async function callTool(name,args,env,token){
    const limit=Math.max(1,Math.min(40,Math.floor(Number(args.limit)||20)));
    const eventOffset=Math.max(0,Math.floor(Number(args.event_offset)||0));
    const mentionOffset=Math.max(0,Math.floor(Number(args.mention_offset)||0));
-   const [confirmed,mentions]=await Promise.all([
+   const [confirmed,mentions,memory]=await Promise.all([
     rpc(env,token,'nw_actor_history',{p_world_id:world.id,p_actor:actor,p_limit:limit,p_offset:eventOffset}),
-    rpc(env,token,'nw_search_history',{p_world_id:world.id,p_query:actor,p_limit:limit,p_offset:mentionOffset})
+    rpc(env,token,'nw_search_history',{p_world_id:world.id,p_query:actor,p_limit:limit,p_offset:mentionOffset}),
+    readStructuredMemory(env,token,world,before.head_scene_id)
    ]);
    const afterWorld=await ownerWorld(env,token,world.id);
    const after=await branch(env,token,afterWorld);
    if(afterWorld.active_branch_id!==world.active_branch_id||after.head_scene_id!==before.head_scene_id)
     throw Error('Active branch changed while collecting actor memory; retry');
-   return {...actorMemoryEvidence({actor,confirmedEvents:confirmed,textMentions:mentions,headSceneId:before.head_scene_id}),
+   return {...actorMemoryEvidence({actor,confirmedEvents:confirmed.filter(x=>!Object.hasOwn(x.event||{},'scene_memory_version')),textMentions:mentions,headSceneId:before.head_scene_id}),
+    scene_memory_recall:sceneMemoryRecall(memory.scenes,memory.projection,{actors:[actor],complete:memory.complete}),
     next_event_offset:eventOffset+confirmed.length,next_mention_offset:mentionOffset+mentions.length,
     more_confirmed_may_exist:confirmed.length===limit,more_mentions_may_exist:mentions.length===limit,
     matches_are_literal:true,active_branch_only:true};
@@ -441,7 +443,7 @@ async function callTool(name,args,env,token){
    if(actor.length<1||actor.length>140)throw Error('Invalid character name');
    const limit=Math.max(1,Math.min(100,Number(args.limit)||40));
    const rows=await rpc(env,token,'nw_actor_history',{p_world_id:args.world_id,p_actor:actor,p_limit:limit,p_offset:Math.max(0,Math.floor(Number(args.offset)||0))});
-   return {actor,events:rows,more_may_exist:rows.length===limit,source:'confirmed structured events in active ancestry',unannotated_scenes:'not indexed: use search_story_memories or get_branch_history'};
+   return {actor,events:rows.filter(x=>!Object.hasOwn(x.event||{},'scene_memory_version')),more_may_exist:rows.length===limit,source:'confirmed structured events in active ancestry',unannotated_scenes:'not indexed: use search_story_memories or get_branch_history'};
   }
   case 'get_world_economy':{
    const world=await ownerWorld(env,token,args.world_id);

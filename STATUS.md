@@ -4,6 +4,7 @@
 ## v0.49.0 — смысловое сохранение и адресная память (candidate)
 - [x] Scene extraction protocol: full-scene semantic extraction by narrator, existing canonical domain schemas, supplemental isolated evidence-backed scene memory for claims/intentions/descriptions/uncertainty. Receipt and preflight domain routing, unclassified records and lexical review cues (not facts), coverage counts, focused old-source recall by actors/place/topic. No external AI API and no automatic inference into canon. Atomic note events stored with scene; no state or plan-completion effects.
 - [x] SQL append guard for isolated note shape, duplicate note detection and prohibition as plan completion; JS/SQL regression tests. Existing saved scenes unchanged; historical annotation still separate and noncanonical.
+- [x] Local source-offset cues (same domain in separate passages), ranked recall across long histories, shared draft/save extension validation, isolation from confirmed actor-history RPC. Initial Node/SQL CI passed; final checks pending. Read-only audit: 23/23 existing scenes contain structured events (not proof of full extraction).
 - [ ] Final CI, production migration, live and gameplay validation; old-source semantic review and verified historical backfill remain open.
 
 ## v0.48.0 — планы жилья и управление комнатами

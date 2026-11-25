@@ -128,3 +128,35 @@ begin
 end $$;
 revoke all on function public.nw_commit_scene(uuid,uuid,uuid,uuid,text,text,jsonb,integer) from public,anon;
 grant execute on function public.nw_commit_scene(uuid,uuid,uuid,uuid,text,text,jsonb,integer) to authenticated;
+
+-- Preserve existing event-history pagination and the owner/branch boundary.
+-- Interpretive notes remain available in scene source and narrator recall,
+-- never in the endpoint whose contract is confirmed structured events.
+create or replace function public.nw_actor_history(p_world_id uuid,p_actor text,p_limit integer default 40,p_offset integer default 0)
+returns table(scene_id uuid,world_time text,event jsonb,created_at timestamptz)
+language plpgsql stable security definer set search_path='' as $actor$
+begin
+ if auth.uid() is null or not exists(select 1 from public.nw_worlds w where w.id=p_world_id and w.owner_id=auth.uid()) then raise exception 'World not found';end if;
+ if char_length(btrim(coalesce(p_actor,''))) not between 1 and 140 then raise exception 'Invalid character name';end if;
+ return query
+ with recursive ancestry as (
+  select s.id,s.parent_scene_id,s.events,s.world_time,s.created_at,0 depth
+  from public.nw_worlds w join public.nw_branches b on b.id=w.active_branch_id
+  join public.nw_scenes s on s.id=b.head_scene_id
+  where w.id=p_world_id and w.owner_id=auth.uid() and b.owner_id=auth.uid()
+  union all
+  select s.id,s.parent_scene_id,s.events,s.world_time,s.created_at,a.depth+1
+  from ancestry a join public.nw_scenes s on s.id=a.parent_scene_id
+  where s.world_id=p_world_id and s.owner_id=auth.uid()
+ )
+ select a.id,a.world_time,e.value,a.created_at
+ from ancestry a cross join lateral jsonb_array_elements(a.events) with ordinality e(value,ordinality)
+ where not (e.value ? 'scene_memory_version') and lower(btrim(p_actor)) in (
+  lower(coalesce(e.value->>'actor','')),lower(coalesce(e.value->>'name','')),
+  lower(coalesce(e.value->>'a','')),lower(coalesce(e.value->>'b',''))
+ )
+ order by a.depth desc,e.ordinality
+ limit greatest(1,least(coalesce(p_limit,40),100)) offset greatest(0,coalesce(p_offset,0));
+end $actor$;
+revoke all on function public.nw_actor_history(uuid,text,integer,integer) from public,anon;
+grant execute on function public.nw_actor_history(uuid,text,integer,integer) to authenticated;
