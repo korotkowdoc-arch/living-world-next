@@ -46,6 +46,7 @@ export function playerCalendar(projection={},actor,clockTime,{days=7,limit=40}={
  for(const x of projection.plans||[])if(x.actor===actor&&['active','paused'].includes(x.status))add('task',x.plan_id,x.goal,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of projection.obligations||[])if(x.actor===actor&&active(x.status))add('commitment',x.commitment_id,x.description||x.evidence,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of records){
+  if(x.player_life_version===1&&x.life_kind==='shared_goal'&&x.status==='active'&&(x.actor===actor||records.some(m=>m.life_kind==='shared_goal_member'&&m.goal_id===x.record_id&&m.actor===actor&&m.status==='accepted')))add('shared_goal',x.record_id,x.title,x.due_at,x.status,x.source);
   if(x.player_life_version===1&&x.life_kind==='expense_share'&&x.actor===actor&&x.status==='accepted')add('expense_share',x.record_id,x.title,x.due_at,x.status,x.source);
   if(x.player_life_version===1&&x.life_kind==='care_plan'&&(x.actor===actor||x.supporter===actor)&&x.status==='accepted')add('care_plan',x.record_id,x.title,x.due_at,x.status,x.source);
   if(x.player_life_version===1&&x.life_kind==='household_task'&&x.actor===actor&&x.status==='accepted'&&taskAccessible(taskRecords,x))add('household_task',x.record_id,x.title,x.scheduled_on,x.status,x.source);
@@ -87,6 +88,8 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
  const horizon=Math.max(1,Math.min(31,Math.ceil((target.order-clock.order)/DAY)+1));
  const calendar=playerCalendar(projection,actor,clock.literal,{days:horizon,limit:100});
  const gates=[];
+ const goalRecords=projection.worldFacts||[];
+ for(const x of goalRecords)if(x.life_kind==='shared_goal'&&x.status==='active'&&(x.actor===actor||goalRecords.some(m=>m.life_kind==='shared_goal_member'&&m.goal_id===x.record_id&&m.actor===actor&&m.status==='accepted'))){const t=date(x.due_at);if(t&&t.order<=target.order)gates.push({kind:'shared_goal',id:x.record_id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:'shared_goal_deadline_requires_review'});} 
  for(const x of projection.worldFacts||[])if(x.player_life_version===1&&x.status==='accepted'&&(x.life_kind==='expense_share'&&x.actor===actor||x.life_kind==='care_plan'&&(x.actor===actor||x.supporter===actor))){const t=date(x.due_at);if(t&&t.order<=target.order)gates.push({kind:x.life_kind,id:x.record_id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:'agreed_expense_or_care_requires_review'});}
  const dutyRecords=new Map((projection.worldFacts||[]).map(x=>[x.key,x]));
  for(const x of dutyRecords.values())if(x.actor===actor&&((x.life_kind==='household_task'&&x.status==='accepted'&&taskAccessible(dutyRecords,x))||(x.life_kind==='consequence_response'&&x.status==='planned'))){const t=date(x.scheduled_on||x.due_at);if(t&&t.order<=target.order)gates.push({kind:x.life_kind,id:x.record_id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:'responsibility_requires_review'});} 
