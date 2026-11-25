@@ -1,9 +1,13 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.58.0 — развитие личности и жизненный опыт
+- [x] Candidate: per-character verified trajectory of persistent traits, motives, habits/skills/projects; first observation, latest source, actual changes and bounded history. Distinct accepted life episodes, never automatic causation. Connect turn, actor and focused reads, character state and psychology menu with native trajectory cards and source links. Preserve current traits before dropping long history under context budget; exact total/omitted history counts. Review persistent fields versus transient mood. NPC need estimate invalidated after long unobserved scene gap, same conservative day threshold as hero.
+- [ ] CI, merge, deployment and live play verification. No automatic psychological change or history rewrite.
+
 ## v0.57.0 — индивидуальная память персонажей
 - [x] Candidate: per-holder current knowledge with accepted historical versions, exact topic ranking, unavailable content withheld from actionable perspective; outgoing attitudes, open commitments and accepted encounters; director-only differences in topic perspectives. Integrate turn, focused context and actor recall. Draft review flags topic duplicates and uncertain informant provenance. Incoming attitudes separated from own character context. Knowledge listing orders by latest source. Actor recall verifies annotations against loaded ancestry and rejects invalid or case-mismatched actor identity; forgotten content withheld in psychology too. Correct historical counts under partial ancestry and compact history before dropping current knowledge.
-- [ ] CI, merge, deployment and actual play verification. No inferred knowledge or historical state rewrite; semantic review remains narrator responsibility.
+- [x] PR #53 merged (7730136); final JS/Chromium and SQL CI passed. [ ] Deployment and actual play verification. No inferred knowledge or historical state rewrite; semantic review remains narrator responsibility.
 
 ## v0.56.0 — причинно-следственная память
 - [x] Candidate: bounded branch-local causal recall of unresolved/resolved consequences, exact incident references, response plans/results and explicit causal graph with original/latest sources; established links only expand relevance, claims remain attributed. Expose in next turn, focused context and existing consequence tool. Draft review flags possibly missed consequence updates and pending responses after resolution. No automatic closure or state mutation. Player task menu groups own consequences, response attempts and resolved archive; director graph remains separate.

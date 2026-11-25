@@ -1,3 +1,4 @@
+import {personalitySaveReview} from './personality-evolution.mjs';
 import {individualSaveReview} from './individual-memory.mjs';
 import {causalSaveReview} from './causal-memory.mjs';
 import {compareRegistryState,identityReview} from './state-delta.mjs';
@@ -15,7 +16,7 @@ export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time
  if(!memory?.complete&&needsStatePreflight(events)){result.ok=false;result.errors.push('Для проверки переходов нужна полная память.');return result;}
  const scenes=memory?.scenes||[],id='__draft_preview__';
  const before=memory?.projection??replay(scenes,[],{evidencePrevalidated:true});
- result.task_review=taskSaveReview(before,events,body);result.identity_review=identityReview(before,events);result.causal_review=causalSaveReview(before,events,body);result.individual_review=individualSaveReview(before,events);
+ result.task_review=taskSaveReview(before,events,body);result.identity_review=identityReview(before,events);result.causal_review=causalSaveReview(before,events,body);result.individual_review=individualSaveReview(before,events);result.personality_review=personalitySaveReview(before,events);
  const history=[...scenes,{id,body,events,world_time}];
  const after=memory?.checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint:memory.checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  const rejected=validateProjectedAppend(history,after,id,events);

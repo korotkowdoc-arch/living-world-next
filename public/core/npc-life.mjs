@@ -16,7 +16,7 @@ export function npcNeedOpportunities(records=[],scenes=[],targetTime=null,{compl
  let lastBroken=-1;
  for(let i=0;i<dates.length;i++){
   const d=dates[i],prev=dates[i-1];
-  if(d?.precision!=='minute'||i>0&&(prev?.precision!=='minute'||d.order<prev.order))lastBroken=i;
+  if(d?.precision!=='minute'||i>0&&(prev?.precision!=='minute'||d.order<prev.order||d.order-prev.order>1440))lastBroken=i;
  }
  const result=[];
  for(const r of records){
