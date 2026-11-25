@@ -103,3 +103,16 @@ test('market review counts current pending and recent terminal order states only
  const incomplete=prepareStoryTurn(scenes.slice(0,3),{people,worldFacts:rows},[],{actors:['Harry'],limit:30,complete:false});
  assert.ok(!incomplete.candidates.some(x=>x.kind==='market_review'));
 });
+
+test('unresolved consequences give distinct opportunities, respecting existing response plans and awareness',()=>{
+ const issue={consequence_version:1,consequence_kind:'social',record_id:'issue',key:'consequence:issue',actor:'Harry',responsible:'Lia',status:'contested',description:'Disputed incident',source};
+ const planned={player_life_version:1,life_kind:'consequence_response',record_id:'plan',key:'player-life:consequence_response:plan',actor:'Harry',consequence_id:'issue',title:'Response',status:'planned',source};
+ const rows=[issue,planned,{...issue,record_id:'resolved',key:'consequence:resolved',status:'resolved'}];
+ const derived=independentSocialOpportunities(rows,people).filter(x=>x.kind==='consequence_opportunity');
+ assert.equal(derived.length,1);assert.equal(derived[0].row.actor,'Lia');assert.equal(derived[0].info.role,'recorded_responsible');
+ const turn=prepareStoryTurn([{id:'s',world_time:'1994-08-01 09:00'}],{worldFacts:rows,people},[],{actors:['Harry'],limit:30});
+ const candidate=turn.candidates.find(x=>x.kind==='consequence_opportunity');
+ assert.ok(candidate.checks.some(x=>x.kind==='consequence_awareness_requires_review'));
+ assert.equal(candidate.certainty,'candidate_only_not_performed');
+ assert.equal(turn.npc_initiatives.initiatives.find(x=>x.kind==='consequence_opportunity').player_involved,true);
+});
