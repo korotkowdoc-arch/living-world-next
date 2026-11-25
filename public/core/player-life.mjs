@@ -1,3 +1,4 @@
+import {HOUSEHOLD_KINDS,householdRecordError,householdTransition} from './households-careers.mjs';
 import {CURRICULUM_KINDS,curriculumError,curriculumTransition} from './curriculum-supply.mjs';
 import {PREPAID_KINDS,prepaidRecordError,prepaidTransition,visitPrepaidError} from './prepaid-travel.mjs';
 import {MARKET_HOME_KINDS,marketHomeError,marketHomeTransition} from './market-home.mjs';
@@ -21,7 +22,8 @@ const owns=(items,item,actor)=>items.get(item)?.custody_status==='held'&&items.g
 export function playerLifeError(e){
  const reserved=typeof e?.key==='string'&&e.key.startsWith('player-life:');
  if(e?.player_life_version===undefined)return reserved?'Ключ жизни требует player_life_version=1.':null;
- if(e.type!=='world'||e.player_life_version!==1||!['need','garment','outfit','letter','preset','appointment','impression',...TRAVEL_KINDS,...WORK_KINDS,...HOME_KINDS,...SOCIAL_LIFE_KINDS,...PROPERTY_KINDS,...MARKET_HOME_KINDS,...PREPAID_KINDS,...CURRICULUM_KINDS].includes(e.life_kind)||!id(e.record_id)||e.key!=='player-life:'+e.life_kind+':'+e.record_id)return 'Invalid player life record identity';
+ if(e.type!=='world'||e.player_life_version!==1||!['need','garment','outfit','letter','preset','appointment','impression',...TRAVEL_KINDS,...WORK_KINDS,...HOME_KINDS,...SOCIAL_LIFE_KINDS,...PROPERTY_KINDS,...MARKET_HOME_KINDS,...PREPAID_KINDS,...CURRICULUM_KINDS,...HOUSEHOLD_KINDS].includes(e.life_kind)||!id(e.record_id)||e.key!=='player-life:'+e.life_kind+':'+e.record_id)return 'Invalid player life record identity';
+ if(HOUSEHOLD_KINDS.includes(e.life_kind))return householdRecordError(e);
  if(CURRICULUM_KINDS.includes(e.life_kind))return curriculumError(e);
  if(PREPAID_KINDS.includes(e.life_kind))return prepaidRecordError(e);
  if(MARKET_HOME_KINDS.includes(e.life_kind))return marketHomeError(e);
@@ -53,6 +55,7 @@ export function playerLifeTransitionError(records,items,e){
  const err=playerLifeError(e);if(err)return err;
  const old=records.get(e.key),kind=e.life_kind;
  if(old&&(old.player_life_version!==1||old.life_kind!==kind||old.record_id!==e.record_id))return 'Changed player life identity';
+ if(HOUSEHOLD_KINDS.includes(kind))return householdTransition(records,e);
  if(CURRICULUM_KINDS.includes(kind))return curriculumTransition(records,e);
  if(PREPAID_KINDS.includes(kind))return prepaidTransition(records,e);
  if(MARKET_HOME_KINDS.includes(kind))return marketHomeTransition(records,items,e);
