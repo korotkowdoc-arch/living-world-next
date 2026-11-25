@@ -923,4 +923,41 @@ begin
  if exists(select 1 from public.nw_list_visual_assets(wid,40,0) where id=aid) then raise exception 'Archived visual still visible';end if;
 end $visual_foreign$;
 reset role;
+
+-- Rooms, civic and community records must pass actual owner RPC, not JS alone.
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+do $community_civic$
+declare wid uuid;bid uuid;h uuid;before_head uuid;bad boolean;body text:='Confirmed event.';
+g jsonb:='{"id":"group","type":"world","social_record_version":1,"social_kind":"group","record_id":"g","key":"social:group:g","name":"Council","purpose":"Activities","status":"active","evidence":"Confirmed event."}';
+m jsonb:='{"id":"member","type":"world","social_record_version":1,"social_kind":"membership","record_id":"coach","key":"social:membership:coach","actor":"Coach","group_id":"g","status":"member","evidence":"Confirmed event."}';
+inst jsonb:='{"id":"inst","type":"world","dynamics_version":1,"dynamics_kind":"institution","record_id":"i","key":"dynamics:institution:i","name":"Council","function":"Events and rulings","place":"Hall","group_id":"g","description":"Established","status":"operating","evidence":"Confirmed event."}';
+ofc jsonb:='{"id":"ofc","type":"world","player_life_version":1,"life_kind":"civic_office","record_id":"o","key":"player-life:civic_office:o","actor":"Coach","institution_id":"i","role":"councillor","description":"Appointed","status":"active","evidence":"Confirmed event."}';
+motion jsonb:='{"id":"motion","type":"world","player_life_version":1,"life_kind":"civic_motion","record_id":"m","key":"player-life:civic_motion:m","actor":"Coach","institution_id":"i","title":"Proposal","description":"Vote","voters":["Hero"],"quorum":1,"required_yes":1,"status":"open","evidence":"Confirmed event."}';
+notice jsonb:='{"id":"notice","type":"world","player_life_version":1,"life_kind":"civic_notice","record_id":"n","key":"player-life:civic_notice:n","actor":"Hero","sender":"Coach","target_kind":"motion","target_id":"m","notice_kind":"ballot","role":"voter","title":"Vote","description":"Invitation","status":"delivered","evidence":"Confirmed event."}';
+ballot jsonb:='{"id":"ballot","type":"world","player_life_version":1,"life_kind":"civic_ballot","record_id":"b","key":"player-life:civic_ballot:b","actor":"Hero","motion_id":"m","vote":"yes","status":"cast","evidence":"Confirmed event."}';
+estate jsonb:='{"id":"estate","type":"world","player_life_version":1,"life_kind":"estate","record_id":"house","key":"player-life:estate:house","actor":"Hero","title":"House","place":"Lane","estate_kind":"house","status":"owned","evidence":"Confirmed event."}';
+room jsonb:='{"id":"room","type":"world","player_life_version":1,"life_kind":"room","record_id":"r","key":"player-life:room:r","actor":"Hero","home_kind":"estate","home_id":"house","area":"Study","label":"Study","purpose":"Research","description":"Quiet","walls":"Green","status":"active","evidence":"Confirmed event."}';
+event jsonb:='{"id":"event","type":"world","player_life_version":1,"life_kind":"community_event","record_id":"e","key":"player-life:community_event:e","actor":"Coach","group_id":"g","title":"Festival","description":"Planned","event_kind":"festival","place":"Hall","capacity":1,"starts_at":"2000-01-01 10:00","ends_at":"2000-01-01 12:00","status":"scheduled","evidence":"Confirmed event."}';
+invite jsonb:='{"id":"invite","type":"world","player_life_version":1,"life_kind":"community_participation","record_id":"p","key":"player-life:community_participation:p","actor":"Hero","organizer":"Coach","event_id":"e","role":"guest","status":"invited","evidence":"Confirmed event."}';
+result jsonb:='{"id":"result","type":"world","player_life_version":1,"life_kind":"community_result","record_id":"res","key":"player-life:community_result:res","actor":"Coach","event_id":"e","description":"Played","status":"recorded","evidence":"Confirmed event."}';
+begin
+ wid:=public.nw_create_world('Civic community rollback','Synthetic test','2000-01-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(g,m,m||'{"id":"hero","record_id":"hero","key":"social:membership:hero","actor":"Hero"}',inst,estate),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(room||'{"actor":"Other"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Foreign room accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(room,ofc,motion),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(ballot),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Uninformed ballot accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(notice,ballot),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(motion||'{"status":"rejected","outcome":"Rejected"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'False tally accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(motion||'{"status":"approved","outcome":"Approved"}',event,invite),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(result),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Premature result accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(invite||'{"status":"accepted","outcome":"Accepted"}',invite||'{"id":"invite2","record_id":"p2","key":"player-life:community_participation:p2","actor":"Other"}'),0);
+ before_head:=h;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(invite||'{"id":"accept2","record_id":"p2","key":"player-life:community_participation:p2","actor":"Other","status":"accepted","outcome":"Accepted"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Over-capacity attendance accepted';end if;
+ if (select head_scene_id from public.nw_branches where id=bid) is distinct from before_head then raise exception 'Rejected scene moved head';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(event||'{"status":"in_progress"}',invite||'{"status":"attended","outcome":"Attended"}',event||'{"id":"complete","status":"completed","outcome":"Held"}',result),0);
+ if has_function_privilege('authenticated','public.nw_civic_community_step(jsonb,jsonb)','EXECUTE') then raise exception 'Private guard exposed';end if;
+end $community_civic$;
+reset role;
 rollback;

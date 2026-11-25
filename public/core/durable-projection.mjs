@@ -1,7 +1,7 @@
 /** Durable snapshots are derived only by an authenticated server from the
  * actual immutable ancestor chain. Client requests never contain a state. */
 import {replayWithCheckpoint} from './continuity.mjs';
-export const PROJECTION_ENGINE_ID='nw-js-0.37.0';
+export const PROJECTION_ENGINE_ID='nw-js-0.47.0';
 export const SNAPSHOT_INTERVAL=64;
 export const MIN_SNAPSHOT_SCENES=16;
 export const MAX_SNAPSHOT_BYTES=4*1024*1024;

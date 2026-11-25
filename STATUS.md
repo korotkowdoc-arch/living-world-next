@@ -1,11 +1,17 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.47.0 — студенческая жизнь, спорт и культура (candidate)
+- [x] Canonical community events, invitations/RSVP/attendance, distinct results and communicated reports. Capacity, recorded team membership, immutable schedule, confirmed scores and actor-specific partial match statistics. Integrated with communities/education, calendar, NPC opportunities, menu intents, release and cache version. No automatic attendance, payment or invented scores.
+- [x] Found and repaired old SQL whitelist blocking rooms/civic saves. Migration 032 extends actual owner RPC fold, private helpers, current memberships and office authority, immutable identity, room title revision, ballot tally, RSVP capacity, event outcomes and result reports. SQL rollback test exercises real nw_commit_scene. Knowledge boundary fixes: scores only if communicated; unreported cancellation preserves participant's known calendar.
+- [ ] Final CI, production migration, cloud verification and real gameplay. Season scheduling and official league-specific ranking rules remain open.
+
 ## v0.46.0 — общественные институты
 - [x] Seven canonical civic record types: recorded appointment/revocation, court case and handover, delivered notice, submission, decision, fixed-electorate motion, unique informed ballot. Existing institution/group/membership gate, immutable identities, separate decision before closure, verified quorum and vote outcome. No automatic sanctions or laws.
 - [x] Own civic records and delivered notices in communities menu, NPC review opportunities without committing choices. Regression tests, app shell, release marker. Application preflight; specialized SQL parity remains open.
 - [x] Initial Node CI 45656206722 and SQL CI 45656206741 passed. Additional fail-closed duplicate membership, assigned case access, visible menu actions and explicit ballot choice implemented with regressions; final Node CI 45656460671 and SQL CI 45656460618 passed; PR #40 merged (3941e19).
-- [ ] Cloud deployment and gameplay verification of v0.46.0. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
+- [x] Live MCP read-only v0.46.0 civic menu available; original 23 scenes, head and pending player choice unchanged.
+- [ ] Gameplay verification of v0.46.0. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
 
 ## v0.45.1 — комнаты и непрерывность
 - [x] Room observations with stable area identity, purpose, walls/flooring/lighting, current title epoch, own-room menu, effective furniture, known condition, and image subjects; no implicit repairs or spending. Reconfirm after ownership changes. No new MCP tool or SQL schema.

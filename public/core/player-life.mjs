@@ -1,3 +1,4 @@
+import {COMMUNITY_KINDS,communityError,communityTransition} from './community-life.mjs';
 import {CIVIC_KINDS,civicError,civicTransition} from './civic-life.mjs';
 import {FAMILY_GOAL_KINDS,familyGoalError,familyGoalTransition} from './family-goals.mjs';
 import {EXPENSE_CARE_KINDS,expenseCareError,expenseCareTransition} from './expense-care.mjs';
@@ -26,7 +27,8 @@ const owns=(items,item,actor)=>items.get(item)?.custody_status==='held'&&items.g
 export function playerLifeError(e){
  const reserved=typeof e?.key==='string'&&e.key.startsWith('player-life:');
  if(e?.player_life_version===undefined)return reserved?'Ключ жизни требует player_life_version=1.':null;
- if(e.type!=='world'||e.player_life_version!==1||!['need','garment','outfit','letter','preset','appointment','impression',...TRAVEL_KINDS,...WORK_KINDS,...HOME_KINDS,...SOCIAL_LIFE_KINDS,...PROPERTY_KINDS,...MARKET_HOME_KINDS,...PREPAID_KINDS,...CURRICULUM_KINDS,...HOUSEHOLD_KINDS,...DUTY_CAREER_KINDS,...EXPENSE_CARE_KINDS,...FAMILY_GOAL_KINDS,...CIVIC_KINDS].includes(e.life_kind)||!id(e.record_id)||e.key!=='player-life:'+e.life_kind+':'+e.record_id)return 'Invalid player life record identity';
+ if(e.type!=='world'||e.player_life_version!==1||!['need','garment','outfit','letter','preset','appointment','impression',...TRAVEL_KINDS,...WORK_KINDS,...HOME_KINDS,...SOCIAL_LIFE_KINDS,...PROPERTY_KINDS,...MARKET_HOME_KINDS,...PREPAID_KINDS,...CURRICULUM_KINDS,...HOUSEHOLD_KINDS,...DUTY_CAREER_KINDS,...EXPENSE_CARE_KINDS,...FAMILY_GOAL_KINDS,...CIVIC_KINDS,...COMMUNITY_KINDS].includes(e.life_kind)||!id(e.record_id)||e.key!=='player-life:'+e.life_kind+':'+e.record_id)return 'Invalid player life record identity';
+ if(COMMUNITY_KINDS.includes(e.life_kind))return communityError(e);
  if(CIVIC_KINDS.includes(e.life_kind))return civicError(e);
  if(FAMILY_GOAL_KINDS.includes(e.life_kind))return familyGoalError(e);
  if(EXPENSE_CARE_KINDS.includes(e.life_kind))return expenseCareError(e);
@@ -63,6 +65,7 @@ export function playerLifeTransitionError(records,items,e){
  const err=playerLifeError(e);if(err)return err;
  const old=records.get(e.key),kind=e.life_kind;
  if(old&&(old.player_life_version!==1||old.life_kind!==kind||old.record_id!==e.record_id))return 'Changed player life identity';
+ if(COMMUNITY_KINDS.includes(kind))return communityTransition(records,e);
  if(CIVIC_KINDS.includes(kind))return civicTransition(records,e);
  if(FAMILY_GOAL_KINDS.includes(kind))return familyGoalTransition(records,e);
  if(EXPENSE_CARE_KINDS.includes(kind))return expenseCareTransition(records,e);

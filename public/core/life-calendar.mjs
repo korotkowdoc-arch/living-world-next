@@ -1,3 +1,4 @@
+import {communityWindows} from './community-life.mjs';
 import {taskAccessible} from './duty-career.mjs';
 /** Fictional clock projections: advisory, no wall clock and no implicit player actions. */
 import {parseStoryDate} from './world-time.mjs';
@@ -70,6 +71,10 @@ export function playerCalendar(projection={},actor,clockTime,{days=7,limit=40}={
     const id=x.record_id+':'+literal(a);add('routine',id,x.activity,literal(a),x.status,x.source,{ends_at:literal(b),place:x.place});windows.push({id,title:x.activity,start:a,end:b});
    }
   }
+ }
+ for(const e of communityWindows(projection,actor)){
+  add('community_event',e.window_id,e.title,e.starts_at,e.status,e.window_source,{ends_at:e.ends_at,place:e.place});
+  const a=date(e.starts_at),b=date(e.ends_at);if(clock&&a&&b&&b.order>clock.order&&a.order<end)windows.push({id:e.window_id,title:e.title,start:a.order,end:b.order});
  }
  const conflicts=[];let conflictCount=0;
  windows.sort((a,b)=>a.start-b.start);
