@@ -28,3 +28,12 @@ test('authenticated app link is strictly validated, no arbitrary file types',asy
  await validateImageBytes(new Blob([new Uint8Array([137,80,78,71,13,10,26,10])],{type:'image/png'}));
  await assert.rejects(validateImageBytes(new Blob(['not an image'],{type:'image/png'})));
 });
+
+test('shared episode contacts appear even when formal contacts empty; explicit identity revision takes precedence',()=>{
+ const subjects=visualSubjects({actor:'Hero',character:{fields:[{field:'birth_date',value:'1990-01-01'}]},contacts:{records:[]},world_depth:{social:{nodes:[{name:'Hero'},{name:'Friend'}]},places:{places:{records:[{name:'Без постоянного жилья'},{name:'Library'}]}}}},world);
+ assert.ok(subjects.some(s=>s.subject_kind==='character'&&s.subject_id==='Friend'));
+ assert.ok(subjects.some(s=>s.subject_id==='Hero'&&s.detail.includes('1990-01-01')));
+ assert.ok(!subjects.some(s=>s.subject_id==='Без постоянного жилья'));
+ assert.ok(subjects.some(s=>s.subject_id==='Library'));
+ assert.match(visualPrompt({title:'Hero',detail:'New haircut'},'Portrait',[{identity_notes:'Old haircut'}]),/New haircut/);
+});
