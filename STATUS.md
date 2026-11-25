@@ -1,9 +1,10 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## v0.48.0 — планы жилья и управление комнатами (candidate)
+## v0.48.0 — планы жилья и управление комнатами
 - [x] Canonical measured room rectangles with floors, non-overlap, explicit door/passage/stair connections, current access/title epoch, no generated geometry. Own-room interactive floorplan and pinned room actions, with missing measurements visibly unknown. Migration 033 extends private SQL fold and tests. No real construction or expenditure without played evidence.
-- [ ] CI, production migration, device and gameplay verification. Structural renovation projects and landlord authorization workflow remain open.
+- [x] PR #42 merged (16d3da6); Node CI 45664567283 and SQL CI 45664567319 passed. Migration 033 installed; production owner-RPC rollback assertions passed, private guard confirmed, two worlds and 23 scenes unchanged.
+- [ ] Published MCP floorplan field not yet observed; device and gameplay verification, structural renovation projects and landlord authorization remain open.
 
 ## v0.47.0 — студенческая жизнь, спорт и культура
 - [x] Canonical community events, invitations/RSVP/attendance, distinct results and communicated reports. Capacity, recorded team membership, immutable schedule, confirmed scores and actor-specific partial match statistics. Integrated with communities/education, calendar, NPC opportunities, menu intents, release and cache version. No automatic attendance, payment or invented scores.
