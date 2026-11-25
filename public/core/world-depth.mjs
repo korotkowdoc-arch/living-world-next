@@ -4,7 +4,7 @@
 import {parseStoryDate} from './world-time.mjs';
 const clip=(v,n=240)=>typeof v==='string'?v.slice(0,n):null;
 const key=(...a)=>JSON.stringify(a);
-const page=(xs,n=24)=>({records:xs.slice(0,n),total:xs.length,omitted:Math.max(0,xs.length-n)});
+const page=(xs,n=24,offset=0)=>({records:xs.slice(offset,offset+n),total:xs.length,omitted:Math.max(0,xs.length-offset-n),next_offset:offset+n<xs.length?offset+n:null});
 const src=(s,e)=>({scene_id:s.id,event_id:e.id,world_time:s.world_time??null});
 const names=e=>[...new Set([e.actor,e.name&&e.type==='character'?e.name:null,e.a,e.b,e.counterparty,...(Array.isArray(e.actors)?e.actors:[]),...(Array.isArray(e.participants)?e.participants:[])].filter(x=>typeof x==='string'&&x))];
 const summary=e=>clip(e.title||e.name||e.goal||e.fact||e.description||e.evidence);
@@ -124,11 +124,11 @@ export function worldDepthIndex(scenes=[],p={}, {complete=true}={}){
   const money=(p.balances||[]).filter(r=>r.actor===actor);
   return {cash:page(money.map(r=>({currency:r.currency,known:r.known===true,balance:r.known?r.balance:null,source:r.source}))),flows:page(flows.map(r=>({month:r.month,currency:r.currency,income:r.income,expense:r.expense,net:String(BigInt(r.income)-BigInt(r.expense))}))),agreements:page(obligations.map(r=>({title:summary(r),status:r.status,amount:r.amount,currency:r.currency,role:r.actor===actor?'actor':'counterparty',source:r.source}))),businesses:page(businesses.map(r=>({title:r.title,status:r.status,place:r.place,source:r.source}))),supply:page(contracts.map(r=>({title:summary(r),amount:r.amount,currency:r.currency,status:r.status,source:r.source}))),policy:'Recorded transactions by currency and month; not profit, valuation, interest, expected yield or inferred debt. Never convert currencies automatically.'};
  }
- function view(actor,{director=false}={}){
+ function view(actor,{director=false,offset=0,limit=40}={}){
   if(!complete)return {memory_complete:false};
   const g=get(actor);
   const time=director?g.timeline:g.timeline.filter(r=>['state_change','interaction','activity','project','lesson','work_shift','service_visit','appointment','career_change'].includes(r.kind)&&(r.kind==='state_change'||r.kind==='interaction'||r.own_record===true));
-  return {memory_complete:true,psychology:psychology(actor),social:socialGraph(actor,{director}),places:placeGraph(actor,{director}),timeline:page(order(time),40),news:page(order(director?chronicle:newsByActor.get(actor)||[]),30),economy:economy(actor)};
+  return {memory_complete:true,psychology:{...psychology(actor),recent_experience:director?g.lastExperience:order(time.filter(r=>r.kind==='interaction'||['completed','attended','worked'].includes(r.status)))[0]??null},social:socialGraph(actor,{director}),places:placeGraph(actor,{director}),timeline:page(order(time),limit,offset),news:page(order(director?chronicle:newsByActor.get(actor)||[]),Math.min(limit,40),offset),economy:economy(actor)};
  }
  function opportunities(){
   if(!complete)return [];
