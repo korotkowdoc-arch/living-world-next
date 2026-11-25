@@ -66,7 +66,7 @@ begin
    stamp:=trim(p_world_time);
    if stamp is null or stamp !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2})?$' or left(stamp,10) is distinct from coalesce(e->>'born_on',e->>'occurred_on') then raise exception 'Family record requires exact scene date';end if;
    perform public.nw_work_minute(to_jsonb(case when length(stamp)=10 then stamp||' 00:00' else replace(stamp,'T',' ') end));
-   if e->>'life_kind'='child_birth' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where idx<i and x.value->>'type'='character' and trim(x.value->>'name')=e->>'actor' and x.value->'state_patch'->'birth_date'=e->'born_on') then raise exception 'Birth requires matching character birth_date in same scene';end if;
+   if e->>'life_kind'='child_birth' and (select x.value->'state_patch'->'birth_date' from jsonb_array_elements(p_events) with ordinality x(value,idx) where idx<i and x.value->>'type'='character' and trim(x.value->>'name')=e->>'actor' and x.value->'state_patch'?'birth_date' order by idx desc limit 1) is distinct from e->'born_on' then raise exception 'Birth requires matching character birth_date in same scene';end if;
    if not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where idx<i and x.value->'dynamics_version'='1'::jsonb and x.value->>'dynamics_kind'='family_event' and x.value->'record_id'=e->'family_event_id' and x.value->>'status'='completed') then raise exception 'Family event must be completed in same scene';end if;
   elsif e->>'life_kind'='shared_goal_step' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where idx<i and x.value->'record_id'=e->'completion_id' and x.value->>'status'='completed' and ((e->>'completion_kind'='activity' and x.value->'activity_version'='1'::jsonb and x.value->>'activity_kind'='activity') or (e->>'completion_kind'='family_event' and x.value->'dynamics_version'='1'::jsonb and x.value->>'dynamics_kind'='family_event'))) then raise exception 'Goal step requires actual same-scene completion';end if;
  end loop;
@@ -170,6 +170,135 @@ revoke all on function public.nw_player_life_step(jsonb,jsonb) from public,anon,
 
 
 
+
+
+create or replace function public.nw_assert_player_life_append(p_world uuid,p_head uuid,p_events jsonb)
+returns void language plpgsql security invoker set search_path='' as $life$
+declare u uuid:=auth.uid(); st jsonb:='{"life":{},"jobs":{},"refs":{},"economy":{"balances":{},"items":{}}}'; r record; e jsonb; seen integer:=0; old jsonb; t jsonb; used text[]:=array[]::text[]; transfers jsonb:='{}'; locations jsonb:='{}'; ref text; stock_ops jsonb:='{}'; used_stock text[]:=array[]::text[]; recipe jsonb; signature text; snapshot jsonb; snapshot_count integer:=0; total_count integer:=0; root_checked boolean:=false; event_position bigint; cancellation_kind text; cancellation_id text; linked jsonb; program jsonb; module jsonb;
+begin
+ if not exists(select 1 from jsonb_array_elements(p_events) x where x?'player_life_version' or x->>'key' like 'player-life:%' or x->>'dynamics_kind' in ('economic_agreement','employment','family_event') or (x->>'type'='character' and x->'state_patch'?'birth_date')) then return;end if;
+ if u is null or not exists(select 1 from public.nw_worlds where id=p_world and owner_id=u) then raise exception 'World not found';end if;
+ signature:=public.nw_life_checkpoint_signature();
+ -- Stop walking only at a compatible snapshot on the actual parent chain.
+ -- Never use a snapshot just because it shares a world or branch name.
+ for r in with recursive chain as (
+  select s.id,s.parent_scene_id,s.events,1 depth,c.state cached_state,c.scene_count cached_count
+  from public.nw_scenes s left join public.nw_life_checkpoints c on c.scene_id=s.id and c.world_id=p_world and c.owner_id=u and c.engine_signature=signature
+  where s.id=p_head and s.world_id=p_world and s.owner_id=u
+  union all
+  select s.id,s.parent_scene_id,s.events,p.depth+1,c.state,c.scene_count
+  from chain p join public.nw_scenes s on s.id=p.parent_scene_id
+  left join public.nw_life_checkpoints c on c.scene_id=s.id and c.world_id=p_world and c.owner_id=u and c.engine_signature=signature
+  where s.world_id=p_world and s.owner_id=u and p.depth<50001 and p.cached_state is null
+ ) select * from chain order by depth desc loop
+  seen:=seen+1;
+  if seen=1 then
+   if r.cached_state is not null then st:=r.cached_state;snapshot_count:=r.cached_count;root_checked:=true;continue;
+   elsif r.parent_scene_id is null then root_checked:=true;
+   else raise exception 'Incomplete life ancestry';end if;
+  end if;
+  if seen+snapshot_count>50001 then raise exception 'Incomplete life ancestry';end if;
+  for e in select value from jsonb_array_elements(r.events) loop
+   begin st:=public.nw_player_life_step(st,e);exception when raise_exception then null;end;
+  end loop;
+ end loop;
+ total_count:=seen+snapshot_count-case when snapshot_count>0 then 1 else 0 end;
+ if p_head is not null and (not root_checked or total_count>50000) then raise exception 'Missing or incomplete life ancestry';end if;
+ -- A first checkpoint and then one per 128 additional scenes. Cap storage
+ -- at eight checkpoints per world and 8 MiB per serialized state.
+ if p_head is not null and (snapshot_count=0 or total_count-snapshot_count>=128) and octet_length(st::text)<=8388608 then
+  insert into public.nw_life_checkpoints(scene_id,world_id,owner_id,engine_signature,scene_count,state)
+  values(p_head,p_world,u,signature,total_count,st)
+  on conflict(scene_id) do update set engine_signature=excluded.engine_signature,scene_count=excluded.scene_count,state=excluded.state,created_at=now();
+  delete from public.nw_life_checkpoints c where c.world_id=p_world and c.owner_id=u and c.scene_id in (
+   select x.scene_id from public.nw_life_checkpoints x where x.world_id=p_world and x.owner_id=u order by x.created_at desc,x.scene_id desc offset 8
+  );
+ end if;
+ -- The generic economy guard has already checked balances. Record only preceding
+ -- transfers and location observations; one transfer cannot pay two receipts.
+ for e,event_position in select value,ordinality from jsonb_array_elements(p_events) with ordinality loop
+  if e->>'type'='money' and e->>'operation'='transfer' then transfers:=jsonb_set(transfers,array[e->>'id'],e,true);end if;
+  if e->>'type'='character' and (e->'state_patch')?'location' then locations:=jsonb_set(locations,array[e->>'name'],e->'state_patch'->'location',true);end if;
+  if e->>'dynamics_kind'='stock_operation' and e->'dynamics_version'='1'::jsonb and e->>'stock_action' in ('consume','transfer') then stock_ops:=jsonb_set(stock_ops,array[e->>'id'],e,true);end if;
+  if (e->>'life_kind'='household_expense' and e->>'source_kind'='direct') or e->>'life_kind'='household_contribution' or (e->>'life_kind'='supply_contract' and e->>'status'='settled') or e->>'life_kind'='ticket_payment' or (e->>'life_kind'='estate_sale' and e->>'status'='settled' and (e->>'amount')::numeric>0) or (e->>'life_kind'='wage' and (e->>'amount')::numeric>0) or (e->>'life_kind'='service_visit' and e->>'status'='completed' and (e->>'amount')::numeric>0 and e->>'prepayment_id' is null) or (e->>'dynamics_kind'='payment_occurrence' and e->>'status'='paid') then
+   ref:=e->>'transfer_event_id';
+   if ref is null or ref=any(used) then raise exception 'Transfer reused across settlement records';end if;
+   if e->>'life_kind'='service_visit' then
+    t:=transfers->ref;
+    if t is null or t->'actor' is distinct from e->'actor' or t->'counterparty' is distinct from e->'provider' or t->'currency' is distinct from e->'currency' or (t->>'delta')::numeric is distinct from -(e->>'amount')::numeric then raise exception 'Service requires preceding exact payment';end if;
+   end if;
+   if e->>'life_kind'='wage' then
+    t:=transfers->ref;
+    if t is null or t->'actor' is distinct from e->'employer' or t->'counterparty' is distinct from e->'actor' or t->'currency' is distinct from e->'currency' or (t->>'delta')::numeric is distinct from -(e->>'amount')::numeric then raise exception 'Wage requires preceding exact transfer';end if;
+   end if;
+   if e->>'life_kind'='estate_sale' then
+    t:=transfers->ref;
+    if t is null or t->'actor' is distinct from e->'buyer' or t->'counterparty' is distinct from e->'actor' or t->'currency' is distinct from e->'currency' or (t->>'delta')::numeric is distinct from -(e->>'amount')::numeric then raise exception 'Estate sale requires preceding exact transfer';end if;
+   end if;
+   if e->>'life_kind'='ticket_payment' then
+    t:=transfers->ref;
+    if t is null or t->'actor' is distinct from (case when e->>'status'='refunded' then e->'provider' else e->'actor' end) or t->'counterparty' is distinct from (case when e->>'status'='refunded' then e->'actor' else e->'provider' end) or t->'currency' is distinct from e->'currency' or (t->>'delta')::numeric is distinct from -(e->>'amount')::numeric then raise exception 'Ticket payment requires preceding exact transfer';end if;
+    if e->>'status'='refunded' then
+     foreach cancellation_kind in array array['service_visit','reservation','transport_ticket'] loop
+      cancellation_id:=case cancellation_kind when 'service_visit' then e->>'visit_id' when 'reservation' then e->>'reservation_id' else e->>'ticket_id' end;
+      if not exists(select 1 from jsonb_array_elements(p_events) with ordinality a(value,idx) where a.idx>event_position and a.value->>'type'='world' and a.value->'player_life_version'='1'::jsonb and a.value->>'life_kind'=cancellation_kind and a.value->>'record_id'=cancellation_id and a.value->'actor'=e->'actor' and a.value->>'status'='cancelled') then raise exception 'Refund must cancel service, reservation and ticket in the same scene';end if;
+     end loop;
+    end if;
+   end if;
+   if e->>'life_kind'='supply_contract' then
+    t:=transfers->ref;
+    if t is null or t->'actor' is distinct from e->'actor' or t->'counterparty' is distinct from e->'supplier' or t->'currency' is distinct from e->'currency' or (t->>'delta')::numeric is distinct from -(e->>'amount')::numeric then raise exception 'Supply requires exact payment';end if;
+   end if;
+   if e->>'life_kind'='household_contribution' then
+    t:=transfers->ref;
+    if t is null or t->'actor' is distinct from e->'actor' or t->'counterparty' is distinct from e->'host' or t->'currency' is distinct from e->'currency' or (t->>'delta')::numeric is distinct from -(e->>'amount')::numeric then raise exception 'Household contribution requires exact transfer';end if;
+   end if;
+   if e->>'life_kind'='household_expense' then
+    t:=transfers->ref;
+    if t is null or t->'actor' is distinct from e->'actor' or t->'counterparty' is distinct from e->'provider' or t->'currency' is distinct from e->'currency' or (t->>'delta')::numeric is distinct from -(e->>'amount')::numeric then raise exception 'Household expense requires exact transfer';end if;
+   end if;
+   used:=array_append(used,ref);
+  end if;
+  if e->>'life_kind'='supply_contract' and e->>'status'='settled' then
+   ref:=e->>'stock_event_id';t:=stock_ops->ref;
+   if ref is null or ref=any(used_stock) or t is null or t->>'stock_action' is distinct from 'transfer' or t->'actor' is distinct from e->'supplier' or t->'counterparty' is distinct from e->'actor' or t->'stock_lines' is distinct from e->'stock_lines' then raise exception 'Supply requires own exact stock transfer';end if;
+   used_stock:=array_append(used_stock,ref);
+  end if;
+  if e->>'life_kind'='journey' and e->>'status' in ('travelling','arrived') then
+   old:=st->'life'->(e->>'key');
+   if (old is null or old->>'status'='planned' or old->'reached' is distinct from e->'reached') and locations->(e->>'actor') is distinct from e->'stops'->((e->>'reached')::integer)->'place' then raise exception 'Journey departure/arrival requires preceding location observation';end if;
+  end if;
+  if e->>'life_kind'='service_visit' and e->>'status'='completed' and e->>'recipe_id' is not null then
+   ref:=e->>'stock_event_id';t:=stock_ops->ref;recipe:=st->'life'->('player-life:service_recipe:'||(e->>'recipe_id'));
+   if ref is null or ref=any(used_stock) or t is null or recipe is null or t->'actor' is distinct from e->'provider' or t->'stock_lines' is distinct from recipe->'stock_lines' then raise exception 'Service requires its own exact stock consumption';end if;
+   used_stock:=array_append(used_stock,ref);
+  end if;
+  if e->'player_life_version'='1'::jsonb and e->>'life_kind'='enrollment' and e->>'status' in ('completed','withdrawn') then
+   select value into linked from jsonb_each(st->'life') where value->>'life_kind'='program_enrollment' and value->'enrollment_id'=e->'record_id' and value->>'status'='active';
+   if linked is not null then
+    if e->>'status'='completed' then
+     program:=st->'life'->('player-life:study_program:'||(linked->>'program_id'));
+     for module in select value from jsonb_array_elements(program->'modules') loop
+      if not exists(select 1 from jsonb_each(st->'life') mr where mr.value->>'life_kind'='module_result' and mr.value->'program_enrollment_id'=linked->'record_id' and mr.value->'module_id'=module->'id' and mr.value->>'status'='passed') then raise exception 'Cannot complete enrollment before linked modules pass';end if;
+     end loop;
+    end if;
+    if not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx>event_position and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='program_enrollment' and x.value->'key'=linked->'key' and x.value->'actor'=linked->'actor' and x.value->'status'=e->'status') then raise exception 'Close linked program in same scene';end if;
+   end if;
+  end if;
+  if e->'dynamics_version'='1'::jsonb and e->>'dynamics_kind'='economic_agreement' then
+   select value into linked from jsonb_each(st->'life') where value->>'life_kind'='supply_contract' and value->'agreement_id'=e->'record_id';
+   if linked is not null and linked->'status' is distinct from e->'status' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx>event_position and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='supply_contract' and x.value->'key'=linked->'key' and x.value->'actor'=linked->'actor' and x.value->'status'=e->'status') then raise exception 'Change linked supply contract in same scene';end if;
+  end if;
+  if e->'dynamics_version'='1'::jsonb and e->>'dynamics_kind'='family_event' and e->>'duty_id' is not null and e->>'status' in ('completed','cancelled') then
+   select value into linked from jsonb_each(st->'life') where value->>'life_kind'='household_task' and value->'duty_id'=e->'duty_id' and value->'scheduled_on'=e->'scheduled_on' and value->>'status' in ('proposed','accepted');
+   if linked is not null and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx>event_position and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='household_task' and x.value->'key'=linked->'key' and x.value->'actor'=linked->'actor' and (x.value->>'status'='cancelled' or (x.value->>'status'=(case e->>'status' when 'completed' then 'completed' else 'missed' end) and x.value->'family_event_id'=e->'record_id'))) then raise exception 'Resolve assigned task in same scene as family event';end if;
+  end if;
+  if e->>'life_kind'='expense_share' and e->>'status'='paid' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx<event_position and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='household_contribution' and x.value->'record_id'=e->'contribution_id') then raise exception 'Pay share with new contribution in same scene';end if;
+  if e->>'life_kind'='care_plan' and e->>'status'='completed' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx<event_position and x.value->'record_id'=e->'completion_id' and ((e->>'completion_kind'='care_record' and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='care_record') or (e->>'completion_kind'='activity' and x.value->'activity_version'='1'::jsonb and x.value->>'activity_kind'='activity' and x.value->>'status'='completed'))) then raise exception 'Care plan needs actual completion in same scene';end if;
+  st:=public.nw_player_life_step(st,e);
+ end loop;
+end $life$;
+revoke all on function public.nw_assert_player_life_append(uuid,uuid,jsonb) from public,anon,authenticated;
 
 
 create or replace function public.nw_commit_scene(
