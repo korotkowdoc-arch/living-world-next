@@ -331,7 +331,7 @@ function archiveReaderView(overview,section,send){
    if(detail.access==='available'){
     if(p.requires_first_read||p.requires_authoring)area.append(button('Прочитать в истории',()=>action('read_document',detail,p)));
     if(overview.archive_owner(d.id)&&p.requires_authoring)area.append(button('Написать часть',()=>action('write_document_part',detail,p),'btn secondary'));
-    area.append(button('Изучить',()=>action('study_document',detail,p),'btn secondary'),button(p.bookmarked?'Убрать закладку':'Закладка',()=>action(p.bookmarked?'remove_document_bookmark':'bookmark_document',detail,p),'btn secondary'),button('Добавить заметку',()=>note('annotate_document',detail,p),'btn secondary'));
+    area.append(button('Изучить',()=>action('study_document',detail,p),'btn secondary'),button(p.bookmarked?'Убрать закладку':'Закладка',()=>action(p.bookmarked?'remove_document_bookmark':'bookmark_document',detail,p),'btn secondary'),...(p.materialized?[button('Добавить заметку',()=>note('annotate_document',detail,p),'btn secondary')]:[]));
    }
    const idx=detail.contents.findIndex(x=>x.id===partId),nav=node('div','row');
    if(idx>0)nav.append(button('← Предыдущая',()=>book(d,detail.contents[idx-1].id),'btn secondary'));
