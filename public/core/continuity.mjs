@@ -1,4 +1,4 @@
-import {playerLifeError,playerLifeTransitionError,applyOutfit,removeUnavailableGarment} from './player-life.mjs';
+import {playerLifeError,playerLifeTransitionError,applyOutfit,removeUnavailableGarment,projectLifeRecord} from './player-life.mjs';
 import {isMenuDirective} from './game-menu.mjs';
 import {extractLocks,pairKey} from './directives.mjs';
 import {storyDrivers} from './story-drivers.mjs';
@@ -129,7 +129,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         case 'world': if(asText(event.key)){
           const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
-          else {worldFacts.set(event.key,value);applyOutfit(outfits,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
+          else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
         }break;
         case 'offscreen': offscreen.push(value);break;
         case 'plan': {
