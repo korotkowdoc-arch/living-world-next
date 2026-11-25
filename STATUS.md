@@ -1,10 +1,21 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## v0.44.2 — совместимость визуального интерфейса и подтверждённые знакомства (candidate)
+## v0.45.0 — Living Civilization: координация систем (candidate)
+- [x] Narrator-only coordination of overlapping canonical lessons, assessments, shifts and appointments, including teacher participation but not fictitious employer attendance. Bounded sweep, exact windows, no automatic action.
+- [x] Aggregate unreviewed scheduled payments per payer/currency against recorded balance, with explicit unknowns and no debt or transfer assumption. Segment-scoped due queue with canonical sources, exact clock and pending-choice gate.
+- [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; Node CI 45650053662 and PostgreSQL CI 45650053799 passed before integration; combined CI/live verification pending. No new database schema or tool discovery required.
+- [x] Candidate ordering now respects global urgency tiers with fair category rounds; NPC initiative rotation accounts for accepted offscreen participation; bounded old-source callback anchors match exact active-ancestry participants/place/record or words. All remain proposals, not simulation outcomes. Regression coverage added.
+- [x] Operational queues for actual submitted assignments, module/qualification review, property condition/current title, aggregate completed unpaid shifts and accepted service/production resource exposure. Own dashboard notifications and education/work/property menu data. Active subscriptions can motivate seeking issues, never imply delivery. Tests added; combined CI pending.
+- [ ] Continue autonomous event resolution, institutional life, housing, media, deeper university simulation and full private asset backups. Existing menu settings and NPC psychology remain canonical; do not duplicate them.
+
+- [x] Player-facing dashboard reports conflicts from its own existing calendar projection. No narrator-private records are exposed.
+
+## v0.44.2 — совместимость визуального интерфейса и подтверждённые знакомства
 - [x] Каталог портретов включает персонажей из подтверждённых общих эпизодов (world_depth.social.nodes), даже когда формальные contacts пусты. Возрастные признаки героя и явное обновление внешности имеют приоритет над старым промптом. Отсечены несколько ошибочно классифицированных жилищных статусов.
 - [x] MCP picker: явное разрешение вызова save_chatgpt_illustration из UI, совместимость host callTool и MCP Apps bridge, доверенный переход в PWA, объяснение отсутствия file picker. Тесты регрессий.
-- [ ] CI, merge, публикация и реальный E2E с файлом, который клиент ChatGPT передал после генерации. В текущем подключении новые tools ещё не зарегистрированы у клиента. Платные API запрещены.
+- [x] PR #37 merged (8937389); Node CI 45650134484 and PostgreSQL CI 45650134412 successful. Current canonical appearance takes precedence; historical reference notes preserved only as secondary continuity context. Client discovery of all three native image tools confirmed.
+- [ ] Cloud publication of 0.44.2 and real binary E2E in ChatGPT client still unverified. No paid API.
 
 ## v0.44.1 — перенос изображений ChatGPT без платного API
 - [x] Официальный MCP file parameter save_chatgpt_illustration: реальный авторизованный файл из ChatGPT Library, временная HTTPS ссылка files.oaiusercontent.com, ограничение 8 МБ, проверка формата, запрет произвольных URL/redirect и перезаписи. Передача байтов в существующий приватный Storage с OAuth пользователя, finalize подтверждает наличие. Повторная отправка идентичных байтов безопасна, иной файл не заменяет готовый.

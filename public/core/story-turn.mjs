@@ -1,3 +1,5 @@
+import {operationalIndex} from './operational-life.mjs';
+import {civilizationReview,orderTurnCandidates,continuityAnchors} from './civilization-review.mjs';
 import {wealthIndex} from './wealth-world.mjs';
 import {documentIndex} from './documents-world.mjs';
 import {magicIndex} from './magic-world.mjs';
@@ -278,6 +280,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const {kind,row,info} of documents.opportunities())add(kind,row,info);
  for(const {kind,row,info} of magic.opportunities())add(kind,row,info);
  for(const {kind,row,info} of advanced.opportunities())add(kind,row,info);
+ for(const {kind,row,info} of operationalIndex(projection,{complete:opts.complete!==false}).opportunities())add(kind,row,info);
  for(const {kind,row,info} of depth.opportunities())add(kind,row,info);
  for(const {kind,row,info} of longLife.opportunities())add(kind,row,info);
  const life_context=[];
@@ -294,9 +297,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const xs of byKind.values())xs.sort((a,b)=>rank(a)-rank(b)||(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
  const matches=x=>scope==='all'||(scope==='focus'?x.focus_match:!x.focus_match);
  const categories=[...byKind.values()].map(xs=>xs.filter(matches)).filter(xs=>xs.length).sort((a,b)=>rank(a[0])-rank(b[0]));
- const ordered=[];let remaining=categories.reduce((n,x)=>n+x.length,0);
- for(let i=0;remaining>0&&ordered.length<offset+limit;i++){for(const xs of categories)if(xs[i]){ordered.push(xs[i]);remaining--;if(ordered.length===offset+limit)break;}}
- const candidates=ordered.slice(offset,offset+limit),total_candidates=all.filter(matches).length;
+ const candidates=orderTurnCandidates(categories,rank,{offset,limit}),total_candidates=all.filter(matches).length;
  const candidate_counts={all:all.length,focus:all.filter(x=>x.focus_match).length,background:all.filter(x=>!x.focus_match).length};
  // Attach a bounded actor context to the actual turn, instead of forcing the narrator
  // to retrieve every subsystem independently. Focused actors precede background actors.
@@ -323,7 +324,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   // A future appointment or work shift is a forecast, not a task to perform now.
   return [c];
  }):all;
- const npcInitiatives=npcInitiativeView(segmentCandidates,{focus:[...focus],player:pendingActor,players:recordedPlayers,settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:background&&segmentAnchor&&clock?segmentAnchor.order-clock.order:interval});
+ const npcInitiatives=npcInitiativeView(segmentCandidates,{focus:[...focus],player:pendingActor,players:recordedPlayers,settings:preferences.settings,scenes,offscreen:projection.offscreen||[],complete:opts.complete!==false,elapsed:background&&segmentAnchor&&clock?segmentAnchor.order-clock.order:interval});
+ const coordination=civilizationReview(projection,segmentCandidates,{clock:clock?.literal,until:background?.segment_until??clock?.literal,complete:opts.complete!==false,pending:!!pendingActor});
  const selectedActors=scope==='background'?[]:[...focus],omittedActors=new Set();
  const addActor=name=>{if(!text(name)||selectedActors.includes(name))return;if(selectedActors.length<12)selectedActors.push(name);else omittedActors.add(name);};
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
@@ -412,14 +414,15 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
    }
   }
  }
+ const continuity_anchors=continuityAnchors(scenes,projection,{focus:[...focus],place:place||null,candidates,complete:opts.complete!==false});
  const warnings=[];
  if(!clock)warnings.push('Последняя сцена не задаёт точное время; длительность перехода неизвестна.');
  if(clock&&proposed&&!comparable)warnings.push('Точность дат различается: длительность перехода неизвестна.');
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
-  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,npc_initiatives:npcInitiatives,time_advance:timeAdvance,background_time_review:background,world_chronicle:depth.chronicle(),player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor,{scenes,clock:anchor?.literal,complete:opts.complete!==false})),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
+  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,npc_initiatives:npcInitiatives,time_advance:timeAdvance,background_time_review:background,civilization_review:coordination,continuity_anchors,world_chronicle:depth.chronicle(),player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor,{scenes,clock:anchor?.literal,complete:opts.complete!==false})),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
   relationship_context,relationship_context_omitted,life_context,actor_context,actor_context_omitted:omittedActors.size,
   drivers:storyDrivers(projection,directives,{max:8,actors:[...focus]}),warnings,
-  workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Use the life_* categories for individual interests, open goals, circles and actual past experiences; explicit cause claims are not automatic truth. Consider recorded experience and beliefs, mediated introductions, financial obligations and voluntary news transmission; never spread information automatically. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs. On long jumps, background_time_review is the next segment only; later candidates are forecasts, never completed outcomes.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
+  workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Use the life_* categories for individual interests, open goals, circles and actual past experiences; explicit cause claims are not automatic truth. Consider recorded experience and beliefs, mediated introductions, financial obligations and voluntary news transmission; never spread information automatically. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs. Use continuity_anchors as exact source links before revisiting earlier events; lexical matches are not knowledge. Check civilization_review for cross-system overlapping commitments and aggregate scheduled-payment exposure; these are review-only constraints. On long jumps, background_time_review is the next segment only; later candidates are forecasts, never completed outcomes.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
   policy:'This is a read-only turn proposal, not simulation results. No candidate changes world state, completes a deadline, transfers a resource, reveals a secret or proves presence. The player controls their own character.'};
 }
