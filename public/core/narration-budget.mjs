@@ -71,7 +71,7 @@ export function limitedNarratorMemory(projection,{maxChars=18000,maxEntriesPerCa
  for(let index=0;index<limit;index++){
   for(const category of PRIORITY){
    const candidate=queues.get(category)[index];if(!candidate)continue;
-   const compact=compactValue(candidate);
+   const compact=compactValue(candidate?.document_version===1?Object.fromEntries(Object.entries(candidate).filter(([k])=>!['body','contents','evidence','reaction'].includes(k))):candidate);
    const omitted=summary.omitted[category];
    summary.records[category].push(compact);
    if(omitted===1)delete summary.omitted[category];else summary.omitted[category]=omitted-1;
