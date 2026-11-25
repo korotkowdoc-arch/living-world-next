@@ -1,3 +1,4 @@
+import {servicePaymentError,journeyArrivalError} from './travel-services.mjs';
 import {playerLifeError,playerLifeTransitionError,applyOutfit,removeUnavailableGarment,projectLifeRecord} from './player-life.mjs';
 import {isMenuDirective} from './game-menu.mjs';
 import {extractLocks,pairKey} from './directives.mjs';
@@ -37,6 +38,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
     const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
+    const serviceError=servicePaymentError(event,events,i,paymentTransfers);if(serviceError)errors.push(prefix+': '+serviceError);
     if(event.type==='character'){
       const error=characterStateError(event);if(error)errors.push(prefix+': '+error);
     }
@@ -107,12 +109,13 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
     const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated});
     if(!result.ok){failures.push({scene_id:scene.id,errors:result.errors});continue;}
     if(awaiting&&!(events[0]?.dynamics_kind==='player_choice'&&events[0].status==='answered'&&events[0].key===awaiting.key&&!dynamicsTransitionError(worldFacts,events[0]))){failures.push({scene_id:scene.id,errors:['Продолжение требует ответа на текущий выбор героя.']});continue;}
+    const acceptedMoney=new Set(),acceptedLocations=new Map();
     for(const event of events){
       let accepted=true;
       const from={scene_id:scene.id,event_id:event.id,world_time:scene.world_time??null};
       const value={...event,source:from};
       switch(event.type){
-        case 'character': if(asText(event.name)){const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));}break;
+        case 'character': if(asText(event.name)){const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));if(typeof event.state_patch?.location==='string')acceptedLocations.set(name,event.state_patch.location);else if(Object.hasOwn(event.state_patch||{},'location'))acceptedLocations.delete(name);}break;
         case 'relationship': {const key=relationshipKey(event);relationships.set(key,applyRelationship(relationships.get(key),event,from));break;}
         case 'knowledge':{
           const key=knowledgeKey(event);
@@ -127,7 +130,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
+          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||journeyArrivalError(event,worldFacts.get(event.key),acceptedLocations)||(event.life_kind==='service_visit'&&event.status==='completed'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Service transfer was not accepted':null)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
           else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
         }break;
@@ -156,7 +159,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
           break;
         }
       }
-      if(accepted){evidence.push(from);if(event.type==='relationship'||(event.type==='world'&&event.interaction_version===1))relationshipHistory.push({source:from});}
+      if(accepted){if(event.type==='money')acceptedMoney.add(event.id);evidence.push(from);if(event.type==='relationship'||(event.type==='world'&&event.interaction_version===1))relationshipHistory.push({source:from});}
     }
   }
   const list=m=>[...m.values()];
