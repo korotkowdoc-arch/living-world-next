@@ -86,7 +86,7 @@ export function archiveIndex(scenes=[],projection={}, {complete=true}={}){
  const rows=[...records.values()];
  function card(doc,actor){
   const readings=reading.get(key(doc.record_id,actor))||new Map(),active=known(doc,actor);
-  return {id:doc.record_id,kind:doc.document_kind,title:doc.title,author:doc.author,edition:doc.edition,summary:active?doc.summary:null,previous_id:doc.previous_id??null,status:publications.get(doc.record_id)?.status==='published'?'published':doc.status,access:active?'available':'previously_read',part_count:doc.contents.length,read_count:readings.size,studied_count:[...readings.values()].filter(x=>x.status==='studied').length,source:doc.source};
+  return {id:doc.record_id,kind:doc.document_kind,title:doc.title,author:doc.author,edition:doc.edition,summary:active?doc.summary:null,previous_id:doc.previous_id??null,status:publications.get(doc.record_id)?.status==='published'?'published':doc.status,access:active?'available':'previously_read',part_count:active?doc.contents.length:readings.size,read_count:readings.size,studied_count:[...readings.values()].filter(x=>x.status==='studied').length,source:doc.source};
  }
  function view(actor,{offset=0,limit=24}={}){
   if(!complete)return {memory_complete:false};
@@ -116,7 +116,7 @@ export function archiveIndex(scenes=[],projection={}, {complete=true}={}){
   const r=parts.get(key(documentId,partId));
   return {document:card(d,actor),part:{id:p.id,title:p.title,text:r?.text??null,summary:r?.summary??null,source:r?.source??null},owner:d.actor,requires_authoring:!r,policy:'Narrator-only. Do not reveal before the player chooses to read; if missing, author once with owner as actor, save part and reading in actual scene.'};
  }
- return {view,open,authoring,warnings};
+ return {view,open,authoring,owns:(actor,documentId)=>complete&&docs.get(documentId)?.actor===actor,warnings};
 }
 export const ARCHIVE_ACTIONS=Object.freeze({read_document:'Прочитать материал',study_document:'Изучить материал',write_document:'Написать книгу или документ',write_document_part:'Написать следующую часть',annotate_document:'Сделать заметку',bookmark_document:'Поставить закладку',remove_document_bookmark:'Убрать закладку',review_document:'Написать рецензию',publish_document:'Предложить публикацию',request_document_access:'Запросить доступ'});
 export function validateArchiveAction(input,overview){
@@ -125,7 +125,7 @@ export function validateArchiveAction(input,overview){
  if(typeof reader!=='function')throw Error('Archive reader unavailable');
  const withPart=['read_document','study_document','write_document_part','bookmark_document','remove_document_bookmark'].includes(input.action);
  if(withPart&&!id(input.part_id))throw Error('Select a declared part');
- const d=reader(input.document_id,withPart?input.part_id:null);
+ const d=reader(input.document_id,withPart||input.part_id!=null?input.part_id:null);
  if(d.access!=='available')throw Error('Current document access required');
  if(['write_document_part','publish_document'].includes(input.action)&&!overview.archive_owner(input.document_id))throw Error('Only document owner can author or publish');
  if(input.action==='write_document_part'&&d.part?.materialized)throw Error('Existing part is immutable');
