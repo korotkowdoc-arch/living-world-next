@@ -261,4 +261,45 @@ begin
  perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 13:00',jsonb_build_array(preset||'{"status":"removed"}'),0);
  if (select count(*) from public.nw_scenes where world_id=wid)<>3 then raise exception 'Invalid calendar scene persisted';end if;
 end $calendar$;
+-- Travel and venue services must preserve location, custody and settlement history.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $travel$
+declare wid uuid; bid uuid; h uuid; bad boolean;
+ body text:='Anna recorded an event.';
+ journey jsonb:='{"id":"trip","type":"world","player_life_version":1,"life_kind":"journey","record_id":"trip","key":"player-life:journey:trip","actor":"Anna","title":"Trip","status":"planned","reached":0,"stops":[{"place":"Home","mode":"walk"},{"place":"Station","mode":"walk"},{"place":"Cafe","mode":"rail"}],"evidence":"Anna recorded an event."}';
+ loc jsonb:='{"id":"location","type":"character","name":"Anna","state_patch":{"location":"Home"},"evidence":"Anna recorded an event."}';
+ service jsonb:='{"id":"service","type":"world","player_life_version":1,"life_kind":"venue_service","record_id":"meal","key":"player-life:venue_service:meal","actor":"Cafe","place":"Cafe","title":"Meal","category":"food","amount":10,"currency":"GBP","duration_minutes":30,"status":"available","evidence":"Anna recorded an event."}';
+ discovery jsonb:='{"id":"discovery","type":"world","player_life_version":1,"life_kind":"discovery","record_id":"anna-meal","key":"player-life:discovery:anna-meal","actor":"Anna","provider":"Cafe","service_id":"meal","place":"Cafe","title":"Meal","category":"food","amount":10,"currency":"GBP","duration_minutes":30,"status":"available","evidence":"Anna recorded an event."}';
+ visit jsonb:='{"id":"visit","type":"world","player_life_version":1,"life_kind":"service_visit","record_id":"lunch","key":"player-life:service_visit:lunch","actor":"Anna","provider":"Cafe","service_id":"meal","place":"Cafe","title":"Meal","amount":10,"currency":"GBP","status":"accepted","evidence":"Anna recorded an event."}';
+ cash jsonb:='{"id":"cash","type":"money","actor":"Anna","currency":"GBP","operation":"reconcile","delta":0,"balance":20,"evidence":"Anna recorded an event."}';
+ pay jsonb:='{"id":"pay","type":"money","actor":"Anna","counterparty":"Cafe","currency":"GBP","operation":"transfer","delta":-10,"evidence":"Anna recorded an event."}';
+ done jsonb;
+begin
+ wid:=public.nw_create_world('Travel test','Synthetic travel and service','1994-08-01');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(journey,cash),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(journey||'{"status":"travelling"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Departure without location accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(loc,journey||'{"status":"travelling"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:30',jsonb_build_array(jsonb_set(loc,'{state_patch,location}','"Cafe"'),journey||'{"status":"arrived","reached":2}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Journey skipped a stop';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:30',jsonb_build_array(jsonb_set(loc,'{state_patch,location}','"Station"'),journey||'{"status":"travelling","reached":1}'),0);
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(jsonb_set(loc,'{state_patch,location}','"Cafe"'),journey||'{"status":"arrived","reached":2}',service,discovery,visit),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(discovery||'{"amount":9}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Forged discovery accepted';end if;
+ done:=visit||'{"status":"completed","transfer_event_id":"pay","outcome":"Meal served"}';
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:30',jsonb_build_array(done),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Unpaid service accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:30',jsonb_build_array(done,pay),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Service payment order ignored';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:30',jsonb_build_array(pay||'{"delta":-9}',done),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Wrong service price accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:30',jsonb_build_array(pay,done,done||'{"id":"second","record_id":"second","key":"player-life:service_visit:second"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Reused service payment accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:30',jsonb_build_array(pay,done),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:30',jsonb_build_array(pay,done),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Service completed twice';end if;
+ if (select count(*) from public.nw_scenes where world_id=wid)<>5 then raise exception 'Rejected scene persisted';end if;
+end $travel$;
 rollback;
