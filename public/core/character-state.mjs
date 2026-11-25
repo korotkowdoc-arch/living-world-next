@@ -1,3 +1,4 @@
+import {worldDepthIndex} from './world-depth.mjs';
 import {buildLongLifeIndex} from './npc-long-life.mjs';
 import {personalityHistory} from './npc-life.mjs';
 import {playerLifeView} from './player-life.mjs';
@@ -69,7 +70,7 @@ export function characterStateView(projection,actor,{complete=true,offset=0,limi
  const dynamics=(projection.worldFacts||[]).filter(x=>x.dynamics_version===1&&(identity(x.actor)||identity(x.counterparty)||x.actors?.some(identity))).map(x=>({kind:x.dynamics_kind,...x}));
  const rows=[...relations,...plans,...knowledge,...commitments,...activities,...growth,...dynamics];
  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
- return {actor:subject,long_life:buildLongLifeIndex(scenes,projection,{complete}).view(subject,{clock:worldTime,limit:8}),personality_history:personalityHistory(scenes,projection,[subject],{complete,limit:8}).get(subject)??{records:[],total:0},life:playerLifeView(projection,subject,{scenes,clock:worldTime,complete}),character:character?{name:character.name,description:character.description??null,
+ return {actor:subject,world_depth:worldDepthIndex(scenes,projection,{complete}).view(subject,{director:true}),long_life:buildLongLifeIndex(scenes,projection,{complete}).view(subject,{clock:worldTime,limit:8}),personality_history:personalityHistory(scenes,projection,[subject],{complete,limit:8}).get(subject)??{records:[],total:0},life:playerLifeView(projection,subject,{scenes,clock:worldTime,complete}),character:character?{name:character.name,description:character.description??null,
   state_fields:character.state_fields||[],age:characterAge(character,worldTime),latest_event_source:character.source}:null,
   ambiguous_names:matches.length>1&&!exact?matches.map(p=>p.name):[],
   records:rows.slice(start,start+size),total_records:rows.length,
