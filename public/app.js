@@ -1,3 +1,4 @@
+import {EMPTY_SECTION_HINTS,hasMenuRecords} from './core/menu-history.mjs';
 import {MENU_LABELS,menuLabel,menuValue,isMenuMetadata,menuError} from './core/menu-ru.mjs';
 import {MENU_GROUPS,MENU_DESCRIPTIONS,directorySections,menuSnapshotKey,menuSectionTransition} from './core/native-menu.mjs';
 import {ROOM_ACTIONS} from './core/room-layout.mjs';
@@ -231,10 +232,11 @@ function renderWorld(){if(!state.world)return openWorlds();const w=state.world;s
 function visualLibrary(w,overview,section='illustrations',focus=null){
  const out=node('div','menu-data'),list=node('div','menu-data'),controls=node('div','menu-data');
  const subjects=visualSubjects(overview,w.head_scene_id),primary=section==='illustrations'||section==='portraits';
- let assets=[],prefs,offset=0;
+ let assets=[],prefs,offset=0,refreshing=false,lastFingerprint=null,watch=null;
+ const syncStatus=node('p','small','Проверяю галерею…');
  const chooser=(choices)=>{const s=node('select','field');for(const [v,label] of Object.entries(choices)){const o=node('option','',label);o.value=v;s.append(o);}return s;};
- const showAsset=a=>{
-  const card=node('details','rule');card.append(node('summary','',a.title+' · '+(VISUAL_KINDS[a.kind]||menuValue(a.kind,'kind'))+' · '+(a.status==='ready'?'Готово':'Ожидает файл')));
+ const showAsset=(a,opened=false)=>{
+  const card=node('details','rule');card.dataset.visualId=a.id;card.append(node('summary','',a.title+' · '+(VISUAL_KINDS[a.kind]||menuValue(a.kind,'kind'))+' · '+(a.status==='ready'?'Готово':'Ожидает файл')));
   const body=node('div','menu-data');card.append(body);
   body.append(para('Объект: '+(subjects.find(s=>s.subject_id===a.subject_id)?.title||a.title)),para(a.identity_notes||''));
   if(a.status==='ready'){
@@ -249,17 +251,30 @@ function visualLibrary(w,overview,section='illustrations',focus=null){
   body.append(row(button('Скопировать промпт для генерации',()=>busy(()=>copy(a.prompt)),'btn secondary'),button('Скопировать ссылку на изображение',()=>busy(()=>copy(location.origin+'/'+visualUploadHash(w.id,a.id))),'btn secondary')));
   if(a.scene_id)body.append(sceneLink(w.id,a.scene_id,'Сцена-источник'));
   if(primary)body.append(button('Архивировать изображение',()=>busy(async()=>{if(!confirm('Убрать это изображение из галереи?'))return;await archiveVisual(a);await refresh();}),'btn secondary'));
-  if(a.id===focus)card.open=true;
+  if(a.id===focus||opened)card.open=true;
   return card;
  };
  const draw=()=>{
+  const expanded=new Set([...list.querySelectorAll('details[open][data-visual-id]')].map(c=>c.dataset.visualId));
   list.replaceChildren();
   const matches=visibleVisuals(assets,subjects,section);
   if(!matches.length)list.append(para('Сохранённых иллюстраций на этой странице пока нет.'));
-  for(const a of matches)list.append(showAsset(a));
+  for(const a of matches)list.append(showAsset(a,expanded.has(a.id)));
   if(primary)list.append(row(...(offset>0?[button('← Назад',()=>busy(async()=>{offset=Math.max(0,offset-40);await refresh();}),'btn secondary')]:[]),...(assets.length===40?[button('Далее →',()=>busy(async()=>{offset+=40;await refresh();}),'btn secondary')]:[])));
  };
- const refresh=async()=>{assets=await listVisualAssets(w.id,offset,40);if(focus&&!assets.some(a=>a.id===focus)&&offset===0){for(let o=40;o<400;o+=40){const more=await listVisualAssets(w.id,o,40);if(more.some(a=>a.id===focus)){assets=more;offset=o;break;}if(more.length<40)break;}}draw();};
+ const refresh=async({force=true}={})=>{
+  if(refreshing)return;refreshing=true;
+  try{
+   let next=await listVisualAssets(w.id,offset,40);
+   if(focus&&!next.some(a=>a.id===focus)&&offset===0){for(let o=40;o<400;o+=40){const more=await listVisualAssets(w.id,o,40);if(more.some(a=>a.id===focus)){next=more;offset=o;break;}if(more.length<40)break;}}
+   if(!out.isConnected)return;
+   const fingerprint=JSON.stringify([offset,next.map(a=>[a.id,a.status,a.byte_size,a.mime_type,a.title])]);
+   assets=next;if(force||fingerprint!==lastFingerprint){lastFingerprint=fingerprint;draw();}
+   syncStatus.textContent=assets.some(a=>a.status==='pending')?'Есть заявки, ожидающие файл из ChatGPT. Галерея обновляется автоматически.':'Галерея синхронизирована.';
+  }finally{refreshing=false;}
+ };
+ const check=()=>{if(!out.isConnected){clearInterval(watch);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);return;}if(document.visibilityState==='visible'&&state.world?.id===w.id&&state.world.active_branch_id===w.active_branch_id)void refresh({force:false}).catch(()=>{syncStatus.textContent='Не удалось обновить галерею. Можно повторить.';});};
+ queueMicrotask(()=>{if(!out.isConnected)return;watch=setInterval(check,15000);document.addEventListener('visibilitychange',check);window.addEventListener('focus',check);});
  const form=()=>{
   controls.replaceChildren();
   const freq=chooser(VISUAL_FREQUENCIES);freq.value=prefs.frequency;const style=field('Общий стиль мира, например кинематографический реализм');style.value=prefs.style;style.maxLength=1000;
@@ -280,9 +295,9 @@ function visualLibrary(w,overview,section='illustrations',focus=null){
    focus=a.id;offset=0;await refresh();
   })));
  };
- out.append(para('Иллюстрации не меняют канон и не расходуют игровое время. Файлы хранятся в приватной галерее.'),list);
+ out.append(para('Иллюстрации не меняют канон и не расходуют игровое время. Файлы хранятся в приватной галерее.'),row(syncStatus,button('Обновить галерею',()=>busy(()=>refresh()),'btn secondary')),list);
  if(primary){out.append(controls);getVisualPreferences(w.id).then(v=>{prefs=v;form();}).catch(e=>controls.append(para(menuError(e))));}
- refresh().then(()=>{if(primary&&prefs)form();}).catch(e=>list.append(para('Галерея недоступна: '+menuError(e))));
+ queueMicrotask(()=>{if(out.isConnected)refresh().then(()=>{if(primary&&prefs)form();}).catch(e=>list.append(para('Галерея недоступна: '+menuError(e))));});
  return out;
 }
 function readableMaterials(section,overview,index,w,actor){
@@ -696,7 +711,7 @@ function renderGameMenu(){
   if(section.id==='journal'){output.append(menuJournal(w,scenes));return;}else if(section.id==='memories'){output.append(menuMemories(w,overview,projection));return;}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
    output.append(readableMaterials(section.id,overview,documentIndex(scenes,projection,{complete}),w,saved.actor));
    if(section.id==='news')output.append(title('Известия и подписки'),renderMenuData({knowledge:overview.world_depth.news,...overview.advanced.channels}));
-  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else output.append(renderMenuData(menuSection(overview,section.id).data));
+  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else {const data=menuSection(overview,section.id).data;if(!hasMenuRecords(data)&&!['character','health','psychology','calendar'].includes(section.id))output.append(para(EMPTY_SECTION_HINTS[section.id]||EMPTY_SECTION_HINTS.default));output.append(renderMenuData(data));}
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   const actionPanel=node('details','menu-action-panel');actionPanel.append(node('summary','','Действия героя в истории'),para('Просмотр данных работает здесь. Эти действия требуют сыгранной сцены в ChatGPT и сами не изменяют мир.'));
   let actionStart=output.childNodes.length;

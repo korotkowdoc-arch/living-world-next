@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {menuHistory,explicitGoalTasks,hasMenuRecords} from '../public/core/menu-history.mjs';
+import {playerMenuOverview,menuSection} from '../public/core/game-menu.mjs';
+import {replay} from '../public/core/continuity.mjs';
+const body='Hero worked and received money. Hero met Anna. Hero wants to study.';
+const src={scene_id:'s',event_id:'g'};
+const note={id:'n',type:'world',scene_memory_version:1,memory_kind:'intention',domain:'education',actor:'Hero',actors:['Hero','Anna'],summary:'Study someday',evidence:'Hero wants to study.'};
+const pay={id:'m',type:'money',operation:'transfer',actor:'Anna',counterparty:'Hero',currency:'GBX',delta:-400,evidence:'Hero worked and received money.'};
+const episode={id:'e',type:'world',interaction_version:1,interaction_kind:'meeting',actors:['Hero','Anna'],description:'Met Anna',evidence:'Hero met Anna.'};
+const goal={id:'g',type:'character',name:'Hero',state_patch:{personal_goal:'Live independently'},evidence:'Hero wants to study.'};
+const scene={id:'s',body,world_time:'2000-01-01 09:00',events:[note,pay,episode,goal]};
+test('accepted episodes populate top-level contacts and explicit goals populate priorities without manufacturing a plan',()=>{
+ const p=replay([scene]);const o=playerMenuOverview(p,'Hero',scene.world_time,{scenes:[scene]});
+ assert.equal(o.contacts.total,1);assert.equal(o.contacts.records[0].name,'Anna');
+ assert.equal(o.social_dashboard.contacts.total,1);assert.equal(o.tasks.records[0].id,'goal:personal_goal');
+ assert.equal(p.plans.length,0);assert.equal(menuSection(o,'tasks').data.current_tasks.total,1);
+ assert.equal(o.historical.intentions.records[0].title,'Study someday');
+ assert.equal(o.historical.work_payments.records[0].amount,400);
+ assert.equal(o.work_systems.shifts.total,0);
+});
+test('historical intent does not leak another holder or rejected data and never becomes a task',()=>{
+ const p={validation_warnings:[{scene_id:'s',event_id:'m'}]};
+ const h=menuHistory(p,'Hero',[scene]);
+ assert.equal(h.work_payments.total,0);assert.equal(h.intentions.total,1);
+ assert.equal(menuHistory(p,'Anna',[scene]).intentions.total,0);
+ assert.equal(menuHistory({},'Hero',[scene],{complete:false}).intentions.total,0);
+ assert.deepEqual(explicitGoalTasks({goals:{records:[{field:'personal_goal',title:'Goal',source:src}]}}).map(x=>x.id),['goal:personal_goal']);
+ assert.equal(hasMenuRecords({a:{records:[],total:0}}),false);assert.equal(hasMenuRecords({a:{records:[{}],total:1}}),true);
+});
