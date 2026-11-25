@@ -1,3 +1,4 @@
+import {playerLifeView} from './player-life.mjs';
 /** Evidence-backed per-field character continuity. No simulation, diagnosis or inference. */
 import {parseStoryDate} from './world-time.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
@@ -66,7 +67,7 @@ export function characterStateView(projection,actor,{complete=true,offset=0,limi
  const dynamics=(projection.worldFacts||[]).filter(x=>x.dynamics_version===1&&(identity(x.actor)||identity(x.counterparty)||x.actors?.some(identity))).map(x=>({kind:x.dynamics_kind,...x}));
  const rows=[...relations,...plans,...knowledge,...commitments,...activities,...growth,...dynamics];
  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
- return {actor:subject,character:character?{name:character.name,description:character.description??null,
+ return {actor:subject,life:playerLifeView(projection,subject),character:character?{name:character.name,description:character.description??null,
   state_fields:character.state_fields||[],age:characterAge(character,worldTime),latest_event_source:character.source}:null,
   ambiguous_names:matches.length>1&&!exact?matches.map(p=>p.name):[],
   records:rows.slice(start,start+size),total_records:rows.length,
