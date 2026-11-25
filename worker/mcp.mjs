@@ -356,7 +356,7 @@ async function callTool(name,args,env,token){
     if(Object.hasOwn(args,'expected_head')&&args.expected_head!==active.head_scene_id)throw Error('Story changed; restart candidate pagination.');
     if(Object.hasOwn(args,'expected_rules_version')&&args.expected_rules_version!==world.directive_version)throw Error('Rules changed; restart candidate pagination.');
     const rules=await directives(env,token,world.id);
-    const turn=prepareStoryTurn(memory.scenes,p,rules,options);
+    const turn=prepareStoryTurn(memory.scenes,p,rules,{...options,branchId:world.active_branch_id});
     const hints=await readFocusedNotes(env,token,world,active.head_scene_id,turn.actor_context.map(x=>x.actor));
     const latest=await ownerWorld(env,token,world.id),latestBranch=await branch(env,token,latest);
     if(latest.active_branch_id!==world.active_branch_id||latestBranch.head_scene_id!==active.head_scene_id||latest.directive_version!==world.directive_version)throw Error('Story or rules changed; retry.');
