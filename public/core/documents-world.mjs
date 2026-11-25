@@ -72,7 +72,7 @@ export function documentIndex(scenes=[],projection={}, {complete=true}={}){
    }
    if(!err&&k==='note'&&(!ed||!can(ed,e.actor)||!chapter(e.edition_id,e.chapter_id)||!same(['actor','edition_id','chapter_id'])))err='Personal note requires accessible chapter';
    if(!err&&k==='review'){
-    if(!ed||!can(ed,e.actor)||!same(['actor','edition_id','title'])||old||!ed.contents.some(c=>['read','studied'].includes(readings.get(key(ed.record_id,c.id,e.actor))?.status)))err='Review requires actual reading and unique review ID';
+    if(!ed||!can(ed,e.actor)||!same(['actor','edition_id','title'])||old&&(old.status==='published'||e.status!=='published'||old.body!==e.body)||!ed.contents.some(c=>['read','studied'].includes(readings.get(key(ed.record_id,c.id,e.actor))?.status)))err='Review requires actual reading and unique review ID';
    }
    if(!err&&k==='royalty'){
     const t=money.get(e.transfer_event_id);
@@ -95,16 +95,16 @@ export function documentIndex(scenes=[],projection={}, {complete=true}={}){
  function view(actor,{offset=0,limit=24}={}){
   if(!complete)return {memory_complete:false};
   const editions=byKind('edition').filter(e=>can(e,actor));
-  const visible=e=>editions.some(x=>x.record_id===e.edition_id);
+  const visibleIds=new Set(editions.map(e=>e.record_id)),visible=e=>visibleIds.has(e.edition_id);
   const catalogue=editions.map(e=>{
    const d=get('document',e.document_id),own=d.actor===actor;
-   const contents=e.contents.map(c=>{const r=readings.get(key(e.record_id,c.id,actor)),ch=chapter(e.record_id,c.id);return {id:c.id,title:c.title,text_available:!!ch,read:own||['read','studied'].includes(r?.status),progress:own?'author':r?.status??'unread',source:isRead(e,c.id,actor)&&ch?ch.source:null,bookmark:bookmarks.get(key(e.record_id,c.id,actor))?.status==='saved'};});
+   const contents=e.contents.map(c=>{const r=readings.get(key(e.record_id,c.id,actor)),ch=chapter(e.record_id,c.id);return {id:c.id,title:c.title,text_available:!!ch,read:!!ch&&(own||['read','studied'].includes(r?.status)),progress:own?'author':r?.status??'unread',source:isRead(e,c.id,actor)&&ch?ch.source:null,bookmark:bookmarks.get(key(e.record_id,c.id,actor))?.status==='saved'};});
    const readCount=contents.filter(c=>c.read).length;
    return {id:e.record_id,document_id:e.document_id,title:e.title,author:d.actor,category:d.category,number:e.number,status:e.status,document_status:d.status,summary:d.summary,channel_id:d.channel_id??null,source:e.source,contents,total_chapters:contents.length,read_chapters:readCount,progress_percent:Math.round(readCount*100/contents.length),own};
   });
   const group=ks=>page(catalogue.filter(r=>ks.includes(r.category)).sort((a,b)=>String(b.source?.world_time||'').localeCompare(String(a.source?.world_time||''))||b.number-a.number),offset,limit);
   const list=(k,filter)=>page(byKind(k).filter(filter).map(compact),offset,limit);
-  return {memory_complete:true,library:group(['textbook','research','grimoire','medical','history','fiction']),newspapers:group(['newspaper']),documents:group(['contract','will','law','certificate','report','lecture','assignment','catalogue','statement','letter','other']),archives:group(['diary','photo']),authored:page(catalogue.filter(x=>x.own),offset,limit),bookmarks:list('bookmark',r=>r.actor===actor&&visible(r)&&r.status==='saved'),notes:list('note',r=>r.actor===actor&&visible(r)&&r.status==='active'),reading:list('reading',r=>r.actor===actor&&visible(r)),reviews:list('review',r=>visible(r)&&(r.actor===actor||r.status==='published'&&isRead(get('edition',r.edition_id),get('edition',r.edition_id).contents[0].id,actor))),royalties:list('royalty',r=>r.actor===actor||r.recipient===actor),access:list('access',r=>r.reader===actor||r.actor===actor),policy:'Catalogues show only author-owned or explicitly granted editions. Reading text requires recorded read or author. Viewing does not change time, knowledge, progress, consent or save.'};
+  return {memory_complete:true,library:group(['textbook','research','grimoire','medical','history','fiction']),newspapers:group(['newspaper']),documents:group(['contract','will','law','certificate','report','lecture','assignment','catalogue','statement','letter','other']),archives:group(['diary','photo']),authored:page(catalogue.filter(x=>x.own),offset,limit),bookmarks:list('bookmark',r=>r.actor===actor&&visible(r)&&r.status==='saved'),notes:list('note',r=>r.actor===actor&&visible(r)&&r.status==='active'),reading:list('reading',r=>r.actor===actor&&visible(r)),reviews:list('review',r=>visible(r)&&(r.actor===actor||r.status==='published'&&get('edition',r.edition_id).contents.some(c=>isRead(get('edition',r.edition_id),c.id,actor)))),royalties:list('royalty',r=>r.actor===actor||r.recipient===actor),access:list('access',r=>r.reader===actor||r.actor===actor),policy:'Catalogues show only author-owned or explicitly granted editions. Reading text requires recorded read or author. Viewing does not change time, knowledge, progress, consent or save.'};
  }
  function read(actor,editionId,chapterId){
   if(!complete)throw Error('Complete history required');
