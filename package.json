@@ -1,6 +1,7 @@
 {
   "name": "living-world-next",
   "version": "0.37.1",
+  "projectionEngineVersion": "0.37.0",
   "private": true,
   "type": "module",
   "description": "Mobile-first causal interactive worlds; ChatGPT narration, Supabase persistence",
