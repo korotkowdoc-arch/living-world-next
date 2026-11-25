@@ -755,4 +755,47 @@ begin
  if not bad then raise exception 'Service expense counted twice';end if;
  if (select count(*) from public.nw_scenes where world_id=wid)<>5 then raise exception 'Rejected scene persisted';end if;
 end $expense_care$;
+-- Dated family events and explicit shared goals.
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $family_goals$
+declare wid uuid; bid uuid; h uuid; bad boolean; body text:='Anna recorded an event.';
+ common jsonb:='{"type":"world","player_life_version":1,"evidence":"Anna recorded an event."}';
+ dyn jsonb:='{"type":"world","dynamics_version":1,"description":"Recorded","evidence":"Anna recorded an event."}';
+ birth_event jsonb:='{"id":"birth-event","dynamics_kind":"family_event","record_id":"birth","key":"dynamics:family_event:birth","actors":["Anna","Lia","Alex"],"title":"Birth","family_kind":"birth","status":"completed","outcome":"Born"}';
+ bond jsonb:='{"id":"bond","dynamics_kind":"bond","record_id":"parent","key":"dynamics:bond:parent","actor":"Anna","counterparty":"Alex","bond_type":"parenthood","status":"active"}';
+ birth jsonb:='{"id":"birth","life_kind":"child_birth","record_id":"child","key":"player-life:child_birth:child","actor":"Alex","parent":"Anna","born_on":"2000-08-01","family_event_id":"birth","status":"recorded"}';
+ school jsonb:='{"id":"school","dynamics_kind":"family_event","record_id":"school","key":"dynamics:family_event:school","actors":["Anna","Alex"],"title":"School","family_kind":"education","status":"completed","outcome":"Attended"}';
+ milestone jsonb:='{"id":"milestone","life_kind":"child_milestone","record_id":"school","key":"player-life:child_milestone:school","actor":"Anna","child_id":"child","family_event_id":"school","occurred_on":"2006-09-01","title":"School","category":"education","description":"Attended school","status":"recorded"}';
+ goal jsonb:='{"id":"goal","life_kind":"shared_goal","record_id":"home","key":"player-life:shared_goal:home","actor":"Anna","title":"Build home","description":"Shared project","due_at":"2000-08-02 10:00","steps":[{"id":"plan","title":"Plan"},{"id":"prepare","title":"Prepare"}],"status":"proposed"}';
+ invite jsonb:='{"id":"invite","life_kind":"shared_goal_member","record_id":"lia","key":"player-life:shared_goal_member:lia","actor":"Lia","organizer":"Anna","goal_id":"home","status":"invited"}';
+ activity jsonb:='{"id":"activity","type":"world","activity_version":1,"activity_kind":"activity","record_id":"a","key":"activity:activity:a","name":"Work","description":"Worked","actors":["Lia"],"status":"completed","outcome":"Done","evidence":"Anna recorded an event."}';
+ step jsonb:='{"id":"step","life_kind":"shared_goal_step","record_id":"first","key":"player-life:shared_goal_step:first","actor":"Lia","goal_id":"home","step_id":"plan","completion_kind":"activity","completion_id":"a","status":"completed","outcome":"Done"}';
+ step2 jsonb;
+begin
+ wid:=public.nw_create_world('Family goals test','Synthetic family','2000-08-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ birth_event:=birth_event||dyn;bond:=bond||dyn;birth:=birth||common;school:=school||dyn;milestone:=milestone||common;goal:=goal||common;invite:=invite||common;step:=step||common;
+ step2:=step||'{"id":"step2","record_id":"second","key":"player-life:shared_goal_step:second","actor":"Anna","step_id":"prepare","completion_id":"b"}';
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(birth_event,birth),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Birth accepted without parenthood';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-02 09:00',jsonb_build_array(bond,birth_event,birth),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Birth accepted on mismatched date';end if;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(bond,birth_event,birth,goal,invite),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(goal||'{"status":"active"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Goal activated without agreement';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(invite||'{"status":"accepted","outcome":"Agreed"}',goal||'{"status":"active"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(goal||'{"status":"completed","outcome":"Finished"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Goal completed before steps';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(activity||'{"actors":["Anna"]}',step),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Step accepted without participant';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(activity,step),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(activity,step2||'{"actor":"Lia","completion_id":"a"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Step reused same activity';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-02 10:00',jsonb_build_array(activity||'{"id":"activity-b","record_id":"b","key":"activity:activity:b","actors":["Anna"]}',step2,goal||'{"status":"completed","outcome":"Finished"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2006-09-02',jsonb_build_array(school,milestone),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Milestone accepted on mismatched date';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2006-09-01',jsonb_build_array(school,milestone),0);
+ if (select count(*) from public.nw_scenes where world_id=wid)<>5 then raise exception 'Rejected scene persisted';end if;
+end $family_goals$;
 rollback;
