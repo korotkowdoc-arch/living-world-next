@@ -25,6 +25,8 @@ import {characterAge} from './character-state.mjs';
 import {familyDutyWindow,paymentScheduleWindow} from './world-dynamics.mjs';
 import {storyDrivers} from './story-drivers.mjs';
 import {menuPreferences} from './game-menu.mjs';
+import {explicitGoalTasks} from './menu-history.mjs';
+import {playerPersonalLife} from './personal-menu.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
 const closed=new Set(['completed','complete','abandoned','resolved','ended','cancelled','canceled','decided','closed','fulfilled','done']);
 const clip=v=>typeof v==='string'?v.slice(0,300):null;
@@ -141,6 +143,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   return due.order<=anchor.order?'reached_requires_story':'future';
  };
  for(const p of projection.plans||[])if(['active','paused'].includes(p.status))add('intention',p,{timing:timing(p)});
+ for(const actor of protectedActors.filter(a=>focus.has(a)))for(const g of explicitGoalTasks(playerPersonalLife(projection,actor),actor))if(preferences.priorities.includes(g.id)||preferences.priorities.includes(g.title))add('life_goal',{...g,actor,key:g.id},{timing:'requires_character_choice',guidance:'Учитывай сформулированную цель при предложении решений, не выбирай за игрока и не считай цель выполненной.'});
  for(const p of projection.obligations||[])if(!closed.has(text(p.status)))add('obligation',p,{timing:timing(p)});
  for(const r of records){
   if(r.world_record_version===1&&r.record_kind==='routine'&&r.status==='active'&&anchor?.precision==='minute'){
@@ -295,7 +298,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(before?.status==='calendar_derived'&&after?.status==='calendar_derived'&&after.years>before.years)
    add('age_milestone',{actor:person.name,title:'День рождения: '+person.name,source:after.source,status:'calendar_derived'},{timing:'reached_requires_story',previous_age:before.years,age_years:after.years,birthdays_crossed:after.years-before.years});
  }
- const priorityIndex=x=>x.focus_match?preferences.priorities.findIndex(p=>p===x.title||p===({intention:'plan:',obligation:'commitment:',project:'project:'}[x.kind]||'__none__:')+String(x.kind==='project'?String(x.key).replace(/^growth:project:/,''):x.key)):-1;
+ const priorityIndex=x=>x.focus_match?preferences.priorities.findIndex(p=>p===x.title||x.kind==='life_goal'&&p===x.key||p===({intention:'plan:',obligation:'commitment:',project:'project:'}[x.kind]||'__none__:')+String(x.kind==='project'?String(x.key).replace(/^growth:project:/,''):x.key)):-1;
  for(const x of all){const i=priorityIndex(x);if(i>=0)x.player_priority=i+1;}
  // Due events remain first; exact player focus elevates matching opportunities, never executes them.
  const rank=x=>x.timing==='reached_requires_story'?0:x.player_priority?0.5+x.player_priority/10:x.focus_match?1:x.timing==='future'?3:2;

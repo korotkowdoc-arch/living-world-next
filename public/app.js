@@ -1,4 +1,4 @@
-import {EMPTY_SECTION_HINTS,hasMenuRecords} from './core/menu-history.mjs';
+import {EMPTY_SECTION_HINTS,hasMenuRecords,reviewedMenuHistory} from './core/menu-history.mjs';
 import {MENU_LABELS,menuLabel,menuValue,isMenuMetadata,menuError} from './core/menu-ru.mjs';
 import {MENU_GROUPS,MENU_DESCRIPTIONS,directorySections,menuSnapshotKey,menuSectionTransition} from './core/native-menu.mjs';
 import {ROOM_ACTIONS} from './core/room-layout.mjs';
@@ -603,6 +603,7 @@ function renderGameMenu(){
  nav.append(groups,search,tiles);
  const snap=menuSnapshotKey(w),cached=menuMemoryCache?.key===snap?menuMemoryCache:null;
  let scenes=cached?.scenes??state.scenes,complete=cached?.complete??state.historyComplete,projection=cached?.projection??replay(scenes),loadingMemory=false;
+ const reviews=new Map(),reviewJobs=new Set();
  const alive=()=>box.isConnected&&state.screen==='world'&&state.tab==='menu'&&menuSnapshotKey(state.world)===snap;
  async function loadMemory(){
   if(loadingMemory)return;loadingMemory=true;status.replaceChildren(para('Загружаю полную память мира…'));
@@ -614,6 +615,15 @@ function renderGameMenu(){
    menuMemoryCache={key:snap,scenes,complete,projection};selectActor();show();
   }catch(e){if(alive())status.replaceChildren(para('Не удалось загрузить память: '+menuError(e)),button('Повторить',()=>void loadMemory(),'btn secondary'));}
   finally{loadingMemory=false;}
+ }
+ async function loadReviews(name){
+  if(reviewJobs.has(name)||reviews.has(name))return;reviewJobs.add(name);
+  const rows=[];let done=false,failed=false;
+  try{for(let i=0;i<10;i++){const page=await readMemoryNotes(w,{actor:name,offset:i*20});if(!Array.isArray(page)||page.length>20)throw Error('Неверная страница памяти');rows.push(...page);if(page.length<20){done=true;break;}}}catch{failed=true;}
+  finally{reviewJobs.delete(name);}
+  if(!alive())return;
+  reviews.set(name,{...reviewedMenuHistory(rows,scenes,name,{complete:done&&complete}),failed});
+  if(saved.actor===name&&['goals','work','education','interests'].includes(saved.section))show();
  }
  const selectActor=()=>{
   const choice=(projection.worldFacts||[]).find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending');
@@ -693,7 +703,7 @@ function renderGameMenu(){
   if(saved.section==='settings'){output.append(settingsView(prefs));return;}
   if(!complete){output.append(para('Данные раздела появятся после загрузки полной памяти.'));return;}
   if(!saved.actor){output.append(para('Герой определяется по сохранённому выбору игрока. Пока он не установлен, доступна настройка мира.'));return;}
-  const overview=playerMenuOverview(projection,saved.actor,scenes.at(-1)?.world_time??null,{scenes,complete,offset:saved.offset||0,limit:24});
+  const overview=playerMenuOverview(projection,saved.actor,scenes.at(-1)?.world_time??null,{scenes,complete,reviewedHistory:reviews.get(saved.actor),offset:saved.offset||0,limit:24});
   if(saved.section==='dashboard'){
    const hud=node('div','menu-dashboard');hud.append(title(overview.actor),para([overview.clock,overview.dashboard.location?.value].filter(Boolean).join(' · ')||'Текущее состояние героя'));
    if(prefs.settings.hud)hud.append(hudView(overview));
@@ -706,6 +716,10 @@ function renderGameMenu(){
   }
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
   output.append(add(node('div','menu-screen-heading'),menuGlyph(section.icon),title(section.label)));
+  if(['goals','work','education','interests'].includes(section.id)){
+   const review=reviews.get(saved.actor);if(!review){output.append(para('Проверяю ранее разобранные сцены…'));void loadReviews(saved.actor);}
+   else if(!review.scan_complete)output.append(row(para('Исторические заметки загружены не полностью.'),button('Обновить заметки',()=>{reviews.delete(saved.actor);show();},'btn secondary')));
+  }
   if(['illustrations','portraits'].includes(section.id)){output.append(visualLibrary(w,overview,section.id,saved.visualFocus));return;}
   if(['gallery','character','wardrobe','inventory','library','news','documents','places','property','magical_ecology','rituals'].includes(section.id)){const gallery=node('details','menu-data-group');gallery.append(node('summary','','Иллюстрации раздела'));let opened=false;gallery.addEventListener('toggle',()=>{if(gallery.open&&!opened){opened=true;gallery.append(visualLibrary(w,overview,section.id));}});output.append(gallery);}
   if(section.id==='journal'){output.append(menuJournal(w,scenes));return;}else if(section.id==='memories'){output.append(menuMemories(w,overview,projection));return;}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
