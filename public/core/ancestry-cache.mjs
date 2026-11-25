@@ -13,12 +13,18 @@ export function createAncestryCache({maxEntries=4,maxBytes=12*1024*1024,ttlMs=12
    expire();const k=key(scope,world,branch,head,limit),e=rows.get(k);if(!e)return null;
    rows.delete(k);rows.set(k,e);return JSON.parse(e.payload);
   },
+  recent(scope,world,branch,limit){
+   if(!scope||!world||!branch)return null;
+   expire();
+   for(const e of [...rows.values()].reverse())if(e.scope===scope&&e.world===world&&e.branch===branch&&e.limit===limit)return JSON.parse(e.payload);
+   return null;
+  },
   put(scope,world,branch,head,limit,result){
    if(!scope||!world||!branch||!head||!result?.complete||result.scenes?.at(-1)?.id!==head)return false;
    expire();const k=key(scope,world,branch,head,limit),payload=JSON.stringify(result),size=payload.length*2;
    if(size>maxBytes)return false;
    remove(k);while(rows.size>=maxEntries||bytes+size>maxBytes){const first=rows.keys().next();if(first.done)return false;remove(first.value);}
-   rows.set(k,{payload,bytes:size,expires:now()+ttlMs});bytes+=size;return true;
+   rows.set(k,{payload,scope,world,branch,limit,bytes:size,expires:now()+ttlMs});bytes+=size;return true;
   },
   stats(){expire();return {entries:rows.size,bytes};}
  };
