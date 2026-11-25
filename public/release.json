@@ -1,6 +1,6 @@
 {
   "app": "living-world-next",
-  "version": "0.43.0",
+  "version": "0.44.0",
   "mcp": "/mcp",
   "health": "/health",
   "deploy_source": "github-main",

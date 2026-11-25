@@ -1,7 +1,7 @@
 /** Device-local UI preferences only. Never contains story text, names or tokens. */
 const KEY='nw_ui_v1';
 export const DEFAULT_UI=Object.freeze({theme:'dark',density:'normal',textScale:'normal',favorites:['character','tasks','calendar','places'],hudFields:['hunger','thirst','energy','hygiene','comfort','stress'],lastSection:'dashboard'});
-const sectionIds=new Set(['dashboard','inheritance','treasury','notebooks','catalogues','medical_records','bank_records','gallery','library','documents','archives','publishing','rituals','alchemy','magical_ecology','magical_clinics','magical_science','magic','magical_medicine','investments','character','health','wardrobe','relationships','contacts','inventory','finances','property','work','education','skills','calendar','places','letters','tasks','journal','memories','settings','interests','goals','circles','psychology','network','news','timeline','map']);
+const sectionIds=new Set(['dashboard','illustrations','portraits','inheritance','treasury','notebooks','catalogues','medical_records','bank_records','gallery','library','documents','archives','publishing','rituals','alchemy','magical_ecology','magical_clinics','magical_science','magic','magical_medicine','investments','character','health','wardrobe','relationships','contacts','inventory','finances','property','work','education','skills','calendar','places','letters','tasks','journal','memories','settings','interests','goals','circles','psychology','network','news','timeline','map']);
 const needs=new Set(DEFAULT_UI.hudFields);
 const selected=(value,choices,fallback)=>choices.includes(value)?value:fallback;
 const filtered=(value,allowed,max,fallback)=>Array.isArray(value)?[...new Set(value.filter(x=>allowed.has(x)))].slice(0,max):[...fallback];

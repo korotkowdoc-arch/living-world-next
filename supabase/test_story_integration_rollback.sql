@@ -892,5 +892,35 @@ begin
  if not bad then raise exception 'Missing royalty transfer accepted';end if;
  if (select head_scene_id from public.nw_branches where id=bid) is distinct from h then raise exception 'Rejected scene changed head';end if;
 end $extension_checks$;
+
+reset role;
+set local role authenticated;
+do $visual_test$
+declare wid uuid:=current_setting('nw.snapshot_world')::uuid;bid uuid:=current_setting('nw.snapshot_fork')::uuid;h uuid;v public.nw_visual_assets;bad boolean;
+begin
+ select head_scene_id into h from public.nw_branches where id=bid;
+ v:=public.nw_prepare_visual(wid,bid,h,'character','Anna','portrait','Portrait','Illustration of Anna','Black hair','{}');
+ if v.status<>'pending' or v.scene_id is distinct from h or not exists(select 1 from public.nw_list_visual_assets(wid,40,0) where id=v.id) then raise exception 'Visual reservation wrong';end if;
+ bad:=false;begin perform public.nw_finish_visual(v.id);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Missing bytes finalized';end if;
+ insert into storage.objects(bucket_id,name,metadata) values('nw-world-visuals',v.storage_path,'{"size":100,"mimetype":"image/png"}');
+ v:=public.nw_finish_visual(v.id);
+ if v.status<>'ready' or v.byte_size<>100 then raise exception 'Actual storage object not finalized';end if;
+ if not exists(select 1 from storage.objects where name=v.storage_path) then raise exception 'Owner cannot read own image';end if;
+ bad:=false;begin insert into storage.objects(bucket_id,name,metadata) values('nw-world-visuals','unowned/path','{}');exception when insufficient_privilege then bad:=true;end;if not bad then raise exception 'Unreserved object accepted';end if;
+ perform set_config('nw.visual_test_id',v.id::text,true);perform set_config('nw.visual_test_path',v.storage_path,true);
+ perform set_config('nw.visual_test_owner',auth.uid()::text,true);
+end $visual_test$;
+reset role;
+set local role authenticated;
+do $visual_foreign$
+declare aid uuid:=current_setting('nw.visual_test_id')::uuid;wid uuid:=current_setting('nw.snapshot_world')::uuid;bad boolean;
+begin
+ perform set_config('request.jwt.claim.sub','99999999-9999-4999-8999-999999999999',true);
+ if exists(select 1 from public.nw_visual_assets where id=aid) or exists(select 1 from public.nw_list_visual_assets(wid,40,0)) or exists(select 1 from storage.objects where name=current_setting('nw.visual_test_path')) then raise exception 'Foreign visual exposed';end if;
+ bad:=false;begin perform public.nw_finish_visual(aid);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Foreign finalization accepted';end if;
+ perform set_config('request.jwt.claim.sub',current_setting('nw.visual_test_owner'),true);
+ perform public.nw_archive_visual(aid);
+ if exists(select 1 from public.nw_list_visual_assets(wid,40,0) where id=aid) then raise exception 'Archived visual still visible';end if;
+end $visual_foreign$;
 reset role;
 rollback;
