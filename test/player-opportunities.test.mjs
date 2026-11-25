@@ -25,3 +25,5 @@ test('offscreen access changes are not exposed as player knowledge',()=>{
  const scenes=[{id:'s',events:[{id:'bad',type:'character',name:actor,state_patch:{location:'Secret'}},{id:'old',type:'character',name:actor,state_patch:{residence:'Без постоянного жилья'}}]}];
  const v=playerOpportunities(p,actor,{scenes});assert.deepEqual(v.known_places.records.map(x=>x.name),['Park']);assert.equal(v.options.some(x=>x.action==='travel'),false);
  });
+
+test('real saved reverse-worded housing absence never becomes a destination',()=>{const value='Постоянного жилья нет; осмотрел предложенные комнаты, не арендовал';const p={people:[{name:actor,state_fields:[{field:'location',value:'Park',source:src},{field:'residence',value,source:src}]}]};const v=playerOpportunities(p,actor,{scenes:[{id:'s',events:[{id:'e',type:'character',name:actor,state_patch:{residence:value}}]}]});assert.deepEqual(v.known_places.records.map(x=>x.name),['Park']);assert.ok(!v.options.some(x=>x.action==='travel'));});

@@ -239,7 +239,7 @@ export async function restoreWorldArchive(data,{onProgress=()=>{},request=rpc}={
  }
 }
 
-export async function readMemoryNotes(world,{actor=null,offset=0}={}){
- try{return await rpc('nw_read_memory_notes',{p_world_id:world.id,p_expected_head:world.head_scene_id??null,p_actor:actor,p_scene_id:null,p_limit:20,p_offset:offset});}
+export async function readMemoryNotes(world,{actor=null,offset=0,limit=20}={}){
+ try{return await rpc('nw_read_memory_notes',{p_world_id:world.id,p_expected_head:world.head_scene_id??null,p_actor:actor,p_scene_id:null,p_limit:Math.max(1,Math.min(40,Math.floor(limit)||20)),p_offset:offset});}
  catch(e){if(/Could not find the function|PGRST202|schema cache/i.test(e.message||''))throw Error('Для предложений памяти нужна миграция 009. Канонические сцены доступны как прежде.');throw e;}
 }

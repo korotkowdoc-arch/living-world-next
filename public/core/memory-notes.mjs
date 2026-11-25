@@ -22,11 +22,11 @@ export function focusedMemoryNotes(groups,{maxChars=7000,maxNotes=12}={}){
  const result={canonical:false,status:groups.length===0?'not_requested':available.length===groups.length?'available':available.length?'partial':'unavailable',notes:selected,omitted:0,
   actors:groups.map(x=>({actor:x.actor,status:x.status,returned:Array.isArray(x.rows)?x.rows.length:0,more_may_exist:!!x.more})),policy:MEMORY_NOTE_POLICY};
  const keys=new Set();
- for(const group of available)for(const row of group.rows||[])if(row?.scene_id&&row?.note_key&&row.note)keys.add(JSON.stringify([row.scene_id,row.note_key]));
+ for(const group of available)for(const row of group.rows||[])if(row?.scene_id&&row?.note_key&&row.note)keys.add(JSON.stringify([historicalEvidenceKey(row),normalized(row.note.summary)]));
  result.omitted=keys.size;
  for(let i=0;i<40;i++)for(const group of available){
   const r=group.rows[i];if(!r?.scene_id||!r.note_key||!r.note)continue;
-  const id=JSON.stringify([r.scene_id,r.note_key]);if(seen.has(id))continue;seen.add(id);
+  const id=JSON.stringify([historicalEvidenceKey(r),normalized(r.note.summary)]);if(seen.has(id))continue;seen.add(id);
   if(selected.length>=maxNotes)continue;
   const n=r.note;
   selected.push({scene_id:r.scene_id,note_key:r.note_key,kind:n.kind,actors:n.actors,summary:String(n.summary||'').slice(0,360),quote:String(n.quote||'').slice(0,400),quote_truncated:String(n.quote||'').length>400});
@@ -38,7 +38,7 @@ export function focusedMemoryNotes(groups,{maxChars=7000,maxNotes=12}={}){
 
 /** Bounded read-only historical index. Query hits are retrieval hints, never
  * canonical facts or grants of knowledge. No fuzzy actor identity inference. */
-const normalized=v=>String(v??'').normalize('NFKC').toLocaleLowerCase('ru').replace(/ё/g,'е').trim();
+export const normalized=v=>String(v??'').normalize('NFKC').toLocaleLowerCase('ru').replace(/ё/g,'е').trim();
 export function historicalNoteIndex(rows,scenes,{queries=[],actors=[],complete=false,historyComplete=false,maxNotes=12,maxChars=7000}={}){
  const source=new Map(scenes.map((s,i)=>[s.id,i])),seen=new Set(),valid=[],invalid=[];
  for(const r of rows){
@@ -56,10 +56,24 @@ export function historicalNoteIndex(rows,scenes,{queries=[],actors=[],complete=f
  }
  const ranked=valid.map(r=>{const n=r.note,hay=normalized([r.note_key,n.summary,n.quote,...n.actors].join('\n')),matches=q.filter(v=>hay.includes(v)),overlap=n.actors.filter(a=>focus.has(a)).length;return {r,matches,score:matches.length*10+overlap};}).filter(x=>q.length&&x.matches.length);
  ranked.sort((a,b)=>b.score-a.score||source.get(b.r.scene_id)-source.get(a.r.scene_id)||a.r.note_key.localeCompare(b.r.note_key));
- result.total_matching=ranked.length;
- for(const {r,matches} of ranked){if(result.notes.length>=maxNotes)break;const n=r.note;
-  result.notes.push({scene_id:r.scene_id,note_key:r.note_key,kind:n.kind,actors:n.actors,summary:n.summary.slice(0,360),quote:n.quote.slice(0,400),quote_truncated:n.quote.length>400,matched_queries:matches});
+ const grouped=groupHistoricalEvidence(ranked.map(x=>x.r));
+ const rankedById=new Map(ranked.map(x=>[JSON.stringify([x.r.scene_id,x.r.note_key]),x]));
+ result.total_matching=grouped.length;result.matching_note_count=ranked.length;result.grouped_duplicate_count=ranked.length-grouped.length;
+ for(const {row:r,variants} of grouped){const {matches}=rankedById.get(JSON.stringify([r.scene_id,r.note_key]));if(result.notes.length>=maxNotes)break;const n=r.note;
+  result.notes.push({scene_id:r.scene_id,note_key:r.note_key,kind:n.kind,actors:n.actors,summary:n.summary.slice(0,360),quote:n.quote.slice(0,400),quote_truncated:n.quote.length>400,matched_queries:matches,alternative_summaries:variants.filter(v=>v.note_key!==r.note_key).slice(0,3).map(v=>({note_key:v.note_key,summary:v.summary.slice(0,360)})),alternative_count:Math.max(0,variants.length-1)});
   if(JSON.stringify(result).length>maxChars)result.notes.pop();
  }
- result.omitted=ranked.length-result.notes.length;return result;
+ result.omitted=grouped.length-result.notes.length;return result;
+}
+
+/** Evidence groups are presentation only: identical quote and same kind/holder
+ * scope in the same scene. Different interpretations are retained as variants,
+ * not overwritten, and cross-scene recurrence is never merged. */
+export function historicalEvidenceKey(row){
+ const n=row.note;return JSON.stringify([row.scene_id,n.kind,normalized(n.quote),[...new Set(n.actors||[])].sort()]);
+}
+export function groupHistoricalEvidence(rows){
+ const groups=new Map();
+ for(const r of rows){const key=historicalEvidenceKey(r);let g=groups.get(key);if(!g){g={row:r,variants:[],seen:new Set()};groups.set(key,g);}const summary=normalized(r.note.summary);if(g.seen.has(summary))continue;g.seen.add(summary);g.variants.push({note_key:r.note_key,summary:r.note.summary});}
+ return [...groups.values()].map(({row,variants})=>({row,variants}));
 }

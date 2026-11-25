@@ -7,7 +7,12 @@ const source=x=>x?.source??null;
 const closed=new Set(['closed','restricted','damaged','destroyed']);
 // Narrative absence markers are not destinations; do not infer a replacement home.
 const absence=/^(?:без (?:постоянного )?(?:жилья|дома|места жительства)|бездомн\p{L}*|нет (?:постоянного )?(?:жилья|дома)|не (?:установлено|известно)|unknown\b|homeless\b|no (?:fixed |permanent )?(?:home|residence|housing)\b|none\b)/iu;
-const isPlace=v=>typeof v==='string'&&v.trim()&&!absence.test(v.trim());
+// Both word orders and qualified negative housing observations occur in real saves.
+const negativeResidence=/(?:^(?:постоянн\p{L}*\s+)?(?:собственн\p{L}*\s+)?(?:жиль[яеё]|дом[а]?|мест[ао] жительства|ночлег[а]?)\s+(?:у\s+[^;,.]{1,80}\s+)?(?:нет|не\s+(?:имеет(?:ся)?|установлен\p{L}*|найден\p{L}*))(?=$|[^\p{L}])|^(?:не\s+арендовал\p{L}*|не\s+снимает|не\s+имеет\s+жилья|ночует\s+на\s+улице|ночлег\s+не\s+найден)|^(?:жиль[яеё]|дом[а]?)\s*[:—–-]\s*(?:нет|неизвестно))/iu;
+const isPlace=v=>typeof v==='string'&&v.trim()&&!absence.test(v.trim())&&!negativeResidence.test(v.trim());
+// Residence is a historical observation, not guaranteed access. Negative or
+// ambiguous prose should not create a special return-home action.
+const isResidence=v=>isPlace(v)&&!/[;\n]|\b(?:not rented|no lease)\b|не\s+(?:арендовал\p{L}*|снимает|наш[её]л\p{L}*|оплатил\p{L}*)|без\s+(?:жилья|ночлега)|на\s+улице/iu.test(v);
 export function playerOpportunities(projection={},actor,{scenes=[],clock=null,complete=true}={}){
  const head=scenes.at(-1)?.id??null,character=(projection.people||[]).find(x=>x.name===actor);
  const location=character?.state_fields?.find(x=>x.field==='location');
@@ -16,12 +21,12 @@ export function playerOpportunities(projection={},actor,{scenes=[],clock=null,co
  const remember=(name,s,reason)=>{if(isPlace(name)&&!knownPlaces.has(name))knownPlaces.set(name,{name,source:s,reason});};
  remember(place,source(location),'last_recorded_location');
  const home=character?.state_fields?.find(x=>x.field==='residence');
- remember(home?.value,source(home),'recorded_residence');
+ if(isResidence(home?.value))remember(home.value,source(home),'recorded_residence');
  const rejectedScenes=new Set(),rejectedEvents=new Set();
  for(const w of projection.validation_warnings||[])if(w.scene_id){if(w.event_id)rejectedEvents.add(JSON.stringify([w.scene_id,w.event_id]));else rejectedScenes.add(w.scene_id);}
  for(const s of scenes)for(const e of s.events||[])if(!rejectedScenes.has(s.id)&&!rejectedEvents.has(JSON.stringify([s.id,e.id]))&&e.type==='character'&&e.name===actor){
   const from={scene_id:s.id,event_id:e.id,world_time:s.world_time??null};
-  remember(e.state_patch?.location,from,'recorded_visit');remember(e.state_patch?.residence,from,'recorded_residence');
+  remember(e.state_patch?.location,from,'recorded_visit');if(isResidence(e.state_patch?.residence))remember(e.state_patch.residence,from,'recorded_residence');
  }
  const habits=records.filter(x=>x.activity_version===1&&x.activity_kind==='habit'&&x.actor===actor&&x.status==='active');
  const activities=records.filter(x=>x.activity_version===1&&x.activity_kind==='activity'&&x.actors?.includes(actor)&&['planned','in_progress'].includes(x.status));
@@ -45,7 +50,7 @@ export function playerOpportunities(projection={},actor,{scenes=[],clock=null,co
  for(const x of travel.catalogue.records.filter(x=>x.status==='available'&&x.place===place&&atHead).slice(0,8))add('request_service',x.title,'Уточнить условия и заказать '+x.title,{service_id:x.id,place:x.place,amount:x.amount,currency:x.currency,affordability:x.affordability,availability:x.affordability==='insufficient_recorded_funds'?'recorded_funds_insufficient':'requires_scene_check',source:x.source});
  for(const x of travel.work.records.filter(x=>x.status==='active'&&x.actor===actor&&x.place===place&&atHead).slice(0,3))add('perform_work',x.title,'Выполнить рабочие обязанности: '+x.title,{employment_id:x.id,place:x.place,source:x.source});
  if(place&&atHead)add('explore','Осмотреться','Осмотреться в '+place,{source:source(location)});
- if(isPlace(home?.value)&&home.value!==place)add('travel','Вернуться домой','Отправиться домой: '+home.value,{place:home.value,source:source(home)});
+ if(isResidence(home?.value)&&home.value!==place)add('travel','Вернуться домой','Отправиться домой: '+home.value,{place:home.value,source:source(home)});
  for(const x of activities.slice(0,6))add('continue_activity',str(x.name,140),'Продолжить занятие: '+x.name,{activity_id:x.record_id,place:x.place??null,source:source(x)});
  for(const x of habits.slice(0,6))add('practice_habit',str(x.name,140),'Заняться привычным делом: '+x.name,{activity_id:x.record_id,place:x.place??null,source:source(x)});
  for(const x of places.filter(x=>!x.current_location&&!closed.has(x.access)).slice(0,10))if(!options.some(o=>o.action==='travel'&&o.place===x.name))add('travel','Отправиться: '+x.name,'Отправиться в '+x.name,{place:x.name,source:x.source});

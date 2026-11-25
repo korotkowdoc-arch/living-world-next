@@ -2,7 +2,7 @@ import {personalityEvolution,PERSONALITY_GUIDANCE} from '../public/core/personal
 import {individualMemory,INDIVIDUAL_MEMORY_GUIDANCE} from '../public/core/individual-memory.mjs';
 import {causalMemory,CAUSAL_GUIDANCE} from '../public/core/causal-memory.mjs';
 import {compareRegistryState,remapDeltaScene,identityReview} from '../public/core/state-delta.mjs';
-import {reviewedMenuHistory} from '../public/core/menu-history.mjs';
+import {reviewedMenuHistory,REVIEWED_HISTORY_SECTIONS} from '../public/core/menu-history.mjs';
 import {SCENE_MEMORY_GUIDANCE,sceneSaveAudit,sceneMemoryRecall,memoryCoverageSummary} from '../public/core/scene-memory-routing.mjs';
 import {VISUAL_PICKER_URI,VISUAL_PICKER_MIME,VISUAL_PICKER_HTML} from './visual-picker.mjs';
 import {nativeImageDescriptor,fetchNativeImage,transferNativeImage,privateImagePath,limitedBytes,imageMime,base64Image} from './native-visual-transfer.mjs';
@@ -219,6 +219,15 @@ async function readFocusedNotes(env,token,world,head,actors){
  return focusedMemoryNotes(groups);
 }
 /** Scan only a bounded number of owner-pinned pages. Report partial coverage. */
+async function readMenuReviews(env,token,world,head,history,actor){
+ const rows=[];let complete=head===null,failed=false;
+ if(head!==null)try{for(let page=0;page<12;page++){
+  const batch=await rpc(env,token,'nw_read_memory_notes',{p_world_id:world.id,p_expected_head:head,p_actor:actor,p_scene_id:null,p_limit:40,p_offset:page*40});
+  if(!Array.isArray(batch)||batch.length>40||batch.some(r=>!Array.isArray(r.note?.actors)||!r.note.actors.includes(actor)))throw Error('Invalid actor review page');
+  rows.push(...batch);if(batch.length<40){complete=true;break;}
+ }}catch{failed=true;}
+ return {...reviewedMenuHistory(rows,history.scenes,actor,{complete:complete&&history.complete}),failed};
+}
 async function readHistoricalIndex(env,token,world,head,history,focus={}){
  const rows=[];let complete=head===null,unavailable=false;
  if(head!==null)try{for(let page=0;page<5;page++){
@@ -232,7 +241,7 @@ async function readHistoricalIndex(env,token,world,head,history,focus={}){
   const batches=await Promise.all(ids.map(async id=>{try{const batch=await rpc(env,token,'nw_read_memory_notes',{p_world_id:world.id,p_expected_head:head,p_actor:null,p_scene_id:id,p_limit:40,p_offset:0});if(!Array.isArray(batch)||batch.length>40||batch.some(r=>r.scene_id!==id))throw Error('Invalid targeted historical page');return batch;}catch{return null;}}));
   for(const batch of batches){if(!batch){targeted.failed++;continue;}targeted.loaded++;if(batch.length===40)targeted.possibly_truncated++;rows.push(...batch);}
  }
- return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),targeted_source_lookup:targeted,menu_reviews:focus.menuActor?reviewedMenuHistory(rows,history.scenes,focus.menuActor,{complete:complete&&history.complete}):undefined,status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
+ return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),targeted_source_lookup:targeted,menu_reviews:focus.menuActor?await readMenuReviews(env,token,world,head,history,focus.menuActor):undefined,status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
 }
 async function visualStorageFetch(env,token,a,{method='GET',bytes,mime}={}){
  const base=new URL(env.SUPABASE_URL);if(base.protocol!=='https:')throw Error('Invalid storage configuration');
@@ -345,8 +354,8 @@ async function callTool(name,args,env,token){
    const clock=recordedWorldAgenda(history.scenes,projection);
    const choice=playerChoiceView(history.scenes,projection,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:history.complete});
    if(choice.pending&&choice.pending.actor!==args.actor)throw Error('Actor does not match the current player choice');
-   const reviewed=name==='get_game_menu'&&(!args.section||['goals','work','education','interests','health','calendar','inventory'].includes(args.section))?await readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:[args.actor],menuActor:args.actor}):null;
-   const overview=playerMenuOverview(projection,args.actor,clock.anchor_is_latest_scene?clock.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,reviewedHistory:reviewed?.menu_reviews,offset:args.offset??0,limit:name==='validate_game_menu_action'?50000:args.limit??24});
+   const reviewed=name==='get_game_menu'&&(!args.section||REVIEWED_HISTORY_SECTIONS.includes(args.section))?await readMenuReviews(env,token,world,active.head_scene_id,history,args.actor):null;
+   const overview=playerMenuOverview(projection,args.actor,clock.anchor_is_latest_scene?clock.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,reviewedHistory:reviewed,offset:args.offset??0,limit:name==='validate_game_menu_action'?50000:args.limit??24});
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id||current.directive_version!==world.directive_version)throw Error('Menu changed during read; refresh.');
    const anchor={world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version};
@@ -754,7 +763,7 @@ export default {
     let hint='Bearer';try{hint=challenge(env);}catch{}
     return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
    }
-   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.58.0'},instructions:narratorWorkflow})));
+   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.59.0'},instructions:narratorWorkflow})));
    if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
    if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
    if(msg.method==='resources/templates/list')return response(JSON.stringify(done(msg.id,{resourceTemplates:[]})));
