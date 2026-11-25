@@ -79,7 +79,7 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
  for(const x of deadlines){
   if(!['task','commitment','appointment'].includes(x.kind)||x.status==='paused'||x.status==='proposed')continue;
   const t=date(x.when);if(!t||t.order>target.order)continue;
-  gates.push({kind:x.kind,id:x.id,title:x.title,at:t.precision==='minute'?literal(Math.max(clock.order,t.order)):clock.literal,reason:t.precision==='day'?'date_only_requires_review':'scheduled_or_unresolved'});
+  gates.push({kind:x.kind,id:x.id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:t.precision==='day'?'date_only_requires_review':'scheduled_or_unresolved'});
  }
  const records=(projection.worldFacts||[]).filter(x=>x.player_life_version===1&&x.life_kind==='need'&&x.actor===actor);
  const forecasts=records.map(x=>needForecast(x,scenes,target.literal,{complete}));
