@@ -37,6 +37,10 @@ export function socialLifeTransition(records,e){
  return null;
 }
 const page=records=>({records:records.slice(0,30),total:records.length,omitted:Math.max(0,records.length-30)});
+/** Identify controlled actors only from accepted player-choice records. */
+export function recordedPlayerActors(projection={}){
+ return [...new Set((projection.worldFacts||[]).filter(x=>x.dynamics_version===1&&x.dynamics_kind==='player_choice'&&['pending','answered'].includes(x.status)&&valid(x.actor)).map(x=>x.actor))];
+}
 export function socialDashboard(projection={},actor,scenes=[]){
  const records=projection.worldFacts||[],byName=new Map();
  const get=name=>{if(!byName.has(name))byName.set(name,{name,own_attitude:null,bonds:[],recent_interactions:[]});return byName.get(name);};
