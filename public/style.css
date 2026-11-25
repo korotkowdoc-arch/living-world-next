@@ -4,3 +4,8 @@
 .search-results .scene-body,.rule .scene-body{white-space:pre-wrap;margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
 .panel a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .scene-body{user-select:text;-webkit-user-select:text}
+
+/* Keep section controls reachable on mobile; preserve their horizontal scroll. */
+.world-tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:8px;overscroll-behavior-inline:contain;scrollbar-width:thin;overflow-anchor:none}
+.world-tabs-anchor{height:1px;overflow-anchor:none}.world-section-content{min-height:calc(100dvh - 92px);overflow-anchor:none;min-width:0}.game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(116px,1fr));gap:8px;margin:18px 0 24px}.game-tile{min-height:48px;line-height:1.2;border:1px solid var(--border);border-radius:12px;background:var(--panel2);color:var(--text);padding:9px;overflow-wrap:anywhere}.game-tile.active{border-color:var(--accent);color:var(--accent);background:#302943}.menu-label{margin:14px 0 6px;font-size:14px;color:var(--accent2)}.menu-data{min-width:0;overflow-wrap:anywhere}.menu-check{display:flex;gap:10px;align-items:center;min-height:44px}.menu-check input{width:20px;height:20px;flex:none}.menu-data .btn{min-height:36px;font-size:12px;padding:7px 11px}.input-label select{margin:5px 0 14px;color:var(--text)}
+@media(max-width:650px){.world-tabs{top:0;padding-top:6px}.game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.game-tile{font-size:14px}.world-section-content{min-height:calc(100dvh - 80px)}}
