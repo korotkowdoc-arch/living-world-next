@@ -1,0 +1,42 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {replay,validateStateAppend} from '../public/core/continuity.mjs';
+import {roomLayoutTransition,roomLayoutView,validateRoomAction} from '../public/core/room-layout.mjs';
+import {playerMenuOverview,menuSection,menuActionIntent} from '../public/core/game-menu.mjs';
+const source={scene_id:'s',event_id:'e'};
+const ev=(kind,id,fields)=>({id:'ev_'+id,type:'world',player_life_version:1,life_kind:kind,record_id:id,key:'player-life:'+kind+':'+id,evidence:'Confirmed event.',...fields});
+const estate=ev('estate','house',{actor:'Hero',title:'House',place:'Lane',estate_kind:'house',status:'owned'});
+const room=(id,label)=>ev('room',id,{actor:'Hero',home_kind:'estate',home_id:'house',area:label,label,purpose:'Use',description:'Observed',status:'active'});
+const roomA=room('a','Study'),roomB=room('b','Hall');
+const layout=(id,room_id,x_cm=0,floor=0)=>ev('room_layout',id,{actor:'Hero',home_kind:'estate',home_id:'house',room_id,x_cm,y_cm:0,width_cm:300,height_cm:300,floor,status:'recorded'});
+const a=layout('la','a'),b=layout('lb','b',300);
+const link=ev('room_connection','c',{actor:'Hero',home_kind:'estate',home_id:'house',room_id:'a',other_room_id:'b',connection_kind:'doorway',status:'open'});
+const rows=xs=>new Map(xs.map(r=>[r.key,{...r,source}]));
+const put=(r,e)=>{assert.equal(roomLayoutTransition(r,e),null);r.set(e.key,{...e,source});};
+const scene=(id,events)=>({id,events,body:'Confirmed event.',world_time:'2000-01-01 09:00'});
+test('measurement is explicit, non-overlapping, and unmeasured rooms remain unknown',()=>{
+ const r=rows([estate,roomA,roomB]);put(r,a);
+ assert.ok(roomLayoutTransition(r,{...b,x_cm:100}));assert.ok(roomLayoutTransition(r,{...b,width_cm:-1}));assert.ok(roomLayoutTransition(r,{...a,actor:'Other'}));
+ const view=()=>roomLayoutView({worldFacts:[...r.values()]},'Hero').records[0];
+ assert.equal(view().unknown_rooms.total,1);assert.equal(view().measured_rooms,1);
+ put(r,b);put(r,link);assert.equal(view().connections.total,1);assert.equal(view().floors.records[0].rooms.total,2);
+ assert.ok(roomLayoutTransition(r,{...b,floor:1}));put(r,{...link,status:'removed'});put(r,{...b,floor:1});assert.equal(view().floors.total,2);
+});
+test('ownership changes require new confirmed room and layout epoch',()=>{
+ const r=rows([estate,roomA,roomB,a,b,link]);
+ r.set(estate.key,{...estate,actor:'Buyer',last_sale_id:'sale',source});
+ assert.equal(roomLayoutView({worldFacts:[...r.values()]},'Hero').total,0);assert.equal(roomLayoutView({worldFacts:[...r.values()]},'Buyer').total,0);
+ r.set(roomA.key,{...roomA,actor:'Buyer',title_revision:'sale',source});
+ const view=()=>roomLayoutView({worldFacts:[...r.values()]},'Buyer').records[0];
+ assert.equal(view().measured_rooms,0);assert.equal(view().connections.total,0);put(r,{...a,actor:'Buyer',title_revision:'sale'});assert.equal(view().measured_rooms,1);
+});
+test('replay, actual menu data, and pinned room action validation',()=>{
+ const h=[scene('s1',[estate,roomA,roomB]),scene('s2',[a,b,link])],p=replay(h);
+ assert.equal(p.validation_warnings.length,0);
+ assert.equal(validateStateAppend(h,[{...b,id:'move',floor:1}],'Confirmed event.').ok,false);
+ const o=playerMenuOverview(p,'Hero','2000-01-01 09:00',{scenes:h});
+ assert.equal(menuSection(o,'property').data.floorplans.records[0].measured_rooms,2);
+ assert.equal(menuActionIntent({action:'room_connect',room_id:'a',other_room_id:'b',detail:'Inspect link'},o).saved,false);
+ assert.throws(()=>validateRoomAction({action:'room_connect',room_id:'a',other_room_id:'unknown'},o));
+ assert.throws(()=>validateRoomAction({action:'room_measure',room_id:'unknown'},o));
+});

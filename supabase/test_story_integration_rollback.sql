@@ -960,4 +960,27 @@ begin
  if has_function_privilege('authenticated','public.nw_civic_community_step(jsonb,jsonb)','EXECUTE') then raise exception 'Private guard exposed';end if;
 end $community_civic$;
 reset role;
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+do $floorplan$
+declare wid uuid;bid uuid;h uuid;before_head uuid;bad boolean;body text:='Confirmed event.';
+estate jsonb:='{"id":"estate","type":"world","player_life_version":1,"life_kind":"estate","record_id":"house","key":"player-life:estate:house","actor":"Hero","title":"House","place":"Lane","estate_kind":"house","status":"owned","evidence":"Confirmed event."}';
+room jsonb:='{"id":"room","type":"world","player_life_version":1,"life_kind":"room","record_id":"r","key":"player-life:room:r","actor":"Hero","home_kind":"estate","home_id":"house","area":"Study","label":"Study","purpose":"Research","description":"Quiet","status":"active","evidence":"Confirmed event."}';
+layout jsonb:='{"id":"layout","type":"world","player_life_version":1,"life_kind":"room_layout","record_id":"l","key":"player-life:room_layout:l","actor":"Hero","home_kind":"estate","home_id":"house","room_id":"r","floor":0,"x_cm":0,"y_cm":0,"width_cm":300,"height_cm":300,"status":"recorded","evidence":"Confirmed event."}';
+other jsonb;link jsonb:='{"id":"link","type":"world","player_life_version":1,"life_kind":"room_connection","record_id":"c","key":"player-life:room_connection:c","actor":"Hero","home_kind":"estate","home_id":"house","room_id":"r","other_room_id":"r2","connection_kind":"doorway","status":"open","evidence":"Confirmed event."}';
+begin
+ wid:=public.nw_create_world('Floorplan rollback','Synthetic test','2000-01-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(estate,room,room||'{"id":"room2","record_id":"r2","key":"player-life:room:r2","area":"Hall","label":"Hall"}',layout),0);
+ other:=layout||'{"id":"layout2","record_id":"l2","key":"player-life:room_layout:l2","room_id":"r2","x_cm":100}';
+ before_head:=h;bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(other),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Overlapping room accepted';end if;
+ other:=other||'{"x_cm":300}';
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(other,link),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(other||'{"floor":1}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Incompatible doorway floor accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(layout||'{"actor":"Other"}'),0);exception when raise_exception then bad:=true;end;if not bad then raise exception 'Foreign geometry accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,null,jsonb_build_array(link||'{"status":"removed"}',other||'{"floor":1}'),0);
+ if has_function_privilege('authenticated','public.nw_room_layout_step(jsonb,jsonb)','EXECUTE') then raise exception 'Private layout guard exposed';end if;
+end $floorplan$;
+reset role;
 rollback;

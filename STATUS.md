@@ -1,10 +1,15 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## v0.47.0 — студенческая жизнь, спорт и культура (candidate)
+## v0.48.0 — планы жилья и управление комнатами (candidate)
+- [x] Canonical measured room rectangles with floors, non-overlap, explicit door/passage/stair connections, current access/title epoch, no generated geometry. Own-room interactive floorplan and pinned room actions, with missing measurements visibly unknown. Migration 033 extends private SQL fold and tests. No real construction or expenditure without played evidence.
+- [ ] CI, production migration, device and gameplay verification. Structural renovation projects and landlord authorization workflow remain open.
+
+## v0.47.0 — студенческая жизнь, спорт и культура
 - [x] Canonical community events, invitations/RSVP/attendance, distinct results and communicated reports. Capacity, recorded team membership, immutable schedule, confirmed scores and actor-specific partial match statistics. Integrated with communities/education, calendar, NPC opportunities, menu intents, release and cache version. No automatic attendance, payment or invented scores.
 - [x] Found and repaired old SQL whitelist blocking rooms/civic saves. Migration 032 extends actual owner RPC fold, private helpers, current memberships and office authority, immutable identity, room title revision, ballot tally, RSVP capacity, event outcomes and result reports. SQL rollback test exercises real nw_commit_scene. Knowledge boundary fixes: scores only if communicated; unreported cancellation preserves participant's known calendar.
-- [ ] Final CI, production migration, cloud verification and real gameplay. Season scheduling and official league-specific ranking rules remain open.
+- [x] PR #41 merged (835fa7d), Node CI 45663821339, SQL CI 45663821477 passed. Migration 032 applied to production; actual owner RPC rollback assertions passed and helper private. Live MCP community menu available with the same 23 scenes and pending choice.
+- [ ] Real gameplay verification. Season scheduling and official league-specific ranking rules remain open.
 
 ## v0.46.0 — общественные институты
 - [x] Seven canonical civic record types: recorded appointment/revocation, court case and handover, delivered notice, submission, decision, fixed-electorate motion, unique informed ballot. Existing institution/group/membership gate, immutable identities, separate decision before closure, verified quorum and vote outcome. No automatic sanctions or laws.

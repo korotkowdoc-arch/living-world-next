@@ -1,3 +1,4 @@
+import {ROOM_ACTIONS} from './core/room-layout.mjs';
 import {COMMUNITY_ACTIONS,communityTargets} from './core/community-life.mjs';
 import {CIVIC_ACTIONS,civicActionTargets} from './core/civic-life.mjs';
 import {VISUAL_KINDS,VISUAL_SUBJECTS,VISUAL_FREQUENCIES,visualSubjects,visualReferences,visualPrompt,visibleVisuals,parseVisualHash,visualUploadHash} from './core/visual-world.mjs';
@@ -351,6 +352,64 @@ function readableMaterials(section,overview,index,w,actor){
  if(section==='publishing')out.append(title('Рецензии'),renderMenuData(d.reviews),title('Авторские выплаты'),renderMenuData(d.royalties));
  return out;
 }
+function renderFloorplans(w,overview){
+ const out=node('div','menu-data'),homes=overview.market_home?.floorplans?.records||[],rooms=overview.market_home?.rooms?.records||[];
+ out.append(title('Планировка и комнаты'));
+ if(!homes.length){out.append(para('Подтверждённых комнат пока нет. Сначала осмотри жильё в истории.'));return out;}
+ const homeSelect=node('select','field'),floorSelect=node('select','field'),roomSelect=node('select','field'),action=node('select','field'),other=node('select','field'),detail=field('Что герой хочет изменить или уточнить?'),diagram=node('div','floorplan-view'),roomDetails=node('div','rule');
+ for(const [i,h] of homes.entries()){const o=node('option','',h.title);o.value=String(i);homeSelect.append(o);}
+ for(const [value,label] of Object.entries(ROOM_ACTIONS)){const o=node('option','',label);o.value=value;action.append(o);}
+ const svg=(tag,attrs={})=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));return n;};
+ const selectedHome=()=>homes[Number(homeSelect.value)]||homes[0];
+ const chosenRoom=()=>rooms.find(r=>r.id===roomSelect.value);
+ function drawRoom(){
+  const r=chosenRoom();roomDetails.replaceChildren();other.replaceChildren();
+  if(!r)return;
+  roomDetails.append(node('strong','',r.label),para('Назначение: '+r.purpose),para(r.description||''));
+  if(r.walls||r.flooring||r.lighting)roomDetails.append(para([r.walls&&'Стены: '+r.walls,r.flooring&&'Пол: '+r.flooring,r.lighting&&'Свет: '+r.lighting].filter(Boolean).join(' · ')));
+  if(r.furnishings?.total)roomDetails.append(para('Предметы: '+r.furnishings.records.map(x=>x.name||x.item_id).join(', ')));
+  for(const b of rooms.filter(x=>x.id!==r.id&&x.home_id===r.home_id&&x.home_kind===r.home_kind)){const o=node('option','',b.label);o.value=b.id;other.append(o);}
+  other.hidden=action.value!=='room_connect';
+ }
+ function drawPlan(){
+  const h=selectedHome(),f=h.floors.records.find(x=>String(x.floor)===floorSelect.value);diagram.replaceChildren();
+  diagram.append(para(h.measured_rooms+' из '+h.room_count+' комнат с подтверждёнными размерами.'));
+  if(f?.rooms.records.length){
+   const rs=f.rooms.records,minX=Math.min(...rs.map(x=>x.geometry.x_cm)),minY=Math.min(...rs.map(x=>x.geometry.y_cm)),maxX=Math.max(...rs.map(x=>x.geometry.x_cm+x.geometry.width_cm)),maxY=Math.max(...rs.map(x=>x.geometry.y_cm+x.geometry.height_cm)),pad=Math.max(20,(maxX-minX+maxY-minY)*0.025);
+   const map=svg('svg',{viewBox:[minX-pad,minY-pad,maxX-minX+2*pad,maxY-minY+2*pad].join(' '),role:'img','aria-label':'Подтверждённая планировка, этаж '+f.floor,class:'floorplan-svg'});
+   const centers=new Map(),labels=[];
+   for(const r of rs){
+    const g=r.geometry,cx=g.x_cm+g.width_cm/2,cy=g.y_cm+g.height_cm/2;centers.set(r.id,[cx,cy]);
+    const rect=svg('rect',{x:g.x_cm,y:g.y_cm,width:g.width_cm,height:g.height_cm,class:'floorplan-room'+(r.id===roomSelect.value?' selected':''),'vector-effect':'non-scaling-stroke',tabindex:0,role:'button','aria-label':r.label+' '+g.width_cm/100+' × '+g.height_cm/100+' м'});
+    const tip=svg('title');tip.textContent=r.label+' · '+g.width_cm/100+' × '+g.height_cm/100+' м';rect.append(tip);
+    const pick=()=>{if([...roomSelect.options].some(o=>o.value===r.id)){roomSelect.value=r.id;drawRoom();for(const x of map.querySelectorAll('rect'))x.classList.remove('selected');rect.classList.add('selected');}};
+    rect.addEventListener('click',pick);rect.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick();}});map.append(rect);
+    const size=Math.min(40,Math.max(4,Math.min(g.width_cm/Math.max(4,r.label.length*.65),g.height_cm/4)));
+    const label=svg('text',{x:cx,y:cy,'text-anchor':'middle','dominant-baseline':'central','font-size':size,class:'floorplan-label'});label.textContent=r.label;labels.push(label);
+   }
+   for(const l of h.connections.records){
+    const a=centers.get(l.room_id),b=centers.get(l.other_room_id);if(!a||!b)continue;
+    map.append(svg('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'floorplan-link'+(l.status==='closed'?' closed':''),'vector-effect':'non-scaling-stroke'}));
+   }
+   map.append(...labels);diagram.append(map,para('Линии показывают подтверждённые связи, не точное положение дверей. Масштаб — записанные сантиметры.'));
+   if(f.rooms.omitted)diagram.append(para('Ещё комнат на этаже: '+f.rooms.omitted));
+  }else diagram.append(para('Размеры и расположение не установлены. Схема не выдумывается.'));
+  if(h.unknown_rooms.total)diagram.append(para('Без измерений: '+h.unknown_rooms.records.map(r=>r.label).join(', ')+(h.unknown_rooms.omitted?' и ещё '+h.unknown_rooms.omitted:'')));
+  if(h.connections.total)diagram.append(para('Связи: '+h.connections.records.map(l=>l.from+' ↔ '+l.to+' ('+({doorway:'дверь',passage:'проход',stairs:'лестница'}[l.kind]||l.kind)+', '+(l.status==='closed'?'закрыто':'открыто')+')').join('; ')));
+ }
+ function drawHome(){
+  const h=selectedHome();floorSelect.replaceChildren();roomSelect.replaceChildren();
+  for(const f of h.floors.records){const o=node('option','',f.floor===0?'Уровень 0':'Этаж '+f.floor);o.value=String(f.floor);floorSelect.append(o);}
+  floorSelect.hidden=!h.floors.records.length;
+  for(const r of rooms.filter(x=>x.home_id===h.home_id&&x.home_kind===h.home_kind)){const o=node('option','',r.label);o.value=r.id;roomSelect.append(o);}
+  drawRoom();drawPlan();
+ }
+ homeSelect.addEventListener('change',drawHome);floorSelect.addEventListener('change',drawPlan);roomSelect.addEventListener('change',()=>{drawRoom();drawPlan();});action.addEventListener('change',drawRoom);
+ out.append(homeSelect,floorSelect,diagram,roomSelect,roomDetails,action,other,detail,button('Передать намерение в ChatGPT',()=>busy(async()=>{
+  const input={action:action.value,room_id:roomSelect.value,detail:detail.value.trim()||ROOM_ACTIONS[action.value],...(action.value==='room_connect'?{other_room_id:other.value}:{})};
+  menuActionIntent(input,overview);await copy('Мир '+w.title+' ('+w.id+'), герой '+overview.actor+'. Проверь текущий head и validate_game_menu_action: '+JSON.stringify(input)+'. Сыграй намерение, не считай результат уже выполненным.');
+ }),'btn secondary'));drawHome();return out;
+}
 function renderMenuData(value,depth=0,w=state.world){
  const out=node('div','menu-data');if(depth>5)return out;
  if(value==null){out.append(para('Не установлено'));return out;}
@@ -511,7 +570,7 @@ function renderGameMenu(){
   if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
    output.append(readableMaterials(section.id,overview,documentIndex(scenes,projection,{complete}),w,saved.actor));
    if(section.id==='news')output.append(title('Известия и подписки'),renderMenuData({knowledge:overview.world_depth.news,...overview.advanced.channels}));
-  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
+  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else output.append(renderMenuData(menuSection(overview,section.id).data));
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   output.append(personalActions(section,overview));
   if(['circles','education'].includes(section.id)&&overview.community?.memory_complete){
