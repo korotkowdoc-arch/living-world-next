@@ -1,9 +1,10 @@
 /** Deterministic initiative shortlist. NPC plans remain theirs; only the narrator
  * can commit what actually happened. No random behavior or real-time ticking. */
 const eligible=new Set(['intention','goal_opportunity','routine','habit_opportunity','employment','lesson','assignment','estate_sale','invitation','household_invitation','household_task','career_change','consequence_response','expense_share','care_plan','care_support','shared_goal','shared_goal_invitation','health_episode','assessment','home_condition','work_shift','production_order','enterprise','payment_schedule','appointment','journey','service_visit','service_provider','supply_buyer','supply_supplier','development','family_duty','obligation','project','activity','contest_participant','community_member','market_peer','employer_response','mentor_response','thread_participant','agreement_party','market_offer']);
-const blockers=new Set(['qualification_unconfirmed','recorded_obstacle','recorded_place_constraint','stock_insufficient','stock_unknown','insufficient_recorded_funds','enterprise_not_operating','offer_custody_unconfirmed','competing_schedule','travel_requires_story','funds_unknown','clock_unknown','place_access_unknown','ambiguous_place']);
+const blockers=new Set(['qualification_unconfirmed','recorded_obstacle','recorded_place_constraint','stock_insufficient','stock_unknown','insufficient_recorded_funds','enterprise_not_operating','offer_custody_unconfirmed','competing_schedule','travel_requires_story','funds_unknown','clock_unknown','place_access_unknown','ambiguous_place','candidate_qualification_requires_review','agreement_terms_require_review']);
 const mandatory=c=>c.timing==='reached_requires_story';
-const optionalKinds=new Set(['community_member','market_peer','habit_opportunity','mentor_response','thread_participant','contest_participant','goal_opportunity']);
+const optionalKinds=new Set(['community_member','market_peer','habit_opportunity','mentor_response','thread_participant','contest_participant','goal_opportunity','enterprise']);
+const optional=c=>optionalKinds.has(c.kind)||c.kind==='employment'&&c.status==='active'||c.kind==='employer_response'&&c.status==='active';
 /** Derive actor-specific opportunities from the latest canonical projection.
  * No new records, automatic rivalry, membership, transaction or private knowledge.
  * One pass over records plus bounded per-group context, not pairwise expansion. */
@@ -72,7 +73,7 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[]
   const identity=JSON.stringify([actor,c.kind,c.key]);if(seen.has(identity))continue;seen.add(identity);
   const checks=(c.checks||[]).filter(x=>blockers.has(x.kind));
   const stale=c.source?.scene_id&&positions.has(c.source.scene_id)?scenes.length-1-positions.get(c.source.scene_id):null;
-  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,player_involved:c.actors.some(x=>protectedActors.has(x)),reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length||c.checks_omitted?3:optionalKinds.has(c.kind)?2:1,scenes_since_update:stale,record_key:c.record_key??null,context:c.record_key?Object.fromEntries(['resource','participants','learner','employee','other_party','group_id','group_name','role','purpose','group_source','institution_source','business_kind','peer_count','peers','guidance'].filter(k=>c[k]!=null).map(k=>[k,c[k]])):null,certainty:'candidate_only_not_performed'};
+  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,player_involved:c.actors.some(x=>protectedActors.has(x))||[c.learner,c.employee,c.other_party,...(c.participants||[])].some(x=>protectedActors.has(x)),reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length||c.checks_omitted?3:optional(c)?2:1,scenes_since_update:stale,record_key:c.record_key??null,context:c.record_key||c.kind==='habit_opportunity'?Object.fromEntries(['frequency','resource','participants','learner','employee','other_party','group_id','group_name','role','purpose','group_source','institution_source','business_kind','peer_count','peers','guidance'].filter(k=>c[k]!=null).map(k=>[k,c[k]])):null,certainty:'candidate_only_not_performed'};
   if(!byActor.has(actor))byActor.set(actor,[]);
   byActor.get(actor).push(row);
  }
@@ -83,7 +84,7 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[]
  // One per character per round prevents the same NPC monopolizing the world.
  // Urgent recorded duties take precedence over optional activity. Rotate actors within each tier.
  for(const tier of [0,1,2,3]){
-  const queues=groups.map(xs=>xs.filter(x=>x.priority===tier));
+  const queues=groups.map(xs=>xs.filter(x=>x.priority===tier)).filter(xs=>xs.length).sort((a,b)=>compare(a[0],b[0])||a[0].actor.localeCompare(b[0].actor));
   for(let i=0;result.length<limit&&queues.some(xs=>xs.length>i);i++)for(const xs of queues){if(xs[i])result.push(xs[i]);if(result.length>=limit)break;}
  }
  return {initiatives:result,omitted:Math.max(0,total-result.length),budget:limit,policy:'Narrator-only candidates grounded in each NPC own goal, schedule or responsibility; blocked actions require resolution. May happen independently of player, but do not act for player, manufacture consent, invent resources or claim a candidate already happened.'};
