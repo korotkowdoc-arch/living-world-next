@@ -2,7 +2,7 @@
 
 Новый проект интерактивных миров для iPhone. Старый `korotkowdoc-arch/living-world` остаётся нетронутым.
 
-**Актуальная версия исходников: v0.22.0 (candidate).**
+**Актуальная версия исходников: v0.37.1 (candidate).**
 
 **Идея:** создание мира за одно описание, настройка условиями на обычном языке, истории в ChatGPT, независимые персонажи, реальная причинность, отношения без автоматического примирения и сохранение по действующей ветке.
 
@@ -227,3 +227,7 @@ prepare_story_turn объединяет активную память, расп�
 ## v0.37 — durable projection snapshots
 
 Private Supabase snapshots are derived by the `nw-projection-snapshot` Edge Function from canonical ancestry after validating the caller with Auth. Only service-role RPCs can read/write the snapshot store. The Worker validates the boundary against its own ancestry and falls back to full replay on errors. Projection metrics report replayed/reused scenes; this does not eliminate full ancestry reads. Deploy the Edge Function with the same pinned engine release and migration 029. Never deploy an unpinned external source or expose the service key to the browser. If the version differs, the Worker ignores the snapshot.
+
+## v0.37.1 — независимые инициативы NPC
+
+Каждый участник спора, активный член профессионального сообщества, наставник, работодатель и контрагент получают отдельные кандидаты действия. Работающие предприятия одного вида в одном записанном месте могут адаптироваться, сотрудничать или конкурировать, но сходство не доказывает вражду или известность цен. Индивидуальные привычки учитываются без автоматического выполнения. Срочные и доступные дела получают приоритет; инициативы остаются предложениями рассказчику. Схема событий и версия replay не меняются. Новых миграций нет.
