@@ -1,3 +1,4 @@
+import {magicalAuthorSeeds} from '../public/core/magic-seeds.mjs';
 import {MAGIC_GUIDANCE} from '../public/core/magic-world.mjs';
 import {ADVANCED_GUIDANCE,CAPITAL_GUIDANCE} from '../public/core/advanced-world.mjs';
 import {loadDurableCheckpoint,MIN_SNAPSHOT_SCENES} from '../public/core/durable-projection.mjs';
@@ -245,7 +246,7 @@ async function callTool(name,args,env,token){
    const playerActor=ctx.player_choice?.pending?.actor??(controlledActors.length===1?controlledActors[0]:null);
    const menu=gameMenuContext({world,directives:rules,context:ctx});
    if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete});
-   return {...ctx,game_menu:menu,next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints},memory:compactMemory,memory_is_sample:true,
+   return {...ctx,magic_worldbuilding:magicalAuthorSeeds(world,history.scenes),game_menu:menu,next_turn:{...ctx.next_turn,world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version,auto_save:finalWorld.auto_save,historical_hints:historicalHints},memory:compactMemory,memory_is_sample:true,
     memory_retrieval_tools:['get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn','validate_player_choice'],
     narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:finalWorld.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,projection_cache:history.projection_cache,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
