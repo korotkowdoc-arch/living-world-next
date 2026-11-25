@@ -37,7 +37,7 @@ export function worldDepthIndex(scenes=[],p={}, {complete=true}={}){
   for(const f of person.state_fields||[])if(knownSource(f)&&['location','residence'].includes(f.field)&&f.value)place(actor,f.value,f.source,f.field);
  }
  for(const r of p.knowledge||[])if(knownSource(r)&&r.actor){
-  const row={title:clip(r.fact),status:r.status??'recorded',channel:clip(r.channel),topic_id:r.topic_id??null,informant:clip(r.informant),source:r.source};
+  const row={title:['forgotten','unknown'].includes(r.status)?null:clip(r.fact),status:r.status??'recorded',channel:clip(r.channel),topic_id:r.topic_id??null,informant:clip(r.informant),source:r.source};
   get(r.actor).beliefs.push(row);
   if(!['forgotten','unknown'].includes(row.status)&&row.title){
    if(!newsByActor.has(r.actor))newsByActor.set(r.actor,[]);

@@ -8,7 +8,7 @@ const closed=new Set(['resolved','done','completed','fulfilled','cancelled','can
 const state=r=>r.knowledge_version===1?r.status:'legacy_recorded_knowledge';
 const src=r=>r?.source??null;
 function bounded(rows,limit,maxChars){
- const records=[];for(const row of rows){if(records.length>=limit)break;records.push(row);if(JSON.stringify(records).length>maxChars)records.pop();}
+ const records=[];for(const row of rows){if(records.length>=limit)break;records.push(row);if(JSON.stringify(records).length>maxChars){records.pop();if(row.history?.records.length){const compact={...row,history:{...row.history,records:[],omitted:row.history.total}};records.push(compact);if(JSON.stringify(records).length>maxChars)records.pop();}}}
  return {records,total:rows.length,omitted:rows.length-records.length};
 }
 export function individualMemory(projection={},scenes=[],{actors=[],queries=[],complete=true,limit=8,maxChars=16000}={}){
@@ -32,7 +32,8 @@ export function individualMemory(projection={},scenes=[],{actors=[],queries=[],c
    if(!raw?.id||rejectedEvents.has(JSON.stringify([s.id,raw.id])))continue;
    const e=normalizeLegacyKnowledge(raw),source={scene_id:s.id,event_id:e.id,world_time:s.world_time??null};
    if(e.type==='knowledge'&&focus.has(e.actor)&&current.has(knowledgeKey(e))){
-    const id=knowledgeKey(e),h=histories.get(id)||{total:0,records:[]};h.total++;
+    const id=knowledgeKey(e),h=histories.get(id)||{total:0,records:[]};if(current.get(id)?.source?.scene_id===s.id&&current.get(id)?.source?.event_id===e.id)continue;
+    h.total++;
     h.records.push({status:state(e),content:unavailable.has(state(e))?null:text(e.fact),channel:text(e.channel,160),informant:e.informant??null,source});
     if(h.records.length>4)h.records.shift();histories.set(id,h);
    }
@@ -52,7 +53,7 @@ export function individualMemory(projection={},scenes=[],{actors=[],queries=[],c
    const status=state(k),h=histories.get(knowledgeKey(k)),usable=!unavailable.has(status);
    // Do not put forgotten content back into the actor's actionable perspective.
    return {topic_id:k.topic_id??null,status,content:usable?text(k.fact):null,channel:text(k.channel,160),informant:k.informant??null,source:src(k),
-    history:{total:h?.total??0,records:usable?(h?.records||[]).slice(0,-1).reverse().slice(0,3):[],omitted:Math.max(0,(h?.total??0)-(usable?Math.min(3,Math.max(0,(h?.records.length??0)-1)):0)),policy:usable?'Earlier versions are history, not current knowledge.':'Earlier content withheld here; director can inspect sources.'}};
+    history:{total:h?.total??0,records:usable?(h?.records||[]).slice().reverse().slice(0,3):[],omitted:Math.max(0,(h?.total??0)-(usable?Math.min(3,(h?.records.length??0)):0)),policy:usable?'Earlier versions are history, not current knowledge.':'Earlier content withheld here; director can inspect sources.'}};
   });
   const relations=(projection.relationships||[]).filter(r=>r.a===actor).sort(latest).map(r=>({other:r.b,stance:r.stance??null,stance_source:r.stance_source??null,fields:(r.relationship_fields||[]).map(f=>({field:f.field,value:f.value,source:f.source})),source:src(r)}));
   const promises=(projection.obligations||[]).filter(r=>r.actor===actor&&!closed.has(r.status)).sort(latest).map(r=>({id:r.commitment_id,status:r.status??'unknown',description:text(r.description??r.evidence),due_at:r.due_at??r.deadline??r.due??null,source:src(r)}));

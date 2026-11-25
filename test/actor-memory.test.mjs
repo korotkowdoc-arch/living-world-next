@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../worker/mcp.mjs';
-import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
+import {actorMemoryEvidence,verifiedActorHistory} from '../public/core/actor-memory.mjs';
 
 const owner='11111111-1111-4111-8111-111111111111';
 const wid='22222222-2222-4222-8222-222222222222';
@@ -29,9 +29,9 @@ test('authenticated MCP reads archived mentions and structured NPC events on one
   if(p.pathname==='/auth/v1/user')return Response.json({id:owner});
   if(p.pathname==='/rest/v1/nw_worlds'){readWorlds++;return Response.json([{id:wid,active_branch_id:bid}]);}
   if(p.pathname==='/rest/v1/nw_branches'){readBranches++;return Response.json([{id:bid,head_scene_id:sid}]);}
-  if(p.pathname==='/rest/v1/rpc/nw_actor_history')return Response.json([{scene_id:sid,event:{type:'relationship',evidence:'Малфой покачал головой.'}}]);
+  if(p.pathname==='/rest/v1/rpc/nw_actor_history')return Response.json([{scene_id:sid,event:{id:'rel',type:'relationship',a:'Малфой',b:'Гарри',stance:'hostile',evidence:'Малфой покачал головой.'}}]);
   if(p.pathname==='/rest/v1/rpc/nw_search_history')return Response.json([{scene_id:sid,snippet:'Малфой не хотел даже говорить с Гарри.'}]);
-  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:sid,parent_scene_id:null,world_time:null,events:[{id:'note',type:'world',scene_memory_version:1,memory_kind:'claim',domain:'relationships',actors:['Малфой'],actor:'Малфой',summary:'Он заявил, что не хочет разговаривать.',evidence:'Малфой не хотел даже говорить с Гарри.'}]}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([{id:sid,parent_scene_id:null,world_time:null,events:[{id:'rel',type:'relationship',a:'Малфой',b:'Гарри',stance:'hostile',evidence:'Малфой покачал головой.'},{id:'note',type:'world',scene_memory_version:1,memory_kind:'claim',domain:'relationships',actors:['Малфой'],actor:'Малфой',summary:'Он заявил, что не хочет разговаривать.',evidence:'Малфой не хотел даже говорить с Гарри.'}]}]);
   return Response.json({error:'unexpected '+p.pathname},{status:404});
  };
  try{
@@ -64,4 +64,10 @@ test('MCP actor recall refuses mismatched branch or changed ancestry',async()=>{
   assert.equal(res.status,200);
   assert.equal((await res.json()).result.isError,true);
  }finally{globalThis.fetch=old;}
+});
+
+test('actor recall does not certify rejected, missing or case-mismatched source annotations',()=>{
+ const a={id:'a',type:'character',name:'Hero',evidence:'A'},b={id:'b',type:'character',name:'Hero',evidence:'B'},c={id:'c',type:'character',name:'hero',evidence:'C'};
+ const rows=[a,b,c,{id:'missing'}].map(event=>({scene_id:'s',event}));const v=verifiedActorHistory(rows,[{id:'s',events:[a,b,c]}],{validation_warnings:[{scene_id:'s',event_id:'b'}]},'Hero');
+ assert.deepEqual(v.confirmed.map(x=>x.event.id),['a']);assert.deepEqual(v.unverified.map(x=>x.reason),['rejected_by_replay','actor_identity_requires_review','source_not_in_loaded_ancestry']);
 });

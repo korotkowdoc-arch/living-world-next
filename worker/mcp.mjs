@@ -44,7 +44,7 @@ import {characterStateView} from '../public/core/character-state.mjs';
 import {sceneFocusInput,focusedSceneContext,literalFocusHits} from '../public/core/scene-context.mjs';
 import {promptForNarrator} from '../public/core/world.mjs';
 import {limitedNarratorMemory,boundedMcpScene} from '../public/core/narration-budget.mjs';
-import {actorMemoryEvidence} from '../public/core/actor-memory.mjs';
+import {actorMemoryEvidence,verifiedActorHistory} from '../public/core/actor-memory.mjs';
 import {classifyDirective,extractLocks} from '../public/core/directives.mjs';
 
 import {sceneReaderUrl} from '../public/core/scene-links.mjs';
@@ -455,7 +455,8 @@ async function callTool(name,args,env,token){
    const after=await branch(env,token,afterWorld);
    if(afterWorld.active_branch_id!==world.active_branch_id||after.head_scene_id!==before.head_scene_id)
     throw Error('Active branch changed while collecting actor memory; retry');
-   return {...actorMemoryEvidence({actor,confirmedEvents:confirmed.filter(x=>!Object.hasOwn(x.event||{},'scene_memory_version')),textMentions:mentions,headSceneId:before.head_scene_id}),
+   const verified=verifiedActorHistory(confirmed,memory.scenes,memory.projection,actor);
+   return {...actorMemoryEvidence({actor,confirmedEvents:verified.confirmed,textMentions:mentions,headSceneId:before.head_scene_id}),unverified_event_references:verified.unverified,history_complete:memory.complete,
     individual_memory:individualMemory(memory.projection,memory.scenes,{actors:[actor],complete:memory.complete,limit:Math.min(limit,12)}),scene_memory_recall:sceneMemoryRecall(memory.scenes,memory.projection,{actors:[actor],complete:memory.complete}),
     next_event_offset:eventOffset+confirmed.length,next_mention_offset:mentionOffset+mentions.length,
     more_confirmed_may_exist:confirmed.length===limit,more_mentions_may_exist:mentions.length===limit,

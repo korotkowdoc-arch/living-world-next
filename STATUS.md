@@ -2,7 +2,7 @@
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
 ## v0.57.0 — индивидуальная память персонажей
-- [x] Candidate: per-holder current knowledge with accepted historical versions, exact topic ranking, unavailable content withheld from actionable perspective; outgoing attitudes, open commitments and accepted encounters; director-only differences in topic perspectives. Integrate turn, focused context and actor recall. Draft review flags topic duplicates and uncertain informant provenance. Incoming attitudes separated from own character context. Knowledge listing orders by latest source.
+- [x] Candidate: per-holder current knowledge with accepted historical versions, exact topic ranking, unavailable content withheld from actionable perspective; outgoing attitudes, open commitments and accepted encounters; director-only differences in topic perspectives. Integrate turn, focused context and actor recall. Draft review flags topic duplicates and uncertain informant provenance. Incoming attitudes separated from own character context. Knowledge listing orders by latest source. Actor recall verifies annotations against loaded ancestry and rejects invalid or case-mismatched actor identity; forgotten content withheld in psychology too. Correct historical counts under partial ancestry and compact history before dropping current knowledge.
 - [ ] CI, merge, deployment and actual play verification. No inferred knowledge or historical state rewrite; semantic review remains narrator responsibility.
 
 ## v0.56.0 — причинно-следственная память

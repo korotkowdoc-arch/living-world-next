@@ -12,7 +12,7 @@ test('holder-specific knowledge evolves without propagation, forgotten content i
  const c=s('c',[k('k4','B','forgotten','Letter delivered')]);
  const p=replay([a,b,c]),m=individualMemory(p,[a,b,c],{actors:['A','B','C']});
  const A=m.actors.find(x=>x.actor==='A').knowledge.records[0],B=m.actors.find(x=>x.actor==='B').knowledge.records[0];
- assert.equal(A.status,'knows');assert.equal(A.informant,'B');assert.equal(A.history.records[0].content,'Letter stolen');assert.equal(A.history.records[0].source.scene_id,'a');
+ assert.equal(A.status,'knows');assert.equal(A.informant,'B');assert.equal(A.history.records[0].content,'Letter stolen');assert.equal(A.history.records[0].source.scene_id,'a');assert.equal(A.history.total,1);assert.equal(A.history.omitted,0);
  assert.equal(B.content,null);assert.deepEqual(B.history.records,[]);assert.equal(m.actors.find(x=>x.actor==='C').knowledge.total,0);
  assert.equal(m.director_only_topic_differences.total,1);
 });
@@ -29,4 +29,8 @@ test('exact topic wins over recent topics; review warns without mutation or inve
  const r=individualMemory(replay([a,b]),[a,b],{actors:['A'],queries:['letter'],limit:1});assert.equal(r.actors[0].knowledge.records[0].topic_id,'letter');
  const review=individualSaveReview(p,[k('dup','A','knows','Letter stolen',{topic_id:'duplicate',informant:'C'})]);
  assert.equal(review.warnings.length,2);assert.equal(p.knowledge.length,1);assert.equal(review.changes[0].previous_status,null);
+});
+
+test('partial loaded history does not accidentally discard its last earlier observation',()=>{
+ const a=s('a',[k('k1','A','believes','Old belief')]);const b=s('b',[k('k2','A','knows','New belief')]);const p=replay([a,b]);const r=individualMemory(p,[a],{actors:['A'],complete:false});assert.equal(r.actors[0].knowledge.records[0].history.records[0].content,'Old belief');assert.equal(r.history_complete,false);
 });
