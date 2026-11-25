@@ -152,9 +152,9 @@ revoke all on function public.nw_player_life_step(jsonb,jsonb) from public,anon,
 
 create or replace function public.nw_assert_player_life_append(p_world uuid,p_head uuid,p_events jsonb)
 returns void language plpgsql security invoker set search_path='' as $life$
-declare u uuid:=auth.uid(); st jsonb:='{"life":{},"jobs":{},"refs":{},"economy":{"balances":{},"items":{}}}'; r record; e jsonb; seen integer:=0; old jsonb; t jsonb; used text[]:=array[]::text[]; transfers jsonb:='{}'; locations jsonb:='{}'; ref text; stock_ops jsonb:='{}'; used_stock text[]:=array[]::text[]; recipe jsonb; signature text; snapshot jsonb; snapshot_count integer:=0; total_count integer:=0; root_checked boolean:=false; event_position bigint; cancellation_kind text; cancellation_id text;
+declare u uuid:=auth.uid(); st jsonb:='{"life":{},"jobs":{},"refs":{},"economy":{"balances":{},"items":{}}}'; r record; e jsonb; seen integer:=0; old jsonb; t jsonb; used text[]:=array[]::text[]; transfers jsonb:='{}'; locations jsonb:='{}'; ref text; stock_ops jsonb:='{}'; used_stock text[]:=array[]::text[]; recipe jsonb; signature text; snapshot jsonb; snapshot_count integer:=0; total_count integer:=0; root_checked boolean:=false; event_position bigint; cancellation_kind text; cancellation_id text; linked jsonb; program jsonb; module jsonb;
 begin
- if not exists(select 1 from jsonb_array_elements(p_events) x where x?'player_life_version' or x->>'key' like 'player-life:%') then return;end if;
+ if not exists(select 1 from jsonb_array_elements(p_events) x where x?'player_life_version' or x->>'key' like 'player-life:%' or x->>'dynamics_kind'='economic_agreement') then return;end if;
  if u is null or not exists(select 1 from public.nw_worlds where id=p_world and owner_id=u) then raise exception 'World not found';end if;
  signature:=public.nw_life_checkpoint_signature();
  -- Stop walking only at a compatible snapshot on the actual parent chain.
@@ -242,6 +242,22 @@ begin
    ref:=e->>'stock_event_id';t:=stock_ops->ref;recipe:=st->'life'->('player-life:service_recipe:'||(e->>'recipe_id'));
    if ref is null or ref=any(used_stock) or t is null or recipe is null or t->'actor' is distinct from e->'provider' or t->'stock_lines' is distinct from recipe->'stock_lines' then raise exception 'Service requires its own exact stock consumption';end if;
    used_stock:=array_append(used_stock,ref);
+  end if;
+  if e->'player_life_version'='1'::jsonb and e->>'life_kind'='enrollment' and e->>'status' in ('completed','withdrawn') then
+   select value into linked from jsonb_each(st->'life') where value->>'life_kind'='program_enrollment' and value->'enrollment_id'=e->'record_id' and value->>'status'='active';
+   if linked is not null then
+    if e->>'status'='completed' then
+     program:=st->'life'->('player-life:study_program:'||(linked->>'program_id'));
+     for module in select value from jsonb_array_elements(program->'modules') loop
+      if not exists(select 1 from jsonb_each(st->'life') r where r.value->>'life_kind'='module_result' and r.value->'program_enrollment_id'=linked->'record_id' and r.value->'module_id'=module->'id' and r.value->>'status'='passed') then raise exception 'Cannot complete enrollment before linked modules pass';end if;
+     end loop;
+    end if;
+    if not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx>event_position and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='program_enrollment' and x.value->'key'=linked->'key' and x.value->'actor'=linked->'actor' and x.value->'status'=e->'status') then raise exception 'Close linked program in same scene';end if;
+   end if;
+  end if;
+  if e->'dynamics_version'='1'::jsonb and e->>'dynamics_kind'='economic_agreement' then
+   select value into linked from jsonb_each(st->'life') where value->>'life_kind'='supply_contract' and value->'agreement_id'=e->'record_id';
+   if linked is not null and linked->'status' is distinct from e->'status' and not exists(select 1 from jsonb_array_elements(p_events) with ordinality x(value,idx) where x.idx>event_position and x.value->'player_life_version'='1'::jsonb and x.value->>'life_kind'='supply_contract' and x.value->'key'=linked->'key' and x.value->'actor'=linked->'actor' and x.value->'status'=e->'status') then raise exception 'Change linked supply contract in same scene';end if;
   end if;
   st:=public.nw_player_life_step(st,e);
  end loop;
