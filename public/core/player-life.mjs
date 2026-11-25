@@ -1,3 +1,4 @@
+import {PROPERTY_KINDS,propertyRecordError,propertyTransition} from './property-lessons.mjs';
 import {SOCIAL_LIFE_KINDS,socialLifeError,socialLifeTransition} from './social-dashboard.mjs';
 import {HOME_KINDS,homeRecordError,homeTransition} from './home-systems.mjs';
 import {WORK_KINDS,workRecordError,workTransition,visitRecipeError} from './work-systems.mjs';
@@ -17,7 +18,8 @@ const owns=(items,item,actor)=>items.get(item)?.custody_status==='held'&&items.g
 export function playerLifeError(e){
  const reserved=typeof e?.key==='string'&&e.key.startsWith('player-life:');
  if(e?.player_life_version===undefined)return reserved?'Ключ жизни требует player_life_version=1.':null;
- if(e.type!=='world'||e.player_life_version!==1||!['need','garment','outfit','letter','preset','appointment','impression',...TRAVEL_KINDS,...WORK_KINDS,...HOME_KINDS,...SOCIAL_LIFE_KINDS].includes(e.life_kind)||!id(e.record_id)||e.key!=='player-life:'+e.life_kind+':'+e.record_id)return 'Invalid player life record identity';
+ if(e.type!=='world'||e.player_life_version!==1||!['need','garment','outfit','letter','preset','appointment','impression',...TRAVEL_KINDS,...WORK_KINDS,...HOME_KINDS,...SOCIAL_LIFE_KINDS,...PROPERTY_KINDS].includes(e.life_kind)||!id(e.record_id)||e.key!=='player-life:'+e.life_kind+':'+e.record_id)return 'Invalid player life record identity';
+ if(PROPERTY_KINDS.includes(e.life_kind))return propertyRecordError(e);
  if(SOCIAL_LIFE_KINDS.includes(e.life_kind))return socialLifeError(e);
  if(HOME_KINDS.includes(e.life_kind))return homeRecordError(e);
  if(WORK_KINDS.includes(e.life_kind))return workRecordError(e);
@@ -45,6 +47,7 @@ export function playerLifeTransitionError(records,items,e){
  const err=playerLifeError(e);if(err)return err;
  const old=records.get(e.key),kind=e.life_kind;
  if(old&&(old.player_life_version!==1||old.life_kind!==kind||old.record_id!==e.record_id))return 'Changed player life identity';
+ if(PROPERTY_KINDS.includes(kind))return propertyTransition(records,e);
  if(SOCIAL_LIFE_KINDS.includes(kind))return socialLifeTransition(records,e);
  if(HOME_KINDS.includes(kind))return homeTransition(records,e);
  if(WORK_KINDS.includes(kind))return workTransition(records,e);
