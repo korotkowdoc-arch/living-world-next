@@ -366,12 +366,12 @@ function letterReaderView(overview,send){
   area.replaceChildren(button('← К письмам',list,'btn secondary'),node('h3','',l.subject||'Непрочитанное письмо'),node('p','muted',mode==='incoming'?'От: '+l.from:'Кому: '+l.to));
   if(l.message!=null){const body=node('article','archive-text',l.message);body.style.whiteSpace='pre-wrap';body.style.lineHeight='1.75';body.style.overflowWrap='anywhere';area.append(body);}
   else area.append(para('Полный текст откроется после того, как герой прочитает письмо в сцене.'),button('Прочитать письмо',()=>send({action:'read_letter',letter_id:l.id,detail:'Прочитать письмо от '+l.from})));
-  if(mode==='incoming'&&l.status==='read'){const reply=field('Твой ответ');reply.rows=7;area.append(reply,button('Передать ответ в историю',()=>send({action:'send_letter',letter_id:l.id,detail:'Ответить '+l.from+' на письмо «'+l.subject+'»: '+reply.value}),'btn secondary'));}
+  if(mode==='incoming'&&l.status==='read'){const reply=field('Твой ответ');reply.rows=7;area.append(reply,button('Передать ответ в историю',()=>send({action:'send_letter',letter_id:l.id,letter_body:reply.value,letter_recipient:l.from,letter_subject:('Re: '+l.subject).slice(0,200),detail:'Ответить '+l.from+' на письмо'}),'btn secondary'));}
  }
  function list(){area.replaceChildren();for(const l of lists[mode].records){const tile=node('article','card');tile.append(node('strong','',mode==='incoming'?l.from:l.to),para(l.subject||'Непрочитанное письмо'),node('p','muted',l.status==='delivered'?'Новое':l.status==='read'?'Прочитано':l.status),button('Открыть',()=>open(l),'btn secondary'));area.append(tile);}if(!lists[mode].records.length)area.append(para('Писем пока нет.'));}
  nav.append(button('Входящие',()=>{mode='incoming';list();},'btn secondary'),button('Исходящие',()=>{mode='outgoing';list();},'btn secondary'));
  const to=field('Получатель'),subject=field('Тема'),message=field('Полный текст письма');message.rows=7;
- out.append(nav,area,node('h3','','Написать письмо'),to,subject,message,button('Передать письмо в историю',()=>send({action:'send_letter',detail:'Получатель: '+to.value+'\nТема: '+subject.value+'\nТекст:\n'+message.value}),'btn secondary'));list();return out;
+ out.append(nav,area,node('h3','','Написать письмо'),to,subject,message,button('Передать письмо в историю',()=>send({action:'send_letter',letter_body:message.value,letter_recipient:to.value,letter_subject:subject.value,detail:'Отправить письмо'}),'btn secondary'));list();return out;
 }
 
 function renderGameMenu(){
