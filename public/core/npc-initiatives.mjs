@@ -1,6 +1,6 @@
 /** Deterministic initiative shortlist. NPC plans remain theirs; only the narrator
  * can commit what actually happened. No random behavior or real-time ticking. */
-const eligible=new Set(['intention','goal_opportunity','routine','habit_opportunity','employment','lesson','assignment','estate_sale','invitation','household_invitation','household_task','career_change','consequence_response','expense_share','care_plan','care_support','health_episode','assessment','home_condition','work_shift','production_order','enterprise','payment_schedule','appointment','journey','service_visit','service_provider','supply_buyer','supply_supplier','development','family_duty','obligation','project','activity','contest']);
+const eligible=new Set(['intention','goal_opportunity','routine','habit_opportunity','employment','lesson','assignment','estate_sale','invitation','household_invitation','household_task','career_change','consequence_response','expense_share','care_plan','care_support','shared_goal','shared_goal_invitation','health_episode','assessment','home_condition','work_shift','production_order','enterprise','payment_schedule','appointment','journey','service_visit','service_provider','supply_buyer','supply_supplier','development','family_duty','obligation','project','activity','contest']);
 const blockers=new Set(['qualification_unconfirmed','recorded_obstacle','recorded_place_constraint','stock_insufficient','stock_unknown','insufficient_recorded_funds','enterprise_not_operating','offer_custody_unconfirmed','competing_schedule','travel_requires_story','funds_unknown','clock_unknown','place_access_unknown','ambiguous_place']);
 const mandatory=c=>c.timing==='reached_requires_story';
 export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[],settings={},scenes=[],complete=true,elapsed=null}={}){
@@ -14,7 +14,7 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[]
  const timeBonus=Number.isFinite(elapsed)&&elapsed>=1440?2:Number.isFinite(elapsed)&&elapsed>=480?1:0;
  const limit=Math.min(10,base+density+timeBonus);
  for(const c of candidates){
-  if(!eligible.has(c.kind)||c.status==='paused'||c.status==='suspended'||c.timing==='future'&&!['appointment','development','supply_buyer','supply_supplier','consequence_response','expense_share','care_plan','care_support'].includes(c.kind))continue;
+  if(!eligible.has(c.kind)||c.status==='paused'||c.status==='suspended'||c.timing==='future'&&!['appointment','development','supply_buyer','supply_supplier','consequence_response','expense_share','care_plan','care_support','shared_goal'].includes(c.kind))continue;
   // The first participant is the recorded owner of personal plans and obligations.
   // Never reinterpret a counterparty as the owner of the player's plan.
   const actor=c.actors?.[0];

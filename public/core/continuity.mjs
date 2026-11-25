@@ -1,3 +1,4 @@
+import {familyGoalSceneError,familyBirthDateError} from './family-goals.mjs';
 import {expenseCareSceneError,expenseCareReplayError} from './expense-care.mjs';
 import {dutyCrossError} from './duty-career.mjs';
 import {employmentGate,householdSceneError,householdReplayError} from './households-careers.mjs';
@@ -31,7 +32,7 @@ const RECONCILED=new Set(['friends','reconciled','peace','close_friends','romant
 const asText=(v)=>typeof v==='string'?v.trim():'';
 
 /** Validate a proposed scene BEFORE committing it, without pretending this proves literary quality. */
-export function validateScene({body,events=[],directives=[],evidencePrevalidated=false}) {
+export function validateScene({body,events=[],directives=[],evidencePrevalidated=false,worldTime=undefined}) {
   const errors=[];
   if(!evidencePrevalidated&&(typeof body!=='string'||body.trim().length<10))errors.push('Текст сцены слишком короткий.');
   if(typeof body==='string'&&body.length>200000)errors.push('Сцена длиннее 200 000 символов.');
@@ -47,6 +48,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
     const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
+    const familyGoalFailure=familyGoalSceneError(event,events,i,worldTime);if(familyGoalFailure)errors.push(prefix+': '+familyGoalFailure);
     const expenseCareFailure=expenseCareSceneError(event,events,i,paymentTransfers);if(expenseCareFailure)errors.push(prefix+': '+expenseCareFailure);
     const householdError=householdSceneError(event,events,i,paymentTransfers);if(householdError)errors.push(prefix+': '+householdError);
     const supplyError=supplySceneError(event,events,i,paymentTransfers);if(supplyError)errors.push(prefix+': '+supplyError);
@@ -136,7 +138,7 @@ function runReplay(scenes,{evidencePrevalidated=false,checkpoint=null,capture=fa
     const scene=scenes[sceneIndex];
     const events=Array.isArray(scene.events)?scene.events:[];
     // Replay checks the whole saved package once; current user rules NEVER rewrite past facts.
-    const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated});
+    const result=validateScene({body:scene.body,events,directives:[],evidencePrevalidated,worldTime:scene.world_time??null});
     if(!result.ok){failures.push({scene_id:scene.id,errors:result.errors});continue;}
     if(awaiting&&!(events[0]?.dynamics_kind==='player_choice'&&events[0].status==='answered'&&events[0].key===awaiting.key&&!dynamicsTransitionError(worldFacts,events[0]))){failures.push({scene_id:scene.id,errors:['Продолжение требует ответа на текущий выбор героя.']});continue;}
     const acceptedMoney=new Set(),acceptedLocations=new Map(),acceptedStock=new Map();
@@ -145,7 +147,7 @@ function runReplay(scenes,{evidencePrevalidated=false,checkpoint=null,capture=fa
       const from={scene_id:scene.id,event_id:event.id,world_time:scene.world_time??null};
       const value={...event,source:from};
       switch(event.type){
-        case 'character': if(asText(event.name)){const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));if(typeof event.state_patch?.location==='string')acceptedLocations.set(name,event.state_patch.location);else if(Object.hasOwn(event.state_patch||{},'location'))acceptedLocations.delete(name);}break;
+        case 'character': if(asText(event.name)){const err=familyBirthDateError(worldFacts,event);if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;break;}const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));if(typeof event.state_patch?.location==='string')acceptedLocations.set(name,event.state_patch.location);else if(Object.hasOwn(event.state_patch||{},'location'))acceptedLocations.delete(name);}break;
         case 'relationship': {const key=relationshipKey(event);relationships.set(key,applyRelationship(relationships.get(key),event,from));break;}
         case 'knowledge':{
           const key=knowledgeKey(event);
@@ -260,7 +262,7 @@ export function validateEconomyAppend(scenes,events,body){
  * SQL still protects expected head; direct RPC and revision integration are separate.
  */
 export function needsStatePreflight(events=[]){
- return events.some(e=>e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
+ return events.some(e=>(e?.type==='character'&&Object.hasOwn(e.state_patch||{},'birth_date'))||e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
 }
 export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null}={}){
  const draftId='__pending_state_scene__',history=[...scenes,{id:draftId,body,events,world_time:worldTime}];

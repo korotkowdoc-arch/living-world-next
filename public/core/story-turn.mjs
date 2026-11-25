@@ -167,6 +167,12 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='assignment'&&r.status==='assigned')add('assignment',r,{timing:timing(r)});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='estate_sale'&&['offered','accepted'].includes(r.status)&&records.some(x=>x.life_kind==='estate'&&x.record_id===r.estate_id&&x.actor===r.actor&&(x.last_sale_id??null)===(r.title_revision??null)))add('estate_sale',{...r,counterparty:r.buyer},{amount:r.amount,currency:r.currency,timing:'requires_character_choice'});
  for(const r of records)if(r.player_life_version===1){
+  if(r.life_kind==='shared_goal_member'&&r.status==='invited'){const g=householdRecords.get('player-life:shared_goal:'+r.goal_id);if(g&&['proposed','active'].includes(g.status))add('shared_goal_invitation',{...r,title:g.title,counterparty:g.actor},{timing:'requires_character_choice',goal_id:g.record_id,membership_id:r.record_id});}
+  if(r.life_kind==='shared_goal'&&r.status==='active'){
+   const members=records.filter(m=>m.life_kind==='shared_goal_member'&&m.goal_id===r.record_id&&m.status==='accepted');
+   const pending=r.steps.filter(s=>!records.some(m=>m.life_kind==='shared_goal_step'&&m.goal_id===r.record_id&&m.step_id===s.id));
+   if(members.length)for(const participant of [r.actor,...members.map(m=>m.actor)])add('shared_goal',{...r,actor:participant,counterparty:participant===r.actor?members[0].actor:r.actor},{timing:timing(r),goal_id:r.record_id,pending_steps:pending.slice(0,4),organizer:r.actor});
+  }
   if(r.life_kind==='expense_share'&&['proposed','accepted'].includes(r.status))add('expense_share',{...r,counterparty:r.host},{timing:timing(r),share_id:r.record_id,amount:r.amount,currency:r.currency});
   if(r.life_kind==='care_plan'&&['proposed','accepted'].includes(r.status)){
    add('care_plan',{...r,counterparty:r.supporter},{timing:timing(r),care_plan_id:r.record_id});

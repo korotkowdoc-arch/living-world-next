@@ -2,7 +2,7 @@ import {replay,replayWithCheckpoint,validateScene,needsStatePreflight} from './c
 import {draftEvidenceCoverage} from './annotation-passages.mjs';
 import {parseStoryDate} from './world-time.mjs';
 export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time=null}={}){
- const checked=validateScene({body,events,directives});
+ const checked=validateScene({body,events,directives,worldTime:world_time});
  const result={ok:checked.ok,errors:[...checked.errors],warnings:[],changes:[],omitted_changes:0,saved:false,canonical:false};
  if(!checked.ok)return result;
  result.evidence_coverage=draftEvidenceCoverage(body,events);
