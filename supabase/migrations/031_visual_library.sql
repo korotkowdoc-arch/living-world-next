@@ -49,7 +49,7 @@ begin
  if not found or h is distinct from p_expected_head then raise exception 'Stale visual request';end if;
  if cardinality(coalesce(p_references,'{}'))>8 then raise exception 'Too many references';end if;
  foreach r in array coalesce(p_references,'{}') loop
-  if not exists(select 1 from public.nw_list_visual_assets(p_world_id,100,0) a where a.id=r and a.status='ready') then raise exception 'Reference not in current visible library';end if;
+  if not exists(select 1 from public.nw_visual_assets a where a.id=r and a.world_id=p_world_id and a.owner_id=u and a.status='ready' and (a.scene_id is null and a.branch_id=p_branch_id or a.scene_id is not null and public.nw_scene_in_active_branch(p_world_id,a.scene_id))) then raise exception 'Reference not in current visible library';end if;
  end loop;
  if (select count(*) from public.nw_visual_assets where owner_id=u and world_id=p_world_id and status='pending')>=30 then raise exception 'Finish or archive pending visuals first';end if;
  insert into public.nw_visual_assets(id,owner_id,world_id,branch_id,scene_id,subject_kind,subject_id,kind,title,prompt,identity_notes,reference_asset_ids,storage_path)
@@ -91,3 +91,16 @@ begin
 end $$;
 revoke all on function public.nw_archive_visual(uuid) from public,anon;
 grant execute on function public.nw_archive_visual(uuid) to authenticated;
+
+create table if not exists public.nw_visual_preferences (
+ world_id uuid primary key references public.nw_worlds(id) on delete cascade,
+ owner_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+ frequency text not null default 'request' check(frequency in ('off','request','significant','first_seen','frequent')),
+ style text not null default '' check(char_length(style)<=1000)
+);
+alter table public.nw_visual_preferences enable row level security;
+revoke all on public.nw_visual_preferences from public,anon,authenticated;
+grant select,insert,update on public.nw_visual_preferences to authenticated;
+create policy nw_visual_prefs_read on public.nw_visual_preferences for select to authenticated using(owner_id=(select auth.uid()));
+create policy nw_visual_prefs_insert on public.nw_visual_preferences for insert to authenticated with check(owner_id=(select auth.uid()) and exists(select 1 from public.nw_worlds w where w.id=world_id and w.owner_id=(select auth.uid())));
+create policy nw_visual_prefs_update on public.nw_visual_preferences for update to authenticated using(owner_id=(select auth.uid())) with check(owner_id=(select auth.uid()) and exists(select 1 from public.nw_worlds w where w.id=world_id and w.owner_id=(select auth.uid())));
