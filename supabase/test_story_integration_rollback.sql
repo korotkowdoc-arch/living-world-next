@@ -360,4 +360,47 @@ begin
  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 14:30',jsonb_build_array(pay,consume,done),0);
  if (select count(*) from public.nw_scenes where world_id=wid)<>6 then raise exception 'Rejected scene persisted';end if;
 end $work$;
+-- Housing, capacity and education are checked under the same commit lock.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $home$
+declare wid uuid; bid uuid; h uuid; bad boolean; body text:='Anna recorded an event.';
+ common jsonb:='{"type":"world","player_life_version":1,"evidence":"Anna recorded an event."}';
+ agreement jsonb:='{"id":"rent","type":"world","dynamics_version":1,"dynamics_kind":"economic_agreement","record_id":"rent","key":"dynamics:economic_agreement:rent","actor":"Anna","counterparty":"Owner","title":"Rent","place":"Flat","agreement_kind":"rent","status":"active","amount":50,"currency":"GBP","description":"Rent","evidence":"Anna recorded an event."}';
+ schedule jsonb:='{"id":"schedule","type":"world","dynamics_version":1,"dynamics_kind":"payment_schedule","record_id":"rent","key":"dynamics:payment_schedule:rent","actor":"Anna","counterparty":"Owner","title":"Rent","payment_kind":"rent","status":"active","amount":50,"currency":"GBP","starts_on":"1994-08-01","every_days":30,"description":"Rent","evidence":"Anna recorded an event."}';
+ lease jsonb:='{"id":"lease","life_kind":"lease","record_id":"flat","key":"player-life:lease:flat","actor":"Anna","landlord":"Owner","place":"Flat","title":"Flat","agreement_id":"rent","schedule_id":"rent","status":"active"}';
+ budget jsonb:='{"id":"budget","life_kind":"budget","record_id":"budget","key":"player-life:budget:budget","actor":"Anna","title":"Budget","currency":"GBP","monthly_limit":60,"savings_target":100,"status":"active"}';
+ service jsonb:='{"id":"service","life_kind":"venue_service","record_id":"room","key":"player-life:venue_service:room","actor":"Hotel","place":"Hotel","title":"Room","category":"lodging","amount":0,"currency":"GBP","duration_minutes":1440,"status":"available"}';
+ slot jsonb:='{"id":"slot","life_kind":"capacity_slot","record_id":"night","key":"player-life:capacity_slot:night","actor":"Hotel","service_id":"room","resource":"Room","starts_at":"1994-08-01 15:00","ends_at":"1994-08-02 11:00","capacity":1,"status":"open"}';
+ visit jsonb:='{"id":"visit","life_kind":"service_visit","record_id":"a","key":"player-life:service_visit:a","actor":"Anna","provider":"Hotel","service_id":"room","place":"Hotel","title":"Room","amount":0,"currency":"GBP","status":"accepted"}';
+ booking jsonb:='{"id":"booking","life_kind":"reservation","record_id":"a","key":"player-life:reservation:a","actor":"Anna","slot_id":"night","visit_id":"a","units":1,"status":"reserved"}';
+ grp jsonb:='{"id":"group","type":"world","social_record_version":1,"social_kind":"group","record_id":"school","key":"social:group:school","name":"School","purpose":"Education","status":"active","evidence":"Anna recorded an event."}';
+ institution jsonb:='{"id":"institution","type":"world","dynamics_version":1,"dynamics_kind":"institution","record_id":"school","key":"dynamics:institution:school","name":"School","group_id":"school","function":"Education","place":"School","status":"operating","description":"School","evidence":"Anna recorded an event."}';
+ enrollment jsonb:='{"id":"enrollment","life_kind":"enrollment","record_id":"course","key":"player-life:enrollment:course","actor":"Anna","institution_id":"school","title":"Magic","place":"School","status":"enrolled"}';
+ exam jsonb:='{"id":"exam","life_kind":"assessment","record_id":"exam","key":"player-life:assessment:exam","actor":"Anna","enrollment_id":"course","title":"Exam","starts_at":"1994-08-02 10:00","ends_at":"1994-08-02 11:00","status":"scheduled"}';
+ skill jsonb:='{"id":"skill","type":"world","growth_version":1,"growth_kind":"skill","record_id":"spell","key":"growth:skill:spell","actor":"Anna","name":"Spells","status":"learning","description":"Learning","evidence":"Anna recorded an event."}';
+ practice jsonb:='{"id":"practice","life_kind":"practice_record","record_id":"practice","key":"player-life:practice_record:practice","actor":"Anna","skill_id":"spell","origin_kind":"assessment","origin_id":"exam","description":"Practised","status":"recorded"}';
+ other_visit jsonb; other_booking jsonb;
+begin
+ wid:=public.nw_create_world('Home test','Synthetic life','1994-08-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ lease:=lease||common;budget:=budget||common;service:=service||common;slot:=slot||common;visit:=visit||common;booking:=booking||common;enrollment:=enrollment||common;exam:=exam||common;practice:=practice||common;
+ other_visit:=visit||'{"id":"visit-b","record_id":"b","key":"player-life:service_visit:b","actor":"Boris"}';
+ other_booking:=booking||'{"id":"booking-b","record_id":"b","key":"player-life:reservation:b","actor":"Boris","visit_id":"b"}';
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(lease),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Lease without rent terms accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(agreement,schedule,lease,budget,service,slot,visit,other_visit,booking,grp,institution,enrollment,exam,skill),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(other_booking),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Capacity exceeded';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(booking||'{"status":"cancelled"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Released capacity before visit cancelled';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(practice),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Practice before examination accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(lease||'{"status":"ended"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Lease closed without contract closure';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(visit||'{"status":"cancelled"}',booking||'{"status":"cancelled"}',other_booking),0);
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-02 11:00',jsonb_build_array(exam||'{"status":"passed","outcome":"Passed"}',practice),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-02 11:00',jsonb_build_array(practice||'{"record_id":"dup","key":"player-life:practice_record:dup"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Duplicated practice accepted';end if;
+ if (select count(*) from public.nw_scenes where world_id=wid)<>3 then raise exception 'Rejected scene persisted';end if;
+end $home$;
 rollback;
