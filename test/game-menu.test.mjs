@@ -74,3 +74,13 @@ test('priorities affect candidate order without overriding urgent obligations or
  const o=prepareStoryTurn(scenes,projection,rules,{actors:['Гарри'],branchId:other});
  assert.ok(o.candidates.every(x=>!x.player_priority));
 });
+
+import {MENU_REQUEST_PREFIX,parseLegacyMenuRequest} from '../public/core/game-menu.mjs';
+test('cached tools route explicit pinned menu requests, not plain directives',()=>{
+ const input={branch_id:b,expected_head:null,expected_rules_version:3,kind:'focus',priorities:['Работа']};
+ const encode=v=>MENU_REQUEST_PREFIX+JSON.stringify(v);
+ assert.equal(parseLegacyMenuRequest('Обычное правило','world'),null);
+ assert.deepEqual(parseLegacyMenuRequest(encode(input),'world'),{world_id:'world',...input});
+ for(const bad of [{...input,expected_head:undefined},{...input,expected_rules_version:-1},{...input,world_id:'another'},{...input,settings:{}},{...input,branch_id:'bad'}])assert.throws(()=>parseLegacyMenuRequest(encode(bad),'world'));
+ assert.throws(()=>parseLegacyMenuRequest(MENU_REQUEST_PREFIX+'{','world'));
+});

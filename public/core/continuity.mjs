@@ -1,3 +1,4 @@
+import {isMenuDirective} from './game-menu.mjs';
 import {extractLocks,pairKey} from './directives.mjs';
 import {storyDrivers} from './story-drivers.mjs';
 import {recordedWorldAgenda} from './world-time.mjs';
@@ -176,7 +177,7 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
   return {world_id:world.id,world_title:world.title,world_seed:world.seed,start_marker:world.start_marker,
     active_branch_id:world.active_branch_id,head_scene_id:scenes.at(-1)?.id??null,directive_version:world.directive_version,auto_save:world.auto_save,
     confirmed_scene_count:scenes.length,memory_complete:historyComplete,
-    directives:directives.filter(d=>d.active!==false).map(({text,category,metadata})=>({text,category,metadata})),
+    directives:directives.filter(d=>d.active!==false&&!isMenuDirective(d.text)).map(({text,category,metadata})=>({text,category,metadata})),
     memory:projection,
     player_choice:playerChoiceView(scenes,projection,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:historyComplete}),
     active_story_drivers:storyDrivers(projection,directives),
