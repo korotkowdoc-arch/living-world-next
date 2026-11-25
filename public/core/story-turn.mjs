@@ -142,7 +142,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(due.precision!==anchor.precision&&due.day===anchor.day)return 'same_day_uncertain';
   return due.order<=anchor.order?'reached_requires_story':'future';
  };
- for(const p of projection.plans||[])if(['active','paused'].includes(p.status))add('intention',p,{timing:timing(p)});
+ for(const p of projection.plans||[])if(['active','paused'].includes(p.status))add('intention',p,{timing:timing(p),plan_id:p.plan_id,confirmed_updates:p.history?.length??null,last_action:p.last_action??p.action??null});
  for(const actor of protectedActors.filter(a=>focus.has(a)))for(const g of explicitGoalTasks(playerPersonalLife(projection,actor),actor))if(preferences.priorities.includes(g.id)||preferences.priorities.includes(g.title))add('life_goal',{...g,actor,key:g.id},{timing:'requires_character_choice',guidance:'Учитывай сформулированную цель при предложении решений, не выбирай за игрока и не считай цель выполненной.'});
  for(const p of projection.obligations||[])if(!closed.has(text(p.status)))add('obligation',p,{timing:timing(p)});
  for(const r of records){
@@ -370,7 +370,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   const ctx=actorIndex.get(p.name);ctx.age=characterAge(p,anchor?.literal);
   for(const field of (p.state_fields||[]).filter(x=>stateFields.has(x.field)))actorRows(p.name,'state_fields',{field:field.field,value:clip(field.value),source:source(field)},12);
  }
- for(const p of recent(projection.plans||[]))if(['active','paused'].includes(p.status))actorRows(p.actor,'intentions',{plan_id:p.plan_id,goal:clip(p.goal),status:p.status,next_step:clip(p.next_step),obstacle:clip(p.obstacle),source:source(p)},3);
+ for(const p of recent(projection.plans||[]))if(['active','paused'].includes(p.status))actorRows(p.actor,'intentions',{plan_id:p.plan_id,goal:clip(p.goal),status:p.status,next_step:clip(p.next_step),obstacle:clip(p.obstacle),due_at:p.due_at??p.deadline??p.due??null,confirmed_updates:p.history?.length??null,last_action:p.last_action??p.action??null,source:source(p)},3);
  for(const k of recent(projection.knowledge||[]))actorRows(k.actor,'knowledge',{holder:k.actor,topic_id:k.topic_id||null,fact:clip(k.fact),status:k.status||'legacy_recorded_knowledge',channel:clip(k.channel),source:source(k)},4);
  for(const r of recent(projection.relationships||[])){
   const row={a:r.a,b:r.b,stance:clip(r.stance),fields:(r.relationship_fields||[]).map(x=>({field:x.field,value:x.value,source:source(x)})),source:source(r)};

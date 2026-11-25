@@ -78,13 +78,40 @@ const cuePatterns={
  character:/\b(?:changed clothes|wore|hungry|tired|appearance)\b|переодел|устал|голод|внешност|одежд/iu,
  goals:/\b(?:decided|planned|intended|goal)\b|решил|намерен|запланир|цель/iu
 };
+/** Identify the records a typed event targets. This is not a second write path:
+ * the existing canonical fold performs the operation; the receipt exposes its identity. */
+export function eventRecordTargets(event){
+ if(!event||eventRoute(event).layer!=='canonical_event')return [];
+ const e=normalizeLegacyKnowledge(event),out=[];
+ const add=(registry,identity,operation,fields=[])=>{
+  if(identity.every(v=>typeof v==='string'&&v.trim()))out.push({registry,identity,operation,fields});
+ };
+ const fields=p=>p&&typeof p==='object'&&!Array.isArray(p)?Object.keys(p):[];
+ switch(e.type){
+ case 'character':add('people',[e.name],'patch',fields(e.state_patch));break;
+ case 'relationship':add('relationships',[e.a,e.b],'patch',fields(e.relationship_patch));break;
+ case 'knowledge':add('knowledge',[e.actor,e.knowledge_version===1?'topic':'legacy',e.knowledge_version===1?e.topic_id:e.fact],'upsert',['fact','status']);break;
+ case 'money':add('balances',[e.actor,e.currency],e.operation||'adjust',['balance']);if(e.operation==='transfer')add('balances',[e.counterparty,e.currency],'transfer_counterparty',['balance']);break;
+ case 'item':add('items',[e.item_id],e.action||'change',['custody']);break;
+ case 'commitment':add('obligations',[e.commitment_id],'upsert',['status','description','due_at']);break;
+ case 'plan':add('plans',[e.actor,e.plan_id],e.action,fields(e.plan_patch));break;
+ case 'world':if(typeof e.key==='string'&&e.key.trim())add('worldFacts',[e.key],'upsert',['status']);else if(e.interaction_version===1)add('relationship_history',[e.id],'append');break;
+ case 'offscreen':add('offscreen',[e.id],'append');break;
+ }
+ return out;
+}
 export function sceneSaveAudit(body,events=[]){
- const rows=Array.isArray(events)?events:[],by=new Map(),unclassified=[],semantic=[];
+ const rows=Array.isArray(events)?events:[],by=new Map(),unclassified=[],semantic=[],updates=[],recordTargets=[],affected=new Map();
  for(const e of rows){
   const route=eventRoute(e);
   if(route.layer==='interpretive_memory'){semantic.push(e);continue;}
   if(!by.has(route.domain))by.set(route.domain,{domain:route.domain,destinations:route.destinations,count:0,event_ids:[]});
   const r=by.get(route.domain);r.count++;if(r.event_ids.length<10)r.event_ids.push(e?.id??null);
+  if(route.layer==='canonical_event'){
+   for(const section of route.destinations)affected.set(section,(affected.get(section)||0)+1);
+   for(const target of eventRecordTargets(e))recordTargets.push({...target,event_id:e.id,domain:route.domain});
+  }
+  if(route.layer==='canonical_event'&&e.type==='plan')updates.push({actor:e.actor,plan_id:e.plan_id,action:e.action,event_id:e.id,destinations:route.destinations,changed_fields:Object.keys(e.plan_patch||{}),performed_event_id:e.performed_event_id??null});
   if(route.layer==='unclassified_event'||route.layer==='invalid_memory')unclassified.push(e?.id??null);
  }
  const text=typeof body==='string'?body:'',cueGroups=new Map(),coverage=new Map(),segments=[];
@@ -124,8 +151,8 @@ export function sceneSaveAudit(body,events=[]){
  const cues=[],groups=[...cueGroups.values()];const totalCues=groups.reduce((n,g)=>n+g.length,0);
  for(let i=0;cues.length<12&&i<segments.length;i++)for(const group of groups){if(cues.length>=12)break;if(group[i])cues.push(group[i]);}
  return {event_count:rows.length,canonical_candidates:rows.length-semantic.length,interpretive_memory_count:semantic.length,routes:[...by.values()],unclassified_event_ids:unclassified.slice(0,20),unclassified_count:unclassified.length,
-  review_cues:cues,omitted_cues:Math.max(0,totalCues-cues.length),source_segments:segments.length,
-  policy:'Routing reports intended destinations, not proof that an event is true or every detail was extracted. Review lexical cues in context; do not manufacture a transition. Supplemental memory is not canonical knowledge.'};
+  record_updates:recordTargets.slice(0,100),omitted_record_updates:Math.max(0,recordTargets.length-100),affected_sections:[...affected].map(([section,event_count])=>({section,event_count})),task_updates:updates.slice(0,40),omitted_task_updates:Math.max(0,updates.length-40),review_cues:cues,omitted_cues:Math.max(0,totalCues-cues.length),source_segments:segments.length,
+  policy:'Routing reports intended destinations and record identities, not a second write, proof that every event is true or every detail was extracted. Review lexical cues in context; do not manufacture a transition. Supplemental memory is not canonical knowledge.'};
 }
 export function sceneMemoryDuplicateKey(e){return JSON.stringify([e.memory_kind,e.domain,e.actor??null,[...(e.actors||[])].sort(),e.place??null,e.summary,e.evidence]);}
 /** Recall explicitly saved semantic notes, not generated summaries of old prose.
@@ -199,4 +226,4 @@ export function memoryCoverageSummary(scenes=[],{complete=true}={}){
  }
  return {complete,counts,domains,policy:'Counts are structural coverage indicators, not a semantic completeness score. Review original scenes for missing important details.'};
 }
-export const SCENE_MEMORY_GUIDANCE='СОХРАНЕНИЕ И ИЗВЛЕЧЕНИЕ: после написания реальной сцены перечитай ВЕСЬ текст от начала до конца, а не только последние реплики. Сначала выдели реальные изменения: состояние и внешность, местонахождение, знакомства и отношения, знания каждого участника, деньги и предметы, обязательства/сроки, учёба и навыки, работа и бизнес, жильё, магия и здоровье, общество/спорт, письма и документы, планы и последствия. Для каждого используй соответствующую существующую версионированную запись, стабильные ID и дословное evidence. Для знания обязательно type=knowledge (НЕ world), knowledge_version=1, actor, topic_id, fact, channel, status; отдельная запись на каждого обладателя. Сохраняй отдельные связанные операции в причинном порядке (перевод, владение, принятие, результат); не дублируй деньги или предметы. Значимые детали, для которых нет подходящей записи состояния, можно атомарно сохранить внутри events как type=world, scene_memory_version=1, id, memory_kind=observed/claim/intention/belief/description/uncertain, domain из character/relationships/knowledge/finance/inventory/property/education/work/magic/medicine/community/civic/documents/travel/calendar/goals/world/experiences, actors (до 8), actor обязательно для claim/intention/belief и входит в actors, summary (до 600), evidence (точная цитата до 1200), опционально place/topics. НЕ добавляй key или другой version. Это подсказка рассказчику с источником, НЕ состояние, НЕ знание героя и НЕ замена канонического события. Не делай двойную запись одного факта без причины. Не заменяй формальную запись смены, договора, навыка, знакомства или задачи заметкой, если уже есть все обязательные подтверждённые поля. Не выдумывай отсутствующее время, договор или результат. Запись встречи: interaction_version=1, actors, interaction_kind, description, evidence; она попадает в контакты даже без отношения. Явная долгосрочная цель — character.state_patch.personal_goal/career_goal/family_goal; конкретная открытая задача — type=plan с постоянным plan_id и action=start, выполненное действие не записывай как новую задачу. Для состоявшейся работы проверяй work_shift/wage и связь с фактической оплатой, не добавляй повторную money операцию. Перед сохранением используй review_scene_draft для длинных, насыщенных или сложных сцен; проверь routing и review_cues, не превращая слова в факты. Первый answered и последний pending остаются на своих местах. После save_scene проверь receipt/routing, не сохраняй повторно. При следующем ходе используй scene_memory_recall, включая legacy_source_hints, и focused context. Старые универсальные записи — только подсказки к первоисточнику; не считать их автоматически перенесёнными в реестр. Старые сцены с пропусками — read-only review, исторические подсказки отдельно через save_memory_notes, без ретроактивных событий. Никаких внешних платных API; смысловое извлечение выполняет сама модель рассказчика.';
+export const SCENE_MEMORY_GUIDANCE='СОХРАНЕНИЕ И ИЗВЛЕЧЕНИЕ: после написания реальной сцены перечитай ВЕСЬ текст от начала до конца, а не только последние реплики. Сначала выдели реальные изменения: состояние и внешность, местонахождение, знакомства и отношения, знания каждого участника, деньги и предметы, обязательства/сроки, учёба и навыки, работа и бизнес, жильё, магия и здоровье, общество/спорт, письма и документы, планы и последствия. Для каждого используй соответствующую существующую версионированную запись, стабильные ID и дословное evidence. Сравни изменения с текущими реестрами: существующий объект обновляй по его ID, новый создавай только если он действительно новый. Сначала обнови затронутые активные задания, затем проверь связанные состояния: финансы, предметы, здоровье, знания, встречи, работа и учёба. Не заменяй запись прогресса общим пересказом. Для знания обязательно type=knowledge (НЕ world), knowledge_version=1, actor, topic_id, fact, channel, status; отдельная запись на каждого обладателя. Сохраняй отдельные связанные операции в причинном порядке (перевод, владение, принятие, результат); не дублируй деньги или предметы. Значимые детали, для которых нет подходящей записи состояния, можно атомарно сохранить внутри events как type=world, scene_memory_version=1, id, memory_kind=observed/claim/intention/belief/description/uncertain, domain из character/relationships/knowledge/finance/inventory/property/education/work/magic/medicine/community/civic/documents/travel/calendar/goals/world/experiences, actors (до 8), actor обязательно для claim/intention/belief и входит в actors, summary (до 600), evidence (точная цитата до 1200), опционально place/topics. НЕ добавляй key или другой version. Это подсказка рассказчику с источником, НЕ состояние, НЕ знание героя и НЕ замена канонического события. Не делай двойную запись одного факта без причины. Не заменяй формальную запись смены, договора, навыка, знакомства или задачи заметкой, если уже есть все обязательные подтверждённые поля. Не выдумывай отсутствующее время, договор или результат. Запись встречи: interaction_version=1, actors, interaction_kind, description, evidence; она попадает в контакты даже без отношения. Явная долгосрочная цель — character.state_patch.personal_goal/career_goal/family_goal; конкретная открытая задача — type=plan с постоянным plan_id и action=start, выполненное действие не записывай как новую задачу. Для состоявшейся работы проверяй work_shift/wage и связь с фактической оплатой, не добавляй повторную money операцию. Перед сохранением используй review_scene_draft для длинных, насыщенных или сложных сцен; проверь routing и review_cues, не превращая слова в факты. Первый answered и последний pending остаются на своих местах. После save_scene проверь receipt/routing, не сохраняй повторно. При следующем ходе используй scene_memory_recall, включая legacy_source_hints, и focused context. Старые универсальные записи — только подсказки к первоисточнику; не считать их автоматически перенесёнными в реестр. Старые сцены с пропусками — read-only review, исторические подсказки отдельно через save_memory_notes, без ретроактивных событий. Никаких внешних платных API; смысловое извлечение выполняет сама модель рассказчика.';

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {detectWorldChange} from '../public/core/cloud-sync.mjs';
+import {detectWorldChange,canAutoSyncMenu} from '../public/core/cloud-sync.mjs';
 
 const snapshot={id:'world-1',active_branch_id:'branch-A',head_scene_id:'head-1',directive_version:3,auto_save:true,updated_at:'2026-11-23T00:00:00Z'};
 test('cloud check identifies brand-new saved story without downloading any scene bodies',()=>{
@@ -30,6 +30,12 @@ test('iPhone sync uses a non-disruptive opt-in banner and checks only while visi
  assert.match(app,/document.visibilityState==='visible'/);
  assert.match(app,/if\(!confirmLeaveDraft\(\)\)return/);
  const check=app.slice(app.indexOf('async function checkCloudChanges(){'),app.indexOf('function renderWorld(){'));
- assert.doesNotMatch(check,/renderWorld\(\)/);
+ assert.match(check,/autoSafe\(\)&&await reloadWorld\(snapshot.id,\{accept:autoSafe\}\)/);
  assert.doesNotMatch(check,/activeHistory\(/);
+});
+
+test('automatic synchronization only refreshes safe menu sections after a scene change',()=>{
+ const c={kind:'story'};assert.equal(canAutoSyncMenu(c,{section:'tasks'}),true);assert.equal(canAutoSyncMenu(c,{section:'health'}),true);
+ for(const section of ['settings','journal','memories','illustrations','portraits','gallery'])assert.equal(canAutoSyncMenu(c,{section}),false);
+ assert.equal(canAutoSyncMenu(c,{section:'tasks',dirty:true}),false);assert.equal(canAutoSyncMenu(c,{section:'tasks',blocked:true}),false);assert.equal(canAutoSyncMenu({kind:'branch'},{section:'tasks'}),false);
 });

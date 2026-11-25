@@ -13,3 +13,8 @@ export function detectWorldChange(current,latest,latestHead){
   return {kind:'world',message:'Данные мира изменились на сервере.'};
  return null;
 }
+
+/** Do not discard form state, settings, open dialogs or deliberate branch changes. */
+export function canAutoSyncMenu(change,{section,dirty=false,blocked=false}={}){
+ return change?.kind==='story'&&!dirty&&!blocked&&typeof section==='string'&&!['settings','journal','memories','illustrations','portraits','gallery'].includes(section);
+}

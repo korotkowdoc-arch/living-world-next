@@ -77,3 +77,14 @@ test('legacy explicit world knowledge is restored to the exact holder and source
  const mixed={...old,id:'invalid',key:'generic-key'};
  const q=replay([scene('s2',[mixed,n])]);assert.equal(q.knowledge.length,0);assert.equal(q.worldFacts.length,0);assert.ok(q.validation_warnings.some(x=>x.event_id==='invalid'));assert.equal(sceneMemoryRecall([scene('s2',[mixed,n])],q,{actors:['Анна']}).notes.length,1);
 });
+
+test('record routing identifies both sides of transfers and stable mutable records without treating notes as state',()=>{
+ const events=[{id:'pay',type:'money',operation:'transfer',actor:'Anna',counterparty:'Boris',currency:'GBX',delta:-10},{id:'p',type:'plan',actor:'Anna',plan_id:'repair',action:'advance',plan_patch:{next_step:'buy parts'}},{id:'item',type:'item',item_id:'glasses',action:'transfer'},{id:'w',type:'world',player_life_version:1,life_kind:'need',key:'player-life:need:anna-hunger'},n];
+ const a=sceneSaveAudit(body,events);
+ assert.deepEqual(a.record_updates.filter(x=>x.registry==='balances').map(x=>x.identity),[['Anna','GBX'],['Boris','GBX']]);
+ assert.deepEqual(a.record_updates.find(x=>x.registry==='plans').identity,['Anna','repair']);
+ assert.equal(a.record_updates.find(x=>x.registry==='items').identity[0],'glasses');
+ assert.equal(a.record_updates.find(x=>x.registry==='worldFacts').identity[0],'player-life:need:anna-hunger');
+ assert.equal(a.record_updates.some(x=>x.event_id===n.id),false);
+ assert.ok(a.affected_sections.some(x=>x.section==='tasks'));
+});
