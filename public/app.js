@@ -1,3 +1,4 @@
+import {MENU_GROUPS,MENU_DESCRIPTIONS,directorySections,menuSnapshotKey,menuSectionTransition} from './core/native-menu.mjs';
 import {ROOM_ACTIONS} from './core/room-layout.mjs';
 import {COMMUNITY_ACTIONS,communityTargets} from './core/community-life.mjs';
 import {CIVIC_ACTIONS,civicActionTargets} from './core/civic-life.mjs';
@@ -51,7 +52,7 @@ const node=(tag,cl='',value='')=>{const e=document.createElement(tag);if(cl)e.cl
 const add=(parent,...children)=>{for(const c of children)if(c!=null)parent.append(c);return parent;};
 const button=(label,handler,cl='btn')=>{const b=node('button',cl,label);b.type='button';b.addEventListener('click',handler);return b;};
 const field=(placeholder='',cls='field')=>{const t=node('textarea',cls);t.placeholder=placeholder;t.rows=4;return t;};
-const sceneLink=(worldId,sceneId,label='Читать отдельно')=>{const a=node('a','btn secondary',label);a.href=sceneReaderUrl(worldId,sceneId);return a;};
+const sceneLink=(worldId,sceneId,label='Читать отдельно')=>{if(state.screen==='world'&&state.tab==='menu'&&state.world?.id===worldId)return button(label,()=>openMenuSource(worldId,sceneId),'btn secondary');const a=node('a','btn secondary',label);a.href=sceneReaderUrl(worldId,sceneId);return a;};
 const row=(...children)=>add(node('div','btn-row'),...children);
 const panel=(...children)=>add(node('section','panel'),...children);
 const title=(text)=>node('h2','',text);
@@ -116,7 +117,7 @@ async function openLinkedScene(link){
   updateSceneTypography();
  }catch(e){clear();add(root,title('Не удалось открыть сцену'),para(e.message||'Сцена недоступна.'),row(button('Повторить',()=>busy(openLanding)),button('Все миры',()=>busy(openWorlds),'btn secondary')));}
 }
-async function openWorlds(){clearReaderHash();if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
+async function openWorlds(){menuMemoryCache=null;menuMemoryJob=null;clearReaderHash();if(!readConfig())return showConnect();if(!readSession())return showAuth();state.screen='worlds';loading();try{state.worlds=await listWorlds();renderWorlds();}catch(e){clear();add(root,node('h1','hero-title','Не удалось открыть миры'),node('div','notice',e.message||'Ошибка загрузки'),para('Если это новый проект, проверь, что схема supabase/schema.sql установлена. Входить повторно не требуется.'),row(button('Повторить',()=>busy(openWorlds)),button('Подключение',showConnect,'btn secondary')));}}
 function renderWorlds(){state.screen='worlds';clear();add(root,node('div','eyebrow','Интерактивные вселенные'),add(node('h1','hero-title'),document.createTextNode('Придумай мир. '),node('em','','Он оживёт.')),para('Никаких анкет и обязательных биографий. Опиши идею своими словами — детали мира сформируются по мере истории.','subtitle'));
   const prompt=field('Например: Гарри Поттер, 1991 год. Начинаем с Хогвартса. Гарри и Малфой — непримиримые враги. Никакого взаимного уважения.','field large-field');
   const preview=para('Сначала создаём основу, не придумывая за тебя скрытые события.','helper');
@@ -410,15 +411,67 @@ function renderFloorplans(w,overview){
   menuActionIntent(input,overview);await copy('Мир '+w.title+' ('+w.id+'), герой '+overview.actor+'. Проверь текущий head и validate_game_menu_action: '+JSON.stringify(input)+'. Сыграй намерение, не считай результат уже выполненным.');
  }),'btn secondary'));drawHome();return out;
 }
+// Sources are a local overlay, not a hash navigation or page reload.
+async function openMenuSource(worldId,sceneId){
+ const w=state.world;if(!w||w.id!==worldId)return;
+ const key=menuSnapshotKey(w),dialog=node('dialog','menu-source-dialog'),body=node('div','menu-source-body'),heading=title('Источник');
+ const close=button('Закрыть',()=>dialog.close(),'btn secondary');
+ dialog.append(add(node('div','menu-source-header'),heading,close),body);
+ dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+ document.body.append(dialog);dialog.showModal();body.append(para('Загружаю сохранённую сцену…'));
+ try{
+  const known=state.scenes.find(s=>s.id===sceneId&&typeof s.body==='string');
+  const source=known||await getScene(worldId,sceneId);
+  if(!dialog.open)return;
+  if(state.screen!=='world'||state.tab!=='menu'||menuSnapshotKey(state.world)!==key){dialog.close();return;}
+  heading.textContent=source.world_time||'Сохранённая сцена';
+  body.replaceChildren(node('div','scene-body',source.body));
+ }catch(e){if(dialog.open)body.replaceChildren(para('Не удалось прочитать источник: '+e.message));}
+}
+function menuJournal(w,scenes){
+ const out=node('div','menu-journal'),list=node('div'),search=node('input','field');search.type='search';search.placeholder='Дата или номер сцены';
+ let offset=0;const draw=()=>{
+  list.replaceChildren();const q=search.value.trim().toLocaleLowerCase('ru'),rows=scenes.map((s,i)=>({s,n:i+1})).reverse().filter(({s,n})=>!q||[s.world_time,'Сцена '+n].some(x=>String(x||'').toLocaleLowerCase('ru').includes(q)));
+  for(const {s,n} of rows.slice(0,offset+20)){
+   const b=button('',()=>openMenuSource(w.id,s.id),'menu-record-button');b.append(add(node('span',''),node('strong','','Сцена '+n),para(s.world_time||'Дата не установлена')),node('span','menu-chevron','›'));list.append(b);
+  }
+  if(!rows.length)list.append(para('Нет подходящих сцен.'));
+  if(rows.length>offset+20)list.append(button('Показать ещё',()=>{offset+=20;draw();},'btn secondary'));
+ };
+ search.addEventListener('input',()=>{offset=0;draw();});out.append(search,list);draw();return out;
+}
+function menuMemories(w,overview,projection){
+ const out=node('div','menu-memories'),search=node('input','field'),list=node('div'),status=node('p','small');
+ search.type='search';search.placeholder='Найти воспоминание или тему';
+ let rows=[],offset=0,more=true,loading=false,failed=false;
+ const known=(projection.knowledge||[]).filter(r=>r.actor===overview.actor);
+ const draw=()=>{
+  list.replaceChildren();const q=search.value.trim().toLocaleLowerCase('ru'),matches=v=>!q||String(v??'').toLocaleLowerCase('ru').includes(q);
+  const notes=rows.filter(r=>matches([r.note?.summary,r.note?.quote,r.note_key].join(' ')));
+  for(const r of notes){
+   const card=node('details','menu-record');card.append(node('summary','',r.note.summary),para('Историческая заметка · '+(MENU_LABELS[r.note.kind]||r.note.kind)),node('blockquote','memory-quote',r.note.quote),sceneLink(w.id,r.scene_id,'Прочитать сцену'));list.append(card);
+  }
+  const facts=known.filter(r=>matches(r.fact||r.description));if(facts.length){list.append(node('h3','menu-label','Подтверждённые знания героя'));for(const f of facts)list.append(renderMenuData([f]));}
+  status.textContent=failed?'Не удалось загрузить воспоминания. Можно повторить.':loading?'Загружаю воспоминания…':rows.length+' заметок загружено'+(more?' · есть дополнительные':'')+'.';
+  if(!notes.length&&!facts.length&&!loading)list.append(para(more?'На загруженных страницах совпадений нет.':'Совпадений нет.'));
+  if(more||failed){const load=button(failed?'Повторить загрузку':'Загрузить ещё',()=>void fetchPage(),'btn secondary');load.disabled=loading;list.append(load);}
+ };
+ async function fetchPage(){
+  if(loading||(!more&&!failed))return;loading=true;failed=false;draw();
+  try{const page=await readMemoryNotes(w,{actor:overview.actor,offset});if(!Array.isArray(page))throw Error('Неверный ответ памяти');if(!out.isConnected)return;rows.push(...page);offset+=page.length;more=page.length===20;}
+  catch{failed=true;}finally{loading=false;if(out.isConnected)draw();}
+ }
+ search.addEventListener('input',draw);out.append(para('Исторические заметки помогают вспомнить прошлые события, но сами по себе не являются знанием героя.'),search,status,list);draw();queueMicrotask(()=>{if(out.isConnected)void fetchPage();});return out;
+}
 function renderMenuData(value,depth=0,w=state.world){
  const out=node('div','menu-data');if(depth>5)return out;
  if(value==null){out.append(para('Не установлено'));return out;}
  if(Array.isArray(value)){if(!value.length)out.append(para('Пока нет записей.'));for(const r of value.slice(0,40)){
   if(r&&typeof r==='object'){
-   const card=node('div','rule'),label=r.label||r.title||r.name||r.actor||r.field||r.kind||r.id;
+   const card=node('div','menu-record'),label=r.label||r.title||r.name||r.actor||r.field||r.kind||'Запись';
    if(label)card.append(node('strong','',menuValue(label)));
    for(const [k,v] of Object.entries(r)){
-    if(['source','evidence','policy','id','key','record_key','title','name','label','certainty'].includes(k)||v==null||v==='')continue;
+    if(['source','evidence','policy','id','key','record_key','title','name','label','certainty','memory_complete'].includes(k)||k.endsWith('_id')||v==null||v==='')continue;
     if(typeof v==='object')card.append(node('h4','menu-label',menuLabel(k)),renderMenuData(v,depth+1,w));
     else card.append(para(menuLabel(k)+': '+menuValue(v)));
    }
@@ -432,8 +485,10 @@ function renderMenuData(value,depth=0,w=state.world){
  }
  for(const [k,v] of Object.entries(value)){
   if(['policy','source','certainty','read','memory_complete','total','omitted','records','evidence'].includes(k)||v==null)continue;
-  if(typeof v==='object')out.append(node('h3','menu-label',menuLabel(k)),renderMenuData(v,depth+1,w));
-  else out.append(para(menuLabel(k)+': '+menuValue(v)));
+  if(typeof v==='object'){
+   const empty=Array.isArray(v)?v.length===0:Array.isArray(v.records)?v.records.length===0:false;
+   const group=node('details','menu-data-group');group.append(node('summary','',menuLabel(k)+(Array.isArray(v.records)?' · '+(v.total??v.records.length):Array.isArray(v)?' · '+v.length:'')),renderMenuData(v,depth+1,w));group.open=!empty&&depth===0;out.append(group);
+  }else out.append(add(node('div','menu-data-line'),node('span','',menuLabel(k)),node('strong','',menuValue(v))));
  }
  if(value.source?.scene_id&&w)out.append(sceneLink(w.id,value.source.scene_id,'Источник'));
  return out;
@@ -497,12 +552,56 @@ function placesView(graph){
 }
 function timelineView(data){const out=node('div','life-timeline');for(const e of data?.records||[])out.append(add(node('article','timeline-entry'),node('strong','',e.source?.world_time||'Дата не установлена'),renderMenuData([e])));if(!data?.records?.length)out.append(para('Нет подтверждённых событий.'));if(data?.omitted)out.append(para('Ещё записей: '+data.omitted));return out;}
 const menuUiState=new Map();
+let menuMemoryCache=null;
+let menuMemoryJob=null;
+// Small local stroke icons: no network requests or icon font dependency.
+function menuGlyph(name){
+ const paths={
+ 'user-round':'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+ 'backpack':'M6 8V6a6 6 0 0 1 12 0v2 M5 7h14v14H5z M8 14h8v4H8z',
+ 'users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 21v-2a4 4 0 0 0-3-4 M16 3a4 4 0 0 1 0 8',
+ 'mail':'M3 5h18v14H3z M3 6l9 7 9-7',
+ 'list-checks':'M9 6h12 M9 12h12 M9 18h12 M3 5l1 1 2-2 M3 11l1 1 2-2 M3 17l1 1 2-2',
+ 'calendar-days':'M3 5h18v16H3z M7 3v4 M17 3v4 M3 10h18 M8 14h1 M12 14h1 M16 14h1 M8 18h1 M12 18h1',
+ 'wallet':'M3 6h18v14H3z M3 6l14-3v3 M15 11h6v5h-6z',
+ 'house':'M2 11l10-8 10 8 M5 10v11h14V10 M9 21v-7h6v7',
+ 'briefcase-business':'M3 7h18v14H3z M8 7V3h8v4 M3 12l9 3 9-3',
+ 'graduation-cap':'M2 9l10-5 10 5-10 5z M6 12v5q6 5 12 0v-5 M22 9v8',
+ 'book-open':'M12 5v16 M12 5Q6 1 2 4v15q5-3 10 2 5-5 10-2V4q-4-3-10 1',
+ 'history':'M3 12a9 9 0 1 0 3-7 M3 3v6h6 M12 7v6l4 2',
+ 'settings':'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M10 2h4l1 3 3 1 3 3-2 3 2 3-3 3-3 1-1 3h-4l-1-3-3-1-3-3 2-3-2-3 3-3 3-1z',
+ 'heart-pulse':'M3 12h5l2-4 4 8 2-4h5 M12 21S2 15 2 8c0-5 7-7 10-2 3-5 10-3 10 2 0 7-10 13-10 13',
+ 'shirt':'M8 3l4 3 4-3 6 4-3 5-3-2v11H8V10l-3 2-3-5z',
+ 'image':'M3 3h18v18H3z M7 8h.1 M3 17l6-6 4 4 3-3 5 5',
+ 'map':'M3 5l6-2 6 2 6-2v16l-6 2-6-2-6 2z M9 3v16 M15 5v16',
+ 'wand-sparkles':'M3 21l12-12 M11 5v4 M9 7h4 M19 2v6 M16 5h6 M21 13v4 M19 15h4',
+ 'file-text':'M5 2h9l5 5v15H5z M14 2v6h5 M8 12h8 M8 16h8',
+ 'target':'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10 M12 12h.1'
+ };
+ const aliases={'users-round':'users',contact:'user-round',network:'users',landmark:'house',hospital:'heart-pulse',store:'house',archive:'file-text','notebook-pen':'book-open',newspaper:'file-text',heart:'heart-pulse',brain:'user-round',sparkles:'wand-sparkles','circle-dashed':'target','flask-conical':'wand-sparkles',microscope:'wand-sparkles',leaf:'map','chart-no-axes-combined':'wallet'};
+ const el=node('span','menu-glyph'),svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),p=document.createElementNS('http://www.w3.org/2000/svg','path');
+ svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.6');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');p.setAttribute('d',paths[name]||paths[aliases[name]]||paths['file-text']);svg.append(p);el.append(svg);return el;
+}
 function renderGameMenu(){
  const w=state.world,key=w.id+':'+w.active_branch_id;
- const saved=menuUiState.get(key)||{section:uiPrefs.lastSection,actor:'',offset:0};menuUiState.set(key,saved);
- const box=panel(title('Игровое меню'),para('Просмотр и настройки не продвигают время. Игровые действия передаются в ChatGPT как намерение, не как уже выполненное событие.'));
- const output=node('div'),actor=node('select','field'),nav=node('div','game-grid'),search=node('input','field'),favorites=node('div','favorite-row');search.type='search';search.placeholder='Найти раздел или действие';
- let scenes=state.scenes,complete=state.historyComplete,projection=replay(scenes),verified=false;
+ const saved=menuUiState.get(key)||{section:'dashboard',actor:'',offset:0,group:'quick'};menuUiState.set(key,saved);
+ const box=node('section','native-game-menu'),header=node('div','menu-header'),nav=node('div','menu-directory'),groups=node('div','menu-group-tabs'),tiles=node('div','menu-tiles'),search=node('input','field menu-search'),output=node('div','menu-screen'),actor=node('select','field menu-actor'),status=node('div','menu-sync-status'),breadcrumb=node('div','menu-breadcrumb');
+ search.type='search';search.placeholder='Найти раздел';search.setAttribute('aria-label','Найти раздел меню');actor.setAttribute('aria-label','Герой');
+ nav.append(groups,search,tiles);
+ const snap=menuSnapshotKey(w),cached=menuMemoryCache?.key===snap?menuMemoryCache:null;
+ let scenes=cached?.scenes??state.scenes,complete=cached?.complete??state.historyComplete,projection=cached?.projection??replay(scenes),loadingMemory=false;
+ const alive=()=>box.isConnected&&state.screen==='world'&&state.tab==='menu'&&menuSnapshotKey(state.world)===snap;
+ async function loadMemory(){
+  if(loadingMemory)return;loadingMemory=true;status.replaceChildren(para('Загружаю полную память мира…'));
+  try{
+   if(menuMemoryJob?.key!==snap){const job={key:snap,promise:fullStructuredMemory(w)};menuMemoryJob=job;job.promise.finally(()=>{if(menuMemoryJob===job)menuMemoryJob=null;}).catch(()=>{});}
+   const m=await menuMemoryJob.promise;
+   if(!alive())return;
+   scenes=m.scenes;complete=m.complete;projection=replay(scenes,[],{evidencePrevalidated:true});
+   menuMemoryCache={key:snap,scenes,complete,projection};selectActor();show();
+  }catch(e){if(alive())status.replaceChildren(para('Не удалось загрузить память: '+e.message),button('Повторить',()=>void loadMemory(),'btn secondary'));}
+  finally{loadingMemory=false;}
+ }
  const selectActor=()=>{
   const choice=(projection.worldFacts||[]).find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending');
   const known=choice?[choice.actor]:recordedPlayerActors(projection);
@@ -514,7 +613,11 @@ function renderGameMenu(){
  const savePreference=async(record)=>{
   const prefs=menuPreferences(state.directives,w.active_branch_id);if(!prefs.can_edit)throw Error('Конфликт настроек — проверь правила.');
   await rpc('nw_save_menu_preferences',{p_world_id:w.id,p_branch_id:w.active_branch_id,p_expected_head:w.head_scene_id,p_expected_version:w.directive_version,p_record:menuRecordFromInput(record,w.active_branch_id)});
-  await reloadWorld(w.id);toast('Настройки сохранены. Игровое время не изменилось.');renderWorld();
+  const [latest,rules]=await Promise.all([getWorld(w.id),listDirectives(w.id)]);
+  if(state.world?.id!==w.id||state.world.active_branch_id!==w.active_branch_id)return;
+  if(latest.active_branch_id!==w.active_branch_id)throw Error('Ветка изменилась. Синхронизируй мир.');
+  Object.assign(state.world,{directive_version:latest.directive_version,auto_save:latest.auto_save,updated_at:latest.updated_at});state.directives=rules;
+  toast('Настройки сохранены. Игровое время не изменилось.');if(alive())show();
  };
  function settingsView(prefs){
   const controls=node('div'),values={...prefs.settings};
@@ -549,29 +652,56 @@ function renderGameMenu(){
   })));return out;
  }
  function show(){
-  output.replaceChildren();nav.replaceChildren();const prefs=menuPreferences(state.directives,w.active_branch_id);
+  output.replaceChildren();breadcrumb.replaceChildren();groups.replaceChildren();tiles.replaceChildren();
+  const prefs=menuPreferences(state.directives,w.active_branch_id);
   const menu=gameMenuContext({world:w,directives:state.directives,context:{head_scene_id:w.head_scene_id,memory_complete:complete}});
-  const sections=[{id:'dashboard',label:'Обзор'},...menu.sections];
-  const go=s=>{const y=window.scrollY,top=nav.getBoundingClientRect().top+y;saved.section=s.id;saved.offset=0;updateUI({lastSection:s.id});show();window.scrollTo({top:Math.min(y,top),behavior:'instant'});};
-  const drawNav=()=>{nav.replaceChildren();favorites.replaceChildren();for(const s of filterSections(sections.map(s=>({...s,actions:(s.actions||[]).flatMap(a=>[a,MENU_ACTION_LABELS[a]||a])})),search.value)){
-   const tile=node('div','game-tile-wrap');const b=button(s.label,()=>go(s),'game-tile'+(saved.section===s.id?' active':''));b.setAttribute('aria-pressed',String(saved.section===s.id));
-   const star=button(uiPrefs.favorites.includes(s.id)?'★':'☆',()=>{const on=uiPrefs.favorites.includes(s.id);if(!on&&uiPrefs.favorites.length>=8){toast('До восьми избранных разделов.',true);return;}updateUI({favorites:on?uiPrefs.favorites.filter(x=>x!==s.id):[...uiPrefs.favorites,s.id]});drawNav();},'favorite-star');star.setAttribute('aria-label','Избранное: '+s.label);star.setAttribute('aria-pressed',String(uiPrefs.favorites.includes(s.id)));tile.append(b,star);nav.append(tile);
-  }for(const id of uiPrefs.favorites){const s=sections.find(x=>x.id===id);if(s)favorites.append(button(s.label,()=>go(s),'btn secondary'));}};
-  search.oninput=drawNav;drawNav();
+  const sections=[{id:'dashboard',label:'Главное меню'},...menu.sections];
+  saved.section=menuSectionTransition(sections,'dashboard',saved.section);
+  const home=saved.section==='dashboard';
+  nav.hidden=!home;
+  const go=s=>{const next=menuSectionTransition(sections,saved.section,s?.id);if(next===saved.section)return;saved.section=next;saved.offset=0;updateUI({lastSection:next});show();box.scrollIntoView({block:'start',behavior:'instant'});};
+  const back=button('‹ Главное меню',()=>go(sections[0]),'menu-back');
+  if(!home){const current=sections.find(s=>s.id===saved.section);breadcrumb.append(back,node('span','menu-breadcrumb-label',current.label));}
+  const drawNav=()=>{
+   tiles.replaceChildren();
+   const query=search.value.trim(),visible=directorySections(sections.map(s=>({...s,actions:(s.actions||[]).flatMap(a=>[a,MENU_ACTION_LABELS[a]||a])})),{group:saved.group||'quick',query,favorites:uiPrefs.favorites});
+   for(const s of visible){
+    const tile=node('div','menu-tile'),b=button('',()=>go(s),'menu-tile-button');b.append(menuGlyph(s.icon),add(node('span','menu-tile-text'),node('strong','',s.label),node('small','',MENU_DESCRIPTIONS[s.id]||'Открыть раздел')),node('span','menu-chevron','›'));
+    const star=button(uiPrefs.favorites.includes(s.id)?'★':'☆',()=>{const on=uiPrefs.favorites.includes(s.id);if(!on&&uiPrefs.favorites.length>=8){toast('До восьми избранных разделов.',true);return;}updateUI({favorites:on?uiPrefs.favorites.filter(x=>x!==s.id):[...uiPrefs.favorites,s.id]});drawNav();},'menu-tile-star');star.setAttribute('aria-label','Избранное: '+s.label);star.setAttribute('aria-pressed',String(uiPrefs.favorites.includes(s.id)));tile.append(b,star);tiles.append(tile);
+   }if(!visible.length)tiles.append(para('Разделы не найдены.'));
+  };
+  for(const g of MENU_GROUPS){const b=button(g.label,()=>{saved.group=g.id;search.value='';for(const other of groups.children)other.setAttribute('aria-pressed',String(other===b));drawNav();},'menu-group-tab');b.setAttribute('aria-pressed',String((saved.group||'quick')===g.id));groups.append(b);}
+  search.oninput=drawNav;if(home)drawNav();
+  if(complete)status.replaceChildren(node('span','menu-sync-dot'),document.createTextNode('Память загружена'));
+  if(!complete&&!loadingMemory)status.replaceChildren(para('Загружена часть истории.'),button('Загрузить память',()=>void loadMemory(),'btn secondary'));
+  try{showContent(menu,prefs,sections,go);}catch(e){output.replaceChildren(node('div','notice','Не удалось открыть этот раздел: '+e.message),button('Повторить',show,'btn secondary'));console.error(e);}
+ }
+ function showContent(menu,prefs,sections,go){
   if(saved.section==='settings'){output.append(settingsView(prefs));return;}
-  if(!complete){output.append(node('div','notice','История загружена частично. Нажми «Вся память», чтобы проверить доступные действия.'));return;}
+  if(!complete){output.append(para('Данные раздела появятся после загрузки полной памяти.'));return;}
   if(!saved.actor){output.append(para('Герой определяется по сохранённому выбору игрока. Пока он не установлен, доступна настройка мира.'));return;}
   const overview=playerMenuOverview(projection,saved.actor,scenes.at(-1)?.world_time??null,{scenes,complete,offset:saved.offset||0,limit:24});
-  if(saved.section==='dashboard'){output.append(title('Обзор'));if(prefs.settings.hud)output.append(hudView(overview));output.append(title('Уведомления'));for(const n of overview.dashboard.notifications.records){output.append(button(n.title||n.kind,()=>{const s=sections.find(x=>x.id===n.section);if(s)go(s);},'btn secondary'));}output.append(renderMenuData(overview.dashboard.counts));for(const q of [...(overview.life.quick_actions||[]),...(overview.dashboard.quick_actions||[])])output.append(button(q.label||MENU_ACTION_LABELS[q.action]||q.action,()=>busy(()=>copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+(q.detail||q.label)+'. Проверь актуальный get_game_menu и validate_game_menu_action: '+JSON.stringify({action:q.action,detail:q.detail||q.label,...Object.fromEntries(Object.entries(q).filter(([k])=>k.endsWith('_id')))})+'. Не выполняй автоматически.')),'btn secondary'));return;}
+  if(saved.section==='dashboard'){
+   const hud=node('div','menu-dashboard');hud.append(title(overview.actor),para([overview.clock,overview.dashboard.location?.value].filter(Boolean).join(' · ')||'Текущее состояние героя'));
+   if(prefs.settings.hud)hud.append(hudView(overview));
+   const counts=node('div','menu-counts');
+   for(const [id,label,count] of [['inventory','Вещи',overview.dashboard.counts.inventory],['tasks','Дела',overview.dashboard.counts.tasks],['contacts','Знакомые',overview.dashboard.counts.contacts],['letters','Письма',overview.dashboard.counts.letters]]){
+    const b=button('',()=>go(sections.find(s=>s.id===id)),'menu-count');b.append(node('strong','',String(count??0)),node('span','',label));counts.append(b);
+   }
+   hud.append(counts);if(overview.dashboard.notifications.records.length){hud.append(node('h3','','Уведомления'));for(const n of overview.dashboard.notifications.records){const s=sections.find(x=>x.id===n.section);if(s)hud.append(button(n.title||n.kind,()=>go(s),'menu-record-button'));}}
+   output.append(hud);return;
+  }
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
-  output.append(title(section.label));
+  output.append(add(node('div','menu-screen-heading'),menuGlyph(section.icon),title(section.label)));
   if(['illustrations','portraits'].includes(section.id)){output.append(visualLibrary(w,overview,section.id,saved.visualFocus));return;}
-  if(['gallery','character','wardrobe','inventory','library','news','documents','places','property','magical_ecology','rituals'].includes(section.id)){output.append(visualLibrary(w,overview,section.id));}
-  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
+  if(['gallery','character','wardrobe','inventory','library','news','documents','places','property','magical_ecology','rituals'].includes(section.id)){const gallery=node('details','menu-data-group');gallery.append(node('summary','','Иллюстрации раздела'));let opened=false;gallery.addEventListener('toggle',()=>{if(gallery.open&&!opened){opened=true;gallery.append(visualLibrary(w,overview,section.id));}});output.append(gallery);}
+  if(section.id==='journal'){output.append(menuJournal(w,scenes));return;}else if(section.id==='memories'){output.append(menuMemories(w,overview,projection));return;}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
    output.append(readableMaterials(section.id,overview,documentIndex(scenes,projection,{complete}),w,saved.actor));
    if(section.id==='news')output.append(title('Известия и подписки'),renderMenuData({knowledge:overview.world_depth.news,...overview.advanced.channels}));
   }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else output.append(renderMenuData(menuSection(overview,section.id).data));
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
+  const actionPanel=node('details','menu-action-panel');actionPanel.append(node('summary','','Действия героя в истории'),para('Просмотр данных работает здесь. Эти действия требуют сыгранной сцены в ChatGPT и сами не изменяют мир.'));
+  let actionStart=output.childNodes.length;
   output.append(personalActions(section,overview));
   if(['circles','education'].includes(section.id)&&overview.community?.memory_complete){
    const choices=Object.entries(COMMUNITY_ACTIONS).filter(([a])=>communityTargets(a,overview.community).length);
@@ -630,7 +760,7 @@ function renderGameMenu(){
    const data=menuSection(overview,section.id).data;
    const hasNext=v=>v&&typeof v==='object'&&(v.next_offset!=null||Object.values(v).some(x=>!Array.isArray(x)&&x&&typeof x==='object'&&hasNext(x)));
    const move=offset=>{const y=window.scrollY;saved.offset=offset;show();window.scrollTo({top:Math.min(y,output.getBoundingClientRect().top+window.scrollY),behavior:'instant'});};
-   if(saved.offset>0||hasNext(data))output.append(row(...(saved.offset>0?[button('← Предыдущие записи',()=>move(Math.max(0,saved.offset-24)),'btn secondary')]:[]),...(hasNext(data)?[button('Следующие записи →',()=>move((saved.offset||0)+24),'btn secondary')]:[])));
+   if(saved.offset>0||hasNext(data)){output.insertBefore(row(...(saved.offset>0?[button('← Предыдущие записи',()=>move(Math.max(0,saved.offset-24)),'btn secondary')]:[]),...(hasNext(data)?[button('Следующие записи →',()=>move((saved.offset||0)+24),'btn secondary')]:[])),output.childNodes[actionStart]??null);actionStart++;}
   }
   const docs=section.actions.filter(a=>Object.hasOwn(DOCUMENT_ACTIONS,a));
   if(docs.length){
@@ -658,7 +788,7 @@ function renderGameMenu(){
     menuActionIntent(input,overview);await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Проверь актуальное меню и validate_game_menu_action: '+JSON.stringify(input)+'. Не выполнять без сцены и согласия.');
    })));
   }
-  const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a)&&!Object.hasOwn(ADVANCED_ACTIONS,a)&&!Object.hasOwn(MAGIC_ACTIONS,a)&&!Object.hasOwn(SOCIETY_ACTIONS,a)&&!Object.hasOwn(DOCUMENT_ACTIONS,a)&&!Object.hasOwn(WEALTH_ACTIONS,a));
+  const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a)&&!Object.hasOwn(ADVANCED_ACTIONS,a)&&!Object.hasOwn(MAGIC_ACTIONS,a)&&!Object.hasOwn(SOCIETY_ACTIONS,a)&&!Object.hasOwn(DOCUMENT_ACTIONS,a)&&!Object.hasOwn(WEALTH_ACTIONS,a)&&!Object.hasOwn(COMMUNITY_ACTIONS,a)&&!Object.hasOwn(CIVIC_ACTIONS,a)&&!Object.hasOwn(ROOM_ACTIONS,a)&&!['set_priority','clear_priority'].includes(a));
   if(otherActions.length){
    const actions=node('select','field'),detail=field('Что именно сделать, с кем или с каким предметом?');detail.rows=3;
    for(const a of otherActions){const o=node('option','',MENU_ACTION_LABELS[a]);o.value=a;actions.append(o);}
@@ -669,10 +799,13 @@ function renderGameMenu(){
     await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+MENU_ACTION_LABELS[actions.value]+' — '+d+'. Прочитай актуальный раздел '+section.id+', проверь необходимые ID и условия через validate_game_menu_action; если выбор неоднозначен, уточни. Не считай действие выполненным до сцены.');
    })));
   }
-  if(section.actions.length)output.append(button('Открыть этот раздел в ChatGPT',()=>busy(()=>copy('/меню '+section.label+' — мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Прочитай актуальное меню и покажи доступные действия без продвижения времени.')),'btn secondary'));
+  // The read screen stays independent of the optional narrative controls.
+  if(section.actions.length){while(output.childNodes.length>actionStart)actionPanel.append(output.childNodes[actionStart]);output.append(actionPanel);}
  }
  actor.addEventListener('change',()=>{saved.actor=actor.value;saved.offset=0;show();});
- selectActor();box.append(actor,row(button('Вся память',()=>busy(async()=>{const m=await fullStructuredMemory(w);scenes=m.scenes;complete=m.complete;verified=true;projection=replay(scenes,[],{evidencePrevalidated:verified});selectActor();show();}),'btn secondary')),search,favorites,nav,output);root.append(box);show();
+ selectActor();header.append(add(node('div',''),node('div','eyebrow','LIVING WORLD'),title('Игровое меню')),actor);
+ box.append(header,status,breadcrumb,nav,output);root.append(box);show();if(!complete)queueMicrotask(()=>{if(alive())void loadMemory();});
+
 }
 
 function renderStory(){const w=state.world;
@@ -1223,7 +1356,7 @@ function renderDirector(){const w=state.world;add(root,panel(title('Состоя
  add(root,panel(title('Автосохранение через MCP'),para('После публикации и подключения OAuth-моста ChatGPT сможет сохранять сцены при включённом разрешении. Эта настройка не запускает модель в фоне.'),row(button(w.auto_save?'Автосохранение включено':'Автосохранение выключено',()=>busy(async()=>{await setAutosave(w.id,!w.auto_save);await reloadWorld(w.id);renderWorld();}),'btn secondary'))));
  add(root,panel(title('Удалить мир'),para('Удаление безвозвратное. Старый LIVING WORLD не затрагивается.'),row(button('Удалить этот мир',()=>busy(async()=>{if(!confirm(`Удалить мир «${w.title}» вместе с его ветками?`))return;await deleteWorld(w.id);await openWorlds();toast('Мир удалён.');}),'btn danger'))));
 }
-accountButton.addEventListener('click',()=>busy(async()=>{if(readSession()){await signOut();showAuth();}else showAuth();}));
+accountButton.addEventListener('click',()=>busy(async()=>{if(readSession()){menuMemoryCache=null;menuMemoryJob=null;menuUiState.clear();await signOut();showAuth();}else showAuth();}));
 document.querySelector('#homeLink').addEventListener('click',e=>{e.preventDefault();busy(openWorlds);});
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Ошибка подключения. Попробуй обновить страницу.',true);});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void checkCloudChanges();});
