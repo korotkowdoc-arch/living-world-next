@@ -1,10 +1,14 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.56.0 — причинно-следственная память
+- [x] Candidate: bounded branch-local causal recall of unresolved/resolved consequences, exact incident references, response plans/results and explicit causal graph with original/latest sources; established links only expand relevance, claims remain attributed. Expose in next turn, focused context and existing consequence tool. Draft review flags possibly missed consequence updates and pending responses after resolution. No automatic closure or state mutation.
+- [ ] CI, merge, deployment and real story verification. Historical missing causal records are not retroactively created.
+
 ## v0.55.0 — фактические изменения реестров и актуальное состояние
 - [x] Candidate: compare before/after projection across ten registries, including per-field state, both transfer legs, indirect outfit changes, repeated observations and explicit unknown. All recognized canonical MCP events now receive state preflight (legacy untyped world notes retain their previous path) and return validated projection delta after successful commit; reused receipts explicitly omit it. Identity review flags exact duplicate need/skill/open-plan/project/habit scopes without silently merging.
 - [x] Candidate: focused recent current-state recall, source-preserving; growth project/rumor/cause routing corrected. Regression tests.
-- [ ] CI, merge, deployment and actual play verification. No semantic completeness guarantee or retroactive rewriting.
+- [x] PR #51 merged (b68e9b5); final JS/Chromium and SQL CI passed. [ ] Deployment and actual play verification. No semantic completeness guarantee or retroactive rewriting.
 
 ## v0.54.0 — этапы заданий, активная память и контроль извлечения
 - [x] Candidate: explicit child plan IDs use existing plan events and lifecycle; actual step checklist, count and source links. Parent/child completion independent; orphan steps remain visible. Priority influences child candidates. Focused active task recall independent of generic candidate budget. Exact query/ID matches take precedence over broad actor matches, context compaction retains stable IDs, and updated old records are ranked by latest source. When historical note scanning reaches its cap, source hits trigger targeted retrieval of older scene notes with explicit partial coverage.

@@ -52,7 +52,7 @@ export function storyDrivers(projection={},directives=[],{max=16,actors=[]}={}){
   push({kind:'shared_activity',title:activity.name,actors:activity.actors,status:activity.status,source:activity.source,certainty:'recorded_activity_status',guidance:'Участие и итог показывать в сцене; не выводить дружбу из совместной деятельности.'});
  }
  for(const consequence of (projection.worldFacts||[]).filter(x=>x.consequence_version===1&&x.status!=='resolved').slice(-4).reverse()){
-  push({kind:'lasting_consequence',actor:consequence.actor,description:consequence.description,status:consequence.status,source:consequence.source,certainty:'recorded_consequence',guidance:'Не отменяй последствие без события. Оспаривание не доказывает вину, разрешение не означает прощения.'});
+  push({kind:'lasting_consequence',actor:consequence.actor,description:consequence.description,status:consequence.status,source:consequence.source,consequence_id:consequence.record_id,cause:consequence.cause??null,source_incident:consequence.source_incident??null,responsible:consequence.responsible??null,certainty:'recorded_consequence',guidance:'Не отменяй последствие без события. Оспаривание не доказывает вину, разрешение не означает прощения.'});
  }
  for(const project of (projection.worldFacts||[]).filter(x=>x.growth_version===1&&x.growth_kind==='project'&&['planned','active','paused'].includes(x.status)).slice(-5).reverse()){
   push({kind:'personal_project',actor:project.actor,title:project.title,status:project.status,next_step:project.next_step||null,obstacle:project.obstacle||null,source:project.source,certainty:'recorded_project_not_completed',guidance:'Проект развивается через реальные попытки, ошибки и достигнутые результаты, не автоматически.'});
