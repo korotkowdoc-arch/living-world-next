@@ -51,7 +51,7 @@ function acceptedEpisodeIndex(scenes,projection){
 /** Contact candidates only for recorded contacts or actual shared episodes.
  * An incoming attitude is not reciprocal. Respect both recorded boundaries
  * internally; never expose a hidden attitude in a player-facing menu. */
-export function npcContactOpportunities(scenes=[],projection={},clock=null,{complete=true}={}){
+export function npcContactOpportunities(scenes=[],projection={},clock=null,{complete=true,shared=[]}={}){
  if(!complete)return [];
  const positions=new Map(scenes.map((s,i)=>[s.id,i]));
  const relationships=new Map(),episodes=acceptedEpisodeIndex(scenes,projection),pending=new Set();
@@ -79,6 +79,23 @@ export function npcContactOpportunities(scenes=[],projection={},clock=null,{comp
    record_key:own?.key??k,timing:'requires_character_choice',contact:{other,own_stance:clip(own?.stance,80),own_fields:(own?.relationship_fields||[]).map(x=>({field:x.field,value:x.value,source:x.source})),last_episode:episode??null,same_day:sameDay},
    guidance:'Optional contact, discussion, practical cooperation or keeping distance according to own motives. No assumed friendship, affection, forgiveness, acceptance or knowledge of another person’s private feelings.'
   }});
+ }
+ // Use only already-established shared circumstances. Bounded samples in
+ // story-turn prevent expanding a large organization into every possible pair.
+ const introduced=new Set();
+ for(const g of shared){
+  if(!['shared_schedule','group_opportunity'].includes(g.kind))continue;
+  const members=(g.basis||[]).slice(0,12).filter(x=>positions.has(x.source?.scene_id));
+  for(const m of members){
+   const a=m.actor;if(!a||introduced.has(a))continue;
+   const other=members.find(n=>n.actor!==a&&!keys.has(pair(a,n.actor))&&!keys.has(pair(n.actor,a))&&!pending.has(pair(a,n.actor)));
+   if(!other)continue;
+   introduced.add(a);
+   out.push({kind:'social_encounter',row:{actor:a,counterparty:other.actor,key:pair('encounter',pair(a,other.actor)),title:'Possible encounter: '+other.actor,status:'opportunity',source:m.source,place:g.place??null},info:{
+    record_key:g.key,timing:'requires_character_choice',contact:{other:other.actor,context:g.kind,context_title:clip(g.title),other_source:other.source},
+    guidance:'Only a possible encounter from a shared schedule or group. Neither character necessarily knows the other, is present, has access or wants contact. Establish actual circumstances in the scene.'
+   }});
+  }
  }
  return out;
 }
