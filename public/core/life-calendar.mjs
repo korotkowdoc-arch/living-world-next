@@ -1,3 +1,4 @@
+import {taskAccessible} from './duty-career.mjs';
 /** Fictional clock projections: advisory, no wall clock and no implicit player actions. */
 import {parseStoryDate} from './world-time.mjs';
 const DAY=1440;
@@ -37,6 +38,7 @@ const str=v=>typeof v==='string'?v.slice(0,300):null;
 export function playerCalendar(projection={},actor,clockTime,{days=7,limit=40}={}){
  const clock=date(clockTime),records=projection.worldFacts||[],rows=[],windows=[];
  days=Math.max(1,Math.min(31,Math.floor(Number(days)||7)));limit=Math.max(1,Math.min(100,Math.floor(Number(limit)||40)));
+ const taskRecords=new Map(records.map(x=>[x.key,x]));
  const end=clock?Math.floor(clock.order/DAY)*DAY+days*DAY:null;
  const add=(kind,id,title,raw,status,source,extra={})=>{
   const at=date(raw);rows.push({kind,id,title:str(title),when:raw??null,status,timing:timing(at,clock),source,...extra,_order:at?.order??null});
@@ -44,6 +46,8 @@ export function playerCalendar(projection={},actor,clockTime,{days=7,limit=40}={
  for(const x of projection.plans||[])if(x.actor===actor&&['active','paused'].includes(x.status))add('task',x.plan_id,x.goal,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of projection.obligations||[])if(x.actor===actor&&active(x.status))add('commitment',x.commitment_id,x.description||x.evidence,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of records){
+  if(x.player_life_version===1&&x.life_kind==='household_task'&&x.actor===actor&&x.status==='accepted'&&taskAccessible(taskRecords,x))add('household_task',x.record_id,x.title,x.scheduled_on,x.status,x.source);
+  if(x.player_life_version===1&&x.life_kind==='consequence_response'&&x.actor===actor&&x.status==='planned')add('consequence_response',x.record_id,x.title,x.due_at,x.status,x.source);
   if(x.player_life_version===1&&x.life_kind==='lesson'&&x.actor===actor&&x.status==='scheduled'){add('lesson',x.record_id,x.title,x.starts_at,x.status,x.source,{ends_at:x.ends_at,place:x.place});const a=date(x.starts_at),b=date(x.ends_at);if(clock&&a&&b&&b.order>clock.order&&a.order<end)windows.push({id:'lesson:'+x.record_id,title:x.title,start:a.order,end:b.order});}
   if(x.player_life_version===1&&x.life_kind==='supply_contract'&&(x.actor===actor||x.supplier===actor)&&['active','disputed'].includes(x.status))add('supply_contract',x.record_id,x.title,x.due_at,x.status,x.source);
   if(x.player_life_version===1&&x.life_kind==='assignment'&&x.actor===actor&&x.status==='assigned')add('assignment',x.record_id,x.title,x.due_at,x.status,x.source);
@@ -81,6 +85,8 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
  const horizon=Math.max(1,Math.min(31,Math.ceil((target.order-clock.order)/DAY)+1));
  const calendar=playerCalendar(projection,actor,clock.literal,{days:horizon,limit:100});
  const gates=[];
+ const dutyRecords=new Map((projection.worldFacts||[]).map(x=>[x.key,x]));
+ for(const x of dutyRecords.values())if(x.actor===actor&&((x.life_kind==='household_task'&&x.status==='accepted'&&taskAccessible(dutyRecords,x))||(x.life_kind==='consequence_response'&&x.status==='planned'))){const t=date(x.scheduled_on||x.due_at);if(t&&t.order<=target.order)gates.push({kind:x.life_kind,id:x.record_id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:'responsibility_requires_review'});} 
  const deadlines=[...(projection.plans||[]).filter(x=>x.actor===actor&&x.status==='active').map(x=>({kind:'task',id:x.plan_id,title:x.goal,when:x.due_at||x.deadline||x.due,status:x.status})),...(projection.obligations||[]).filter(x=>x.actor===actor&&active(x.status)).map(x=>({kind:'commitment',id:x.commitment_id,title:x.description||x.evidence,when:x.due_at||x.deadline||x.due,status:x.status})),...(projection.worldFacts||[]).filter(x=>x.player_life_version===1&&x.life_kind==='appointment'&&x.status==='confirmed'&&x.participants.includes(actor)).map(x=>({kind:'appointment',id:x.record_id,title:x.title,when:x.starts_at,status:x.status}))];
  for(const x of deadlines){
   if(!['task','commitment','appointment'].includes(x.kind)||x.status==='paused'||x.status==='proposed')continue;
