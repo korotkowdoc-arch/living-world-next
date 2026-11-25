@@ -1,0 +1,68 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {replay,replayWithCheckpoint} from '../public/core/continuity.mjs';
+import {PROJECTION_ENGINE_ID,buildDurableProjection,checkpointForHistory,loadDurableCheckpoint,validDurableCheckpoint} from '../public/core/durable-projection.mjs';
+import {createSnapshotHandler} from '../public/core/snapshot-handler.mjs';
+import {createProjectionCache} from '../public/core/projection-cache.mjs';
+const uid=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
+const evidence='Recorded event.',actor='Harry',currency='GBP';
+const history=(n)=>Array.from({length:n},(_,i)=>({id:uid(i+1),parent_scene_id:i?uid(i):null,world_time:'2000-01-01 09:00',events:i===0?[{id:'cash',type:'money',actor,currency,operation:'reconcile',delta:0,balance:10000,evidence}]:[{id:'payment',type:'money',actor,currency,delta:-1,evidence}]}));
+const input=(scenes,checkpoint=null)=>({status:'ready',head:scenes.at(-1).id,engine_id:PROJECTION_ENGINE_ID,checkpoint,suffix:scenes.slice(checkpoint?.scene_count??0)});
+const response=cp=>({status:'ready',engine_id:PROJECTION_ENGINE_ID,checkpoint:cp});
+const args={world_id:uid(8000),branch_id:uid(8001),head:uid(3000),engine_id:PROJECTION_ENGINE_ID};
+const token='test-token-012345678901234567890';
+test('durable engine ID is versioned with the release',()=>{
+ const p=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'));
+ assert.equal(PROJECTION_ENGINE_ID,'nw-js-'+p.version);
+});
+test('durable snapshot replay matches canonical full history and survives a cold process',()=>{
+ const all=history(3000),prefix=all.slice(0,2900);
+ const first=buildDurableProjection(input(prefix),prefix.at(-1).id);
+ assert.equal(first.persist,true);assert.equal(first.replayed_scenes,2900);
+ const cp=JSON.parse(JSON.stringify(first.checkpoint));assert.ok(validDurableCheckpoint(cp));
+ const resumed=buildDurableProjection(input(all,cp),all.at(-1).id);
+ assert.equal(resumed.persist,true);assert.equal(resumed.replayed_scenes,100);
+ const expected=replay(all,[],{evidencePrevalidated:true});
+ const cache=createProjectionCache(),h={complete:true,scenes:all};
+ assert.equal(cache.hasReusable('owner',args.world_id,args.branch_id,h),false);
+ const r=cache.project('owner',args.world_id,args.branch_id,h,checkpointForHistory(response(resumed.checkpoint),h));
+ assert.equal(r.cache_source,'durable');assert.equal(r.replayed_scenes,0);assert.equal(r.reused_scenes,3000);
+ assert.deepEqual(JSON.parse(JSON.stringify(r.projection)),JSON.parse(JSON.stringify(expected)));
+ assert.equal(r.projection.balances[0].balance,7001);
+ assert.equal(cache.hasReusable('owner',args.world_id,args.branch_id,h),true);
+ assert.equal(cache.project('owner',args.world_id,args.branch_id,h).cache_source,'process');
+ assert.equal(cache.hasReusable('other',args.world_id,args.branch_id,h),false);
+ const near=all.slice(0,2930),nearby=buildDurableProjection(input(near,cp),near.at(-1).id);
+ assert.equal(nearby.persist,false);assert.equal(nearby.checkpoint.scene_count,2900);
+});
+test('reject foreign boundaries, mismatched versions, incomplete chains and malformed state',()=>{
+ const all=history(30),cp=replayWithCheckpoint(all.slice(0,20),{evidencePrevalidated:true}).checkpoint;
+ const broken=input(all,cp);broken.suffix[0]={...broken.suffix[0],parent_scene_id:uid(9999)};
+ assert.equal(buildDurableProjection(broken,all.at(-1).id),null);
+ assert.equal(buildDurableProjection({...input(all),engine_id:'stale'},all.at(-1).id),null);
+ assert.equal(checkpointForHistory(response(cp),{complete:false,scenes:all}),null);
+ const divergent=all.slice();divergent[19]={...divergent[19],id:uid(9999)};
+ assert.equal(checkpointForHistory(response(cp),{complete:true,scenes:divergent}),null);
+ assert.equal(validDurableCheckpoint({...cp,state:{}}),false);
+ assert.equal(buildDurableProjection(input(history(15)),uid(15)),null);
+});
+test('HTTP handler authenticates before accessing private storage and cannot accept client payloads',async()=>{
+ const scenes=history(30),a={...args,head:uid(30)},owner=uid(9000);let reads=0,writes=0;
+ const handler=createSnapshotHandler({authenticate:async t=>t===token?owner:null,readInput:async(o,p)=>{reads++;assert.equal(o,owner);assert.deepEqual(p,a);return input(scenes);},putSnapshot:async(o,p,cp)=>{writes++;assert.equal(o,owner);assert.equal(cp.scene_count,30);return true;}});
+ const req=(body=a,t=token)=>new Request('https://example.invalid/snapshot',{method:'POST',headers:{authorization:'Bearer '+t,'content-type':'application/json'},body:JSON.stringify(body)});
+ assert.equal((await handler(req(a,'bad'))).status,401);
+ assert.equal((await handler(req({...a,payload:{fake:true}}))).status,400);
+ assert.equal((await handler(req(a,'not-the-owner-token-1234567890'))).status,401);
+ assert.equal(reads,0);
+ const r=await handler(req());assert.equal(r.status,200);const data=await r.json();
+ assert.equal(data.stored,true);assert.equal(data.checkpoint.head_scene_id,uid(30));assert.equal(reads,1);assert.equal(writes,1);
+});
+test('Worker fails closed to normal replay if snapshot service is down or stale',async()=>{
+ const scenes=history(30),cp=replayWithCheckpoint(scenes,{evidencePrevalidated:true}).checkpoint;
+ const opts={url:'https://example.invalid',anonKey:'anon',token,world:args.world_id,branch:args.branch_id,head:uid(30),history:{complete:true,scenes}};
+ assert.equal(await loadDurableCheckpoint({...opts,fetcher:async()=>{throw Error('offline');}}),null);
+ assert.equal(await loadDurableCheckpoint({...opts,fetcher:async()=>new Response(JSON.stringify({...response(cp),engine_id:'old'}))}),null);
+ const valid=await loadDurableCheckpoint({...opts,fetcher:async(url,request)=>{assert.equal(url,'https://example.invalid/functions/v1/nw-projection-snapshot');assert.equal(JSON.parse(request.body).head,uid(30));return new Response(JSON.stringify(response(cp)));}});
+ assert.equal(valid.scene_count,30);
+});
