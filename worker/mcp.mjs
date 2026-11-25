@@ -1,3 +1,4 @@
+import {createAncestryCache} from '../public/core/ancestry-cache.mjs';
 import {planTimeAdvance} from '../public/core/life-calendar.mjs';
 /**
  * First transport slice: Streamable HTTP MCP, Supabase owner-token validation.
@@ -141,16 +142,26 @@ async function readHistory(env,token,id,limit=100,offset=0){return rpc(env,token
  * Full source text remains available through get_branch_history/get_story_scene/search.
  * Never present a capped projection as complete; a write during pagination aborts the read.
  */
+const ancestryCache=createAncestryCache();
 async function readStructuredMemory(env,token,world,head,{maxScenes=50000}={}) {
- const reader=createAncestryReader(head,{maxScenes});
- for(let page=reader.next();page;page=reader.next())reader.accept(await rpc(env,token,'nw_active_memory_page',{p_world_id:world.id,p_expected_head:head,p_limit:page.limit,p_offset:page.offset}));
+ // ownerWorld has already authenticated this caller through RLS. Scope by
+ // database, owner, world, branch and exact immutable head, never by world alone.
+ const scope=world.owner_id?JSON.stringify([env.SUPABASE_URL,world.owner_id]):null;
+ let result=ancestryCache.get(scope,world.id,world.active_branch_id,head,maxScenes);
+ const cached=!!result;
+ if(!result){
+  const reader=createAncestryReader(head,{maxScenes});
+  for(let page=reader.next();page;page=reader.next())reader.accept(await rpc(env,token,'nw_active_memory_page',{p_world_id:world.id,p_expected_head:head,p_limit:page.limit,p_offset:page.offset}));
+  result=reader.result();
+ }
  if(head!=null){
   const current=await ownerWorld(env,token,world.id);
   if(current.active_branch_id!==world.active_branch_id)throw Error('Active branch changed during memory read');
   const currentBranch=await branch(env,token,current);
   if(currentBranch.head_scene_id!==head)throw Error('History changed during memory read; retry');
  }
- return reader.result();
+ if(!cached)ancestryCache.put(scope,world.id,world.active_branch_id,head,maxScenes,result);
+ return result;
 }
 /** Optional historical hints. Failure is visible, does not break canonical reads.
  * All queries remain scoped to the pinned owner branch. Never turn notes into knowledge. */
