@@ -17,7 +17,7 @@ export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time
  if(clock&&next&&next.order<clock.order&&(clock.precision===next.precision||clock.day!==next.day))result.warnings.push('Дата раньше последней сцены: проверь флешбэк или выбери альтернативную ветку.');
  if(!memory?.complete)result.warnings.push('Неполная история: показана только проверка доступной памяти.');
  const changes=[];
- for(const kind of ['people','relationships','knowledge','balances','items','stock','obligations','worldFacts','plans','offscreen']){
+ for(const kind of ['people','relationships','knowledge','balances','items','stock','obligations','worldFacts','plans','offscreen','effective_outfits']){
   for(const record of after[kind]||[]){
    if(record.source?.scene_id!==id)continue;
    changes.push({category:kind,key:record.key||record.record_id||record.product_id||record.item_id||record.plan_id||record.commitment_id||record.topic_id||record.name||record.actor||record.id||null,
