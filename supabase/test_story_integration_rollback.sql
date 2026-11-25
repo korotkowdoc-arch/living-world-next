@@ -666,4 +666,44 @@ begin
  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(member||'{"status":"left","outcome":"Moved away"}',skill||'{"status":"limited"}',job||'{"status":"active"}'),0);
  if (select count(*) from public.nw_scenes where world_id=wid)<>6 then raise exception 'Rejected scene persisted';end if;
 end $household$;
+-- Assigned household responsibilities, preserved career history and response outcomes.
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $duty_career$
+declare wid uuid; bid uuid; h uuid; bad boolean; body text:='Anna recorded an event.';
+ common jsonb:='{"type":"world","player_life_version":1,"evidence":"Anna recorded an event."}';
+ dyn jsonb:='{"type":"world","dynamics_version":1,"description":"Recorded","evidence":"Anna recorded an event."}';
+ estate jsonb:='{"id":"estate","life_kind":"estate","record_id":"home","key":"player-life:estate:home","actor":"Lia","title":"Home","place":"London","estate_kind":"house","status":"owned"}';
+ home jsonb:='{"id":"home","life_kind":"household","record_id":"home","key":"player-life:household:home","actor":"Lia","title":"Home","home_kind":"estate","home_id":"home","status":"active"}';
+ member jsonb:='{"id":"member","life_kind":"household_member","record_id":"anna","key":"player-life:household_member:anna","actor":"Anna","host":"Lia","household_id":"home","status":"invited"}';
+ duty jsonb:='{"id":"duty","dynamics_kind":"family_duty","record_id":"clean","key":"dynamics:family_duty:clean","actors":["Lia","Anna"],"title":"Clean","family_kind":"household","starts_on":"1994-08-02","every_days":2,"status":"active"}';
+ task jsonb:='{"id":"task","life_kind":"household_task","record_id":"clean","key":"player-life:household_task:clean","actor":"Anna","host":"Lia","household_id":"home","duty_id":"clean","title":"Clean","scheduled_on":"1994-08-02","status":"proposed"}';
+ occurrence jsonb:='{"id":"event","dynamics_kind":"family_event","record_id":"clean","key":"dynamics:family_event:clean","actors":["Lia","Anna"],"title":"Clean","family_kind":"household","duty_id":"clean","scheduled_on":"1994-08-02","status":"completed","outcome":"Cleaned"}';
+ oldjob jsonb:='{"id":"oldjob","dynamics_kind":"employment","record_id":"old","key":"dynamics:employment:old","actor":"Anna","counterparty":"Employer","title":"Clerk","place":"Shop","amount":5,"currency":"GBP","pay_period":"hour","status":"active"}';
+ newjob jsonb;
+ change jsonb:='{"id":"change","life_kind":"career_change","record_id":"promotion","key":"player-life:career_change:promotion","actor":"Anna","title":"Promotion","change_kind":"promotion","previous_job_id":"old","next_job_id":"new","status":"proposed"}';
+ shift jsonb:='{"id":"shift","life_kind":"work_shift","record_id":"old","key":"player-life:work_shift:old","actor":"Anna","employer":"Employer","employment_id":"old","title":"Shift","place":"Shop","starts_at":"1994-08-01 10:00","ends_at":"1994-08-01 11:00","pay_period":"hour","rate":5,"currency":"GBP","status":"scheduled"}';
+ con jsonb:='{"id":"con","type":"world","consequence_version":1,"consequence_kind":"social","record_id":"con","key":"consequence:con","actor":"Anna","responsible":"Lia","status":"active","description":"Disagreement","evidence":"Anna recorded an event."}';
+ response jsonb:='{"id":"response","life_kind":"consequence_response","record_id":"repair","key":"player-life:consequence_response:repair","actor":"Lia","title":"Discuss","consequence_id":"con","due_at":"1994-08-01 09:00","action_description":"Talk","status":"planned"}';
+begin
+ wid:=public.nw_create_world('Duties and career test','Synthetic household and work','1994-08-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ estate:=estate||common;home:=home||common;member:=member||common;duty:=duty||dyn;task:=task||common;occurrence:=occurrence||dyn;oldjob:=oldjob||dyn;newjob:=oldjob||'{"id":"newjob","record_id":"new","key":"dynamics:employment:new","title":"Manager","amount":10,"status":"offered"}';change:=change||common;shift:=shift||common;response:=response||common;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(estate,home,member,duty,oldjob,newjob,shift,change,con,response),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(task),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Non-member assigned task';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(oldjob||'{"status":"ended"}',newjob||'{"status":"active"}',change||'{"status":"completed","outcome":"Promoted"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Career closed unresolved shift';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(response||'{"status":"performed","result":"resolved","outcome":"Talked"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Response implied resolution';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(member||'{"status":"joined","outcome":"Agreed"}',task),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(task||'{"id":"duplicate","record_id":"duplicate","key":"player-life:household_task:duplicate"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Duplicate assignment';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 10:00',jsonb_build_array(task||'{"status":"accepted","outcome":"Agreed"}',shift||'{"status":"working"}'),0);
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 11:00',jsonb_build_array(shift||'{"status":"worked","worked_minutes":60,"outcome":"Worked"}',oldjob||'{"status":"ended"}',newjob||'{"status":"active"}',change||'{"status":"completed","outcome":"Promoted"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-02 12:00',jsonb_build_array(occurrence),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Family occurrence closed without task';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-02 12:00',jsonb_build_array(occurrence,task||'{"status":"completed","family_event_id":"clean","outcome":"Cleaned"}',con||'{"status":"resolved","outcome":"Resolved"}',response||'{"status":"performed","result":"resolved","outcome":"Talked"}'),0);
+ if (select count(*) from public.nw_scenes where world_id=wid)<>5 then raise exception 'Rejected scene persisted';end if;
+end $duty_career$;
 rollback;
