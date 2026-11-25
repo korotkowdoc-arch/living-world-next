@@ -365,7 +365,7 @@ async function callTool(name,args,env,token){
     memory_retrieval_tools:['read_world_illustration_image','list_world_illustrations','get_visual_profile','get_world_illustration','get_document_authoring','get_world_document','get_game_menu','get_scene_context','get_character_state','get_actor_memory','get_actor_history','get_branch_history','search_story_memories','get_story_scene','get_world_agenda','get_world_economy','get_living_world','get_memory_review_queue','get_annotation_passages','get_social_world','get_character_knowledge','get_memory_notes','get_relationship_history','get_character_activities','get_world_consequences','get_character_growth','get_world_dynamics','prepare_story_turn','validate_player_choice'],
     narrator_workflow:narratorWorkflow,head_scene_id:active.head_scene_id,directive_version:world.directive_version,auto_save:finalWorld.auto_save,relationship_locks:extractLocks(rules),history_complete:history.complete,projection_cache:history.projection_cache,
     recent_scenes:lastScenes.slice().reverse().map(s=>boundedMcpScene(s)),
-    narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda}),
+    narration_guidance:promptForNarrator({world,directives:rules,history:lastScenes.slice().reverse().slice(-2),projection:ctx.memory,timeContext:ctx.recorded_agenda,technicalGuidance:false}),
     warning:history.complete?ctx.memory_warning:'Structured memory reached the 50,000-scene safety cap; partial data cannot justify facts about earlier history.'};
   }
   case 'search_story_memories':{

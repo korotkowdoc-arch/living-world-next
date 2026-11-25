@@ -73,3 +73,9 @@ test('all recorded participants survive context compaction',()=>{
  const summary=limitedNarratorMemory({worldFacts:[{actors,title:'Собрание',source}]});
  assert.deepEqual(summary.records.worldFacts[0].actors,actors);
 });
+
+test('connected narrator prompt uses compact menu instructions without losing user rules and source links',()=>{
+ const rule='Установленное правило: '+ 'не изменять канон. '.repeat(200);
+ const p=promptForNarrator({world:{seed:'Мир'},directives:[{active:true,text:rule}],projection:{plans:[]},history:[{id:'source',world_time:'1994-07-01',body:'Сцена'.repeat(12000)}],technicalGuidance:false});
+ assert.ok(p.includes(rule));assert.match(p,/narrator_workflow/);assert.match(p,/get_story_scene\(source\)/);assert.ok(p.length<53000);
+});

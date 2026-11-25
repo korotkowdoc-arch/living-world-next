@@ -4,6 +4,7 @@
 ## v0.45.1 — комнаты и непрерывность (candidate)
 - [x] Room observations with stable area identity, purpose, walls/flooring/lighting, current title epoch, own-room menu, effective furniture, known condition, and image subjects; no implicit repairs or spending. Reconfirm after ownership changes. No new MCP tool or SQL schema.
 - [x] Explicit tests of subscription visibility and academic assessment identity; ambiguous same-title modules no longer auto-match.
+- [x] Fixed growing narrator prompt budget: complete schema instructions remain in narrator_workflow, connected/oversized prose prompt uses compact core guidance without truncating player rules; regression tests.
 - [ ] Combined CI, live deployment and gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
 
 ## v0.45.0 — Living Civilization: координация систем
