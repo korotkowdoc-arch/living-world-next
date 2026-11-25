@@ -30,8 +30,8 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,settings={
  const total=groups.reduce((n,x)=>n+x.length,0),result=[];
  // One per character per round prevents the same NPC monopolizing the world.
  // Urgent recorded duties take precedence over optional activity. Rotate actors within each tier.
- for(const tier of [0,1,2]){
-  const queues=groups.map(xs=>xs.filter(x=>x.priority===tier));
+ for(const urgent of [true,false]){
+  const queues=groups.map(xs=>xs.filter(x=>(x.priority===0)===urgent));
   for(let i=0;result.length<limit&&queues.some(xs=>xs.length>i);i++)for(const xs of queues){if(xs[i])result.push(xs[i]);if(result.length>=limit)break;}
  }
  return {initiatives:result,omitted:Math.max(0,total-result.length),budget:limit,policy:'Narrator-only candidates grounded in each NPC own goal, schedule or responsibility; blocked actions require resolution. May happen independently of player, but do not act for player, manufacture consent, invent resources or claim a candidate already happened.'};
