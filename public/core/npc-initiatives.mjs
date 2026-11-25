@@ -81,11 +81,14 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[]
  const groups=[...byActor.values()];for(const xs of groups)xs.sort(compare);
  groups.sort((a,b)=>compare(a[0],b[0])||a[0].actor.localeCompare(b[0].actor));
  const total=groups.reduce((n,x)=>n+x.length,0),result=[];
- // One per character per round prevents the same NPC monopolizing the world.
- // Urgent recorded duties take precedence over optional activity. Rotate actors within each tier.
- for(const tier of [0,1,2,3]){
-  const queues=groups.map(xs=>xs.filter(x=>x.priority===tier)).filter(xs=>xs.length).sort((a,b)=>compare(a[0],b[0])||a[0].actor.localeCompare(b[0].actor));
-  for(let i=0;result.length<limit&&queues.some(xs=>xs.length>i);i++)for(const xs of queues){if(xs[i])result.push(xs[i]);if(result.length>=limit)break;}
+ // Urgent duties first. Then give each actor one nonurgent opportunity before
+ // repeating another actor, using priority and evidence recency within each round.
+ const urgent=groups.map(xs=>xs.filter(x=>x.priority===0)).filter(xs=>xs.length);
+ for(let i=0;result.length<limit&&urgent.some(xs=>xs.length>i);i++)for(const xs of urgent){if(xs[i])result.push(xs[i]);if(result.length>=limit)break;}
+ const remaining=groups.map(xs=>xs.filter(x=>x.priority!==0)).filter(xs=>xs.length);
+ for(let i=0;result.length<limit&&remaining.some(xs=>xs.length>i);i++){
+  const round=remaining.map(xs=>xs[i]).filter(Boolean).sort((a,b)=>compare(a,b)||a.actor.localeCompare(b.actor));
+  for(const row of round){result.push(row);if(result.length>=limit)break;}
  }
  return {initiatives:result,omitted:Math.max(0,total-result.length),budget:limit,policy:'Narrator-only candidates grounded in each NPC own goal, schedule or responsibility; blocked actions require resolution. May happen independently of player, but do not act for player, manufacture consent, invent resources or claim a candidate already happened.'};
 }
