@@ -1,3 +1,4 @@
+import {npcInitiativeView} from './npc-initiatives.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
 /** A unified turn preparation view. All candidates are read-only. The narrator
@@ -200,9 +201,12 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const candidate_counts={all:all.length,focus:all.filter(x=>x.focus_match).length,background:all.filter(x=>!x.focus_match).length};
  // Attach a bounded actor context to the actual turn, instead of forcing the narrator
  // to retrieve every subsystem independently. Focused actors precede background actors.
+ const pendingActor=records.find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')?.actor??null;
+ const npcInitiatives=npcInitiativeView(all,{focus:[...focus],player:pendingActor,settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:interval});
  const selectedActors=scope==='background'?[]:[...focus],omittedActors=new Set();
  const addActor=name=>{if(!text(name)||selectedActors.includes(name))return;if(selectedActors.length<12)selectedActors.push(name);else omittedActors.add(name);};
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
+ for(const initiative of npcInitiatives.initiatives)addActor(initiative.actor);
  if(scope==='background')for(const actor of focus)addActor(actor);
  const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],omitted:{}}]));
  const actorRows=(actor,kind,row,cap)=>{const ctx=actorIndex.get(actor);if(!ctx)return;
@@ -273,7 +277,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  if(clock&&proposed&&!comparable)warnings.push('Точность дат различается: длительность перехода неизвестна.');
  if(opts.complete===false)warnings.push('История неполна; кандидаты не охватывают все события.');
  return {head_scene_id:last?.id??null,clock:clock?.literal??null,target_time:proposed?.literal??null,elapsed_story_minutes:interval,
-  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,time_advance:proposed?.precision==='minute'&&clock?.precision==='minute'&&proposed.order>clock.order&&focus.size===1?planTimeAdvance(scenes,projection,[...focus][0],proposed.literal,{complete:opts.complete!==false,pace:preferences.settings.pace,pending:records.some(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')}):null,player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor,{scenes,clock:anchor?.literal,complete:opts.complete!==false})),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
+  memory_complete:opts.complete!==false,player_priorities:preferences.priorities,simulation_settings:preferences.settings,npc_initiatives:npcInitiatives,time_advance:proposed?.precision==='minute'&&clock?.precision==='minute'&&proposed.order>clock.order&&focus.size===1?planTimeAdvance(scenes,projection,[...focus][0],proposed.literal,{complete:opts.complete!==false,pace:preferences.settings.pace,pending:records.some(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')}):null,player_life:[...focus].map(actor=>playerLifeTurnSummary(projection,actor,{scenes,clock:anchor?.literal,complete:opts.complete!==false})),focus:{actors:[...focus],place:place||null},candidates,scope,offset,total_candidates,candidate_counts,next_offset:offset+candidates.length<total_candidates?offset+candidates.length:null,omitted_candidates:total_candidates-candidates.length,
   relationship_context,relationship_context_omitted,life_context,actor_context,actor_context_omitted:omittedActors.size,
   drivers:storyDrivers(projection,directives,{max:8,actors:[...focus]}),warnings,
   workflow:['Read the pinned head and rules.','Read actor_context for each participant; consult full sources for omitted fields. A recorded incoming relationship is not the participant’s own feeling or knowledge.','Consider each candidate checks array and each actor’s resources, experience, responsibilities, and separate knowledge. Do not treat unknown money as zero or a schedule as proof of presence. Choose only plausible developments, including independent NPC initiatives; keep player decisions theirs.','Record exact evidenced state changes and save one scene against the expected head.','On uncertain save, check the receipt before generating another continuation.'],
