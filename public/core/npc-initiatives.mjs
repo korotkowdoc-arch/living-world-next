@@ -1,10 +1,10 @@
 /** Deterministic initiative shortlist. NPC plans remain theirs; only the narrator
  * can commit what actually happened. No random behavior or real-time ticking. */
 import {parseStoryDate} from './world-time.mjs';
-const eligible=new Set(['intention','goal_opportunity','routine','habit_opportunity','employment','lesson','assignment','estate_sale','invitation','household_invitation','household_task','career_change','consequence_response','expense_share','care_plan','care_support','shared_goal','shared_goal_invitation','health_episode','assessment','home_condition','work_shift','production_order','enterprise','payment_schedule','appointment','journey','service_visit','service_provider','supply_buyer','supply_supplier','development','family_duty','obligation','project','activity','contest_participant','community_member','market_peer','employer_response','mentor_response','thread_participant','agreement_party','market_offer','market_review']);
-const blockers=new Set(['qualification_unconfirmed','recorded_obstacle','recorded_place_constraint','stock_insufficient','stock_unknown','insufficient_recorded_funds','enterprise_not_operating','offer_custody_unconfirmed','competing_schedule','travel_requires_story','funds_unknown','clock_unknown','place_access_unknown','ambiguous_place','candidate_qualification_requires_review','agreement_terms_require_review']);
+const eligible=new Set(['intention','goal_opportunity','routine','habit_opportunity','employment','lesson','assignment','estate_sale','invitation','household_invitation','household_task','career_change','consequence_response','expense_share','care_plan','care_support','shared_goal','shared_goal_invitation','health_episode','assessment','home_condition','work_shift','production_order','enterprise','payment_schedule','appointment','journey','service_visit','service_provider','supply_buyer','supply_supplier','development','family_duty','obligation','project','activity','contest_participant','community_member','market_peer','employer_response','mentor_response','thread_participant','agreement_party','market_offer','market_review','consequence_opportunity']);
+const blockers=new Set(['qualification_unconfirmed','recorded_obstacle','recorded_place_constraint','stock_insufficient','stock_unknown','insufficient_recorded_funds','enterprise_not_operating','offer_custody_unconfirmed','competing_schedule','travel_requires_story','funds_unknown','clock_unknown','place_access_unknown','ambiguous_place','candidate_qualification_requires_review','agreement_terms_require_review','consequence_awareness_requires_review']);
 const mandatory=c=>c.timing==='reached_requires_story';
-const optionalKinds=new Set(['community_member','market_peer','habit_opportunity','mentor_response','thread_participant','contest_participant','goal_opportunity','enterprise','market_review']);
+const optionalKinds=new Set(['community_member','market_peer','habit_opportunity','mentor_response','thread_participant','contest_participant','goal_opportunity','enterprise','market_review','consequence_opportunity']);
 const optional=c=>optionalKinds.has(c.kind)||c.kind==='employment'&&c.status==='active'||c.kind==='employer_response'&&c.status==='active';
 /** Derive actor-specific opportunities from the latest canonical projection.
  * No new records, automatic rivalry, membership, transaction or private knowledge.
@@ -12,11 +12,18 @@ const optional=c=>optionalKinds.has(c.kind)||c.kind==='employment'&&c.status==='
 export function independentSocialOpportunities(records=[],people=[]){
  const out=[],groups=new Map(),institutions=new Map(),members=new Map(),markets=new Map();
  const known=new Set(people.map(p=>p.name));
+ const responses=new Set(records.filter(r=>r.player_life_version===1&&r.life_kind==='consequence_response'&&r.status==='planned').map(r=>JSON.stringify([r.consequence_id,r.actor])));
  const add=(kind,r,actor,info={},extra={})=>{
   if(!actor||!r.source?.scene_id)return;
   out.push({kind,row:{...r,...extra,actor,actors:[actor],counterparty:null,key:JSON.stringify([kind,r.key,actor])},info:{timing:'requires_character_choice',record_key:r.key,...info}});
  };
  for(const r of records){
+  if(r.consequence_version===1&&['active','contested'].includes(r.status)){
+   for(const actor of new Set([r.actor,r.responsible].filter(Boolean))){
+    if(responses.has(JSON.stringify([r.record_id,actor])))continue;
+    add('consequence_opportunity',r,actor,{consequence_id:r.record_id,consequence_kind:r.consequence_kind,affected:r.actor,role:actor===r.actor?'affected':'recorded_responsible',guidance:'Verify what this person actually knows. A disputed consequence is not proof of guilt. Consider a separate response plan, not automatic repair, forgiveness or payment.'});
+   }
+  }
   if(r.social_record_version===1&&r.social_kind==='group'&&r.status==='active')groups.set(r.record_id,r);
   if(r.dynamics_version===1&&['enterprise','institution'].includes(r.dynamics_kind)&&['operating','restricted'].includes(r.status)){
    if(!institutions.has(r.group_id))institutions.set(r.group_id,r);
@@ -77,7 +84,7 @@ export function recordedHabitContext(records=[],scenes=[],clock=null){
  return (actor,name)=>{
   const v=matches.get(key(actor,name));if(!v)return null;
   const last=parseStoryDate(v.last?.world_time),anchor=parseStoryDate(clock);
-  const days=last&&anchor&&last.day<=anchor.day?Math.floor(anchor.order/1440)-Math.floor(last.order/1440):null;
+  const days=last&&anchor&&last.day<=anchor.day&&!(last.precision==='minute'&&anchor.precision==='minute'&&last.order>anchor.order)?Math.floor(anchor.order/1440)-Math.floor(last.order/1440):null;
   return {matching_active:v.active,matching_completed:v.completed,last_completed:v.last,calendar_days_since_match:days,policy:'Exact actor and activity name only; a match is not proof of recurrence or a required next occurrence.'};
  };
 }
@@ -128,7 +135,7 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,players=[]
   const identity=JSON.stringify([actor,c.kind,c.key]);if(seen.has(identity))continue;seen.add(identity);
   const checks=(c.checks||[]).filter(x=>blockers.has(x.kind));
   const stale=c.source?.scene_id&&positions.has(c.source.scene_id)?scenes.length-1-positions.get(c.source.scene_id):null;
-  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,player_involved:c.actors.some(x=>protectedActors.has(x))||[c.learner,c.employee,c.other_party,...(c.participants||[])].some(x=>protectedActors.has(x)),reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length||c.checks_omitted?3:c.kind==='habit_opportunity'&&c.habit_history?.calendar_days_since_match===0?3:optional(c)?2:1,scenes_since_update:stale,record_key:c.record_key??null,context:c.record_key||c.kind==='habit_opportunity'?Object.fromEntries(['frequency','habit_history','market_activity','resource','participants','learner','employee','other_party','group_id','group_name','role','purpose','group_source','institution_source','business_kind','peer_count','peers','guidance'].filter(k=>c[k]!=null).map(k=>[k,c[k]])):null,certainty:'candidate_only_not_performed'};
+  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,player_involved:c.actors.some(x=>protectedActors.has(x))||[c.learner,c.employee,c.other_party,c.affected,...(c.participants||[])].some(x=>protectedActors.has(x)),reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length||c.checks_omitted?3:c.kind==='habit_opportunity'&&c.habit_history?.calendar_days_since_match===0?3:optional(c)?2:1,scenes_since_update:stale,record_key:c.record_key??null,context:c.record_key||c.kind==='habit_opportunity'?Object.fromEntries(['frequency','habit_history','market_activity','consequence_id','consequence_kind','affected','resource','participants','learner','employee','other_party','group_id','group_name','role','purpose','group_source','institution_source','business_kind','peer_count','peers','guidance'].filter(k=>c[k]!=null).map(k=>[k,c[k]])):null,certainty:'candidate_only_not_performed'};
   if(!byActor.has(actor))byActor.set(actor,[]);
   byActor.get(actor).push(row);
  }
