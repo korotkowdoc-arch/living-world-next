@@ -222,7 +222,13 @@ async function readHistoricalIndex(env,token,world,head,history,focus={}){
   if(!Array.isArray(batch)||batch.length>40)throw Error('Invalid historical page');
   rows.push(...batch);if(batch.length<40){complete=true;break;}
  }}catch{unavailable=true;}
- return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),menu_reviews:focus.menuActor?reviewedMenuHistory(rows,history.scenes,focus.menuActor,{complete:complete&&history.complete}):undefined,status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
+ const targeted={requested:0,loaded:0,failed:0,possibly_truncated:0};
+ if(!complete&&head!==null&&Array.isArray(focus.sourceSceneIds)){
+  const ancestry=new Set(history.scenes.map(s=>s.id)),ids=[...new Set(focus.sourceSceneIds)].filter(id=>ancestry.has(id)).slice(0,8);targeted.requested=ids.length;
+  const batches=await Promise.all(ids.map(async id=>{try{const batch=await rpc(env,token,'nw_read_memory_notes',{p_world_id:world.id,p_expected_head:head,p_actor:null,p_scene_id:id,p_limit:40,p_offset:0});if(!Array.isArray(batch)||batch.length>40||batch.some(r=>r.scene_id!==id))throw Error('Invalid targeted historical page');return batch;}catch{return null;}}));
+  for(const batch of batches){if(!batch){targeted.failed++;continue;}targeted.loaded++;if(batch.length===40)targeted.possibly_truncated++;rows.push(...batch);}
+ }
+ return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),targeted_source_lookup:targeted,menu_reviews:focus.menuActor?reviewedMenuHistory(rows,history.scenes,focus.menuActor,{complete:complete&&history.complete}):undefined,status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
 }
 async function visualStorageFetch(env,token,a,{method='GET',bytes,mime}={}){
  const base=new URL(env.SUPABASE_URL);if(base.protocol!=='https:')throw Error('Invalid storage configuration');
@@ -407,7 +413,8 @@ async function callTool(name,args,env,token){
     readFocusedNotes(env,token,world,active.head_scene_id,focus.actors)
    ]);
    const projection=memory.projection;
-   const historicalIndex=await readHistoricalIndex(env,token,world,active.head_scene_id,memory,focus);
+   const sourceSceneIds=[];for(let i=0;i<8;i++)for(const batch of hits){const id=Array.isArray(batch)?batch[i]?.scene_id:null;if(id)sourceSceneIds.push(id);}
+   const historicalIndex=await readHistoricalIndex(env,token,world,active.head_scene_id,memory,{...focus,sourceSceneIds});
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
     throw Error('Story changed while building focused scene context; retry.');

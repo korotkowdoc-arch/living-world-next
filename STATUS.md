@@ -2,7 +2,7 @@
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
 ## v0.54.0 — этапы заданий, активная память и контроль извлечения
-- [x] Candidate: explicit child plan IDs use existing plan events and lifecycle; actual step checklist, count and source links. Parent/child completion independent; orphan steps remain visible. Priority influences child candidates. Focused active task recall independent of generic candidate budget. Exact query/ID matches take precedence over broad actor matches, context compaction retains stable IDs, and updated old records are ranked by latest source.
+- [x] Candidate: explicit child plan IDs use existing plan events and lifecycle; actual step checklist, count and source links. Parent/child completion independent; orphan steps remain visible. Priority influences child candidates. Focused active task recall independent of generic candidate budget. Exact query/ID matches take precedence over broad actor matches, context compaction retains stable IDs, and updated old records are ranked by latest source. When historical note scanning reaches its cap, source hits trigger targeted retrieval of older scene notes with explicit partial coverage.
 - [x] Candidate: scene draft review flags possible missed updates to active tasks and missing/closed parents; per-occurrence extraction cues, ambiguous repeated evidence cannot silently certify coverage. No automatic fact inference or extra API.
 - [ ] CI, merge, deployment and real story verification. No SQL schema change; child relation is a derived view convention, not a separate DB constraint.
 
