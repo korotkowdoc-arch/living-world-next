@@ -1,3 +1,4 @@
+import {playerLifeError,playerLifeTransitionError,applyOutfit,removeUnavailableGarment} from './player-life.mjs';
 import {isMenuDirective} from './game-menu.mjs';
 import {extractLocks,pairKey} from './directives.mjs';
 import {storyDrivers} from './story-drivers.mjs';
@@ -35,6 +36,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     if(!asText(event.id)||ids.has(event.id))errors.push(`${prefix}: требуется уникальный ID.`);
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
+    const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
     if(event.type==='character'){
       const error=characterStateError(event);if(error)errors.push(prefix+': '+error);
     }
@@ -57,7 +59,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     }
     if(event.type==='world'){
       const error=lifeRecordError(event)||socialRecordError(event)||interactionError(event)||activityError(event)||consequenceError(event)||growthRecordError(event)||dynamicsRecordError(event);
-      const versions=['world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version'].filter(k=>event[k]!==undefined);
+      const versions=['world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].filter(k=>event[k]!==undefined);
       if(versions.length>1)errors.push(prefix+': запись не может одновременно принадлежать нескольким системам.');
       if(typeof event.key==='string'&&/^(place|routine):/.test(event.key)&&event.world_record_version!==1)errors.push(prefix+': ключ места или распорядка требует версию.');
       if(typeof event.key==='string'&&event.key.startsWith('social:')&&event.social_record_version!==1)errors.push(prefix+': социальный ключ требует версию.');
@@ -97,6 +99,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
 /** Replay only the actual ancestry of one branch, oldest first. No other branch can leak in. */
 export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) {
   const people=new Map(), relationships=new Map(), knowledge=new Map(), balances=new Map(), items=new Map(), stock=new Map(), obligations=new Map(), worldFacts=new Map(), plans=new Map(), offscreen=[];
+  const outfits=new Map();
   const evidence=[]; const failures=[]; const relationshipHistory=[];let awaiting=null;
   for(const scene of scenes){
     const events=Array.isArray(scene.events)?scene.events:[];
@@ -119,13 +122,14 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         case 'item': {
           const error=event.type==='money'?applyMoney(balances,event,from):applyItem(items,event,from);
           if(error){failures.push({scene_id:scene.id,event_id:event.id,errors:[error]});accepted=false;}
+          else if(event.type==='item')removeUnavailableGarment(outfits,items,event.item_id);
           break;
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
+          const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
-          else {worldFacts.set(event.key,value);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
+          else {worldFacts.set(event.key,value);applyOutfit(outfits,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
         }break;
         case 'offscreen': offscreen.push(value);break;
         case 'plan': {
@@ -156,7 +160,7 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
     }
   }
   const list=m=>[...m.values()];
-  return {people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),stock:list(stock),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:evidence.length,validation_warnings:failures};
+  return {effective_outfits:list(outfits),people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),stock:list(stock),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:evidence.length,validation_warnings:failures};
 }
 
 export function branchAncestry(allScenes,headId) {
@@ -210,7 +214,7 @@ export function validateEconomyAppend(scenes,events,body){
  * SQL still protects expected head; direct RPC and revision integration are separate.
  */
 export function needsStatePreflight(events=[]){
- return events.some(e=>e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1)));
+ return events.some(e=>e?.type==='money'||e?.type==='item'||e?.type==='plan'||(e?.type==='world'&&(e.world_record_version===1||e.social_record_version===1||e.activity_version===1||e.consequence_version===1||e.growth_version===1||e.dynamics_version===1||e.player_life_version===1)));
 }
 export function validateStateAppend(scenes,events,body){
  const draftId='__pending_state_scene__';
