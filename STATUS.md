@@ -1,10 +1,15 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.55.0 — фактические изменения реестров и актуальное состояние
+- [x] Candidate: compare before/after projection across ten registries, including per-field state, both transfer legs, indirect outfit changes, repeated observations and explicit unknown. Stateful MCP save returns validated projection delta after successful commit; reused receipts explicitly omit it.
+- [x] Candidate: focused recent current-state recall, source-preserving; growth project/rumor/cause routing corrected. Regression tests.
+- [ ] CI, merge, deployment and actual play verification. No semantic completeness guarantee or retroactive rewriting.
+
 ## v0.54.0 — этапы заданий, активная память и контроль извлечения
 - [x] Candidate: explicit child plan IDs use existing plan events and lifecycle; actual step checklist, count and source links. Parent/child completion independent; orphan steps remain visible. Priority influences child candidates. Focused active task recall independent of generic candidate budget. Exact query/ID matches take precedence over broad actor matches, context compaction retains stable IDs, and updated old records are ranked by latest source. When historical note scanning reaches its cap, source hits trigger targeted retrieval of older scene notes with explicit partial coverage.
 - [x] Candidate: scene draft review flags possible missed updates to active tasks and missing/closed parents; per-occurrence extraction cues, ambiguous repeated evidence cannot silently certify coverage. No automatic fact inference or extra API.
-- [ ] CI, merge, deployment and real story verification. No SQL schema change; child relation is a derived view convention, not a separate DB constraint.
+- [x] PR #50 merged (de53a43); final JavaScript/Chromium and SQL checks passed. [ ] Deployment and real story verification. No SQL schema change; child relation is a derived view convention, not a separate DB constraint.
 
 ## v0.53.0 — трекер заданий и автоматическая синхронизация меню
 - [x] Candidate: project accepted plan history as current tasks and archive; stable IDs, next step, obstacle, deadline, source links, no fabricated percentages. Include task transition IDs, stable record identities and affected sections in scene receipt and plan context in next-turn candidates. Extend narrator extraction guidance to update touched records rather than create duplicates.

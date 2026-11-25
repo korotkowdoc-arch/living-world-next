@@ -50,7 +50,7 @@ export function eventRoute(e){
   else if(e.advanced_version===1)d=['instrument','lot','distribution','lot_transfer','loan','loan_payment'].includes(e.advanced_kind)?'finance':['channel','edition','subscription'].includes(e.advanced_kind)?'knowledge':e.advanced_kind==='motive'?'character':'world';
   else if(e.dynamics_version===1)d=dynMap.get(e.dynamics_kind)??'world';
   else if(e.interaction_version===1||e.social_record_version===1)d='relationships';
-  else if(e.growth_version===1)d='education';
+  else if(e.growth_version===1)d=e.growth_kind==='project'?'goals':e.growth_kind==='rumor'?'knowledge':e.growth_kind==='cause'?'world':'education';
   else if(e.activity_version===1)d='experiences';
   else if(e.consequence_version===1)d='world';
   else if(e.world_record_version===1)d=e.record_kind==='routine'?'calendar':'world';
