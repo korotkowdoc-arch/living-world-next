@@ -44,6 +44,7 @@ export function playerCalendar(projection={},actor,clockTime,{days=7,limit=40}={
  for(const x of projection.plans||[])if(x.actor===actor&&['active','paused'].includes(x.status))add('task',x.plan_id,x.goal,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of projection.obligations||[])if(x.actor===actor&&active(x.status))add('commitment',x.commitment_id,x.description||x.evidence,x.due_at||x.deadline||x.due,x.status,x.source);
  for(const x of records){
+  if(x.player_life_version===1&&x.life_kind==='work_shift'&&x.actor===actor&&['scheduled','working'].includes(x.status)){add('work_shift',x.record_id,x.title,x.starts_at,x.status,x.source,{ends_at:x.ends_at,place:x.place});const a=date(x.starts_at),b=date(x.ends_at);if(clock&&a&&b&&b.order>clock.order&&a.order<end)windows.push({id:'work_shift:'+x.record_id,title:x.title,start:a.order,end:b.order});}
   if(x.player_life_version===1&&x.life_kind==='appointment'&&x.participants.includes(actor)&&(x.status!=='proposed'||x.actor===actor)&&active(x.status)){
    add('appointment',x.record_id,x.title,x.starts_at,x.status,x.source,{ends_at:x.ends_at,place:x.place,participants:x.participants});
    const a=date(x.starts_at),b=date(x.ends_at);
@@ -82,6 +83,7 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
   gates.push({kind:x.kind,id:x.id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:t.precision==='day'?'date_only_requires_review':'scheduled_or_unresolved'});
  }
  for(const x of projection.worldFacts||[])if(x.player_life_version===1&&x.actor===actor){
+  if(x.life_kind==='work_shift'&&['scheduled','working'].includes(x.status)){const t=date(x.status==='working'?x.ends_at:x.starts_at);if(t&&t.order<=target.order)gates.push({kind:'work_shift',id:x.record_id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:'work_schedule_requires_review'});}
   if(x.life_kind==='journey'&&x.status==='travelling')gates.push({kind:'journey',id:x.record_id,title:x.title,at:clock.literal,reason:'resolve_current_leg_before_skip'});
   if(x.life_kind==='service_visit'&&x.status==='accepted')gates.push({kind:'service_visit',id:x.record_id,title:x.title,at:clock.literal,reason:'review_accepted_service_before_skip'});
  }
