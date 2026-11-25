@@ -208,7 +208,8 @@ async function callTool(name,args,env,token){
   case 'validate_game_menu_action':{
    const world=await ownerWorld(env,token,args.world_id),active=await branch(env,token,world);
    if(['get_archive_authoring','validate_game_menu_action'].includes(name))assertMenuAnchor(args,world,active);
-   if(name==='get_game_menu'&&args.offset>0&&(!Object.hasOwn(args,'expected_head')||args.expected_head!==active.head_scene_id||args.expected_rules_version!==world.directive_version))throw Error('Pagination requires current pinned head and rules version');
+   if(name==='get_game_menu'&&args.part_id&&!args.document_id)throw Error('Part requires document ID');
+   if(name==='get_game_menu'&&(args.offset>0||Object.hasOwn(args,'expected_head')||Object.hasOwn(args,'expected_rules_version'))&&(!Object.hasOwn(args,'expected_head')||args.expected_head!==active.head_scene_id||args.expected_rules_version!==world.directive_version))throw Error('Pagination requires current pinned head and rules version');
    const [rules,history]=await Promise.all([directives(env,token,world.id),readStructuredMemory(env,token,world,active.head_scene_id)]);
    const projection=history.projection;
    const clock=recordedWorldAgenda(history.scenes,projection);
