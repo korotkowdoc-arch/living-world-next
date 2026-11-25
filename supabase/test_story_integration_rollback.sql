@@ -202,4 +202,34 @@ begin
  bad:=false;begin perform public.nw_save_menu_preferences(wid,next_bid,null,3,settings);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Menu owner isolation failed';end if;
 end $menu$;
+-- Player life state is branch-local and cannot forge ownership or letter delivery.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $life$
+declare wid uuid; bid uuid; h uuid; bad boolean; req uuid;
+ body text:='Anna recorded an event.';
+ garment jsonb:='{"id":"garment","type":"world","player_life_version":1,"life_kind":"garment","record_id":"coat","key":"player-life:garment:coat","item_id":"coat","slot":"outer","style":"casual","description":"A coat","evidence":"Anna recorded an event."}';
+ outfit jsonb:='{"id":"outfit","type":"world","player_life_version":1,"life_kind":"outfit","record_id":"anna","key":"player-life:outfit:anna","actor":"Anna","slots":{"outer":"coat"},"evidence":"Anna recorded an event."}';
+ item jsonb:='{"id":"item","type":"item","item_id":"coat","custody_version":1,"actor":"Anna","action":"acquire","evidence":"Anna recorded an event."}';
+ need jsonb:='{"id":"need","type":"world","player_life_version":1,"life_kind":"need","record_id":"anna-hunger","key":"player-life:need:anna-hunger","actor":"Anna","need":"hunger","status":"urgent","description":"Hungry","evidence":"Anna recorded an event."}';
+ letter jsonb:='{"id":"letter","type":"world","player_life_version":1,"life_kind":"letter","record_id":"one","key":"player-life:letter:one","sender":"Anna","recipient":"Boris","subject":"Hello","message":"Private note","channel":"Post","status":"sent","evidence":"Anna recorded an event."}';
+begin
+ wid:=public.nw_create_world('Life test','Synthetic life integration','1994-08-01');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01',jsonb_build_array(outfit),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Unowned outfit accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01',jsonb_build_array(item,garment,outfit,need,letter),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01',jsonb_build_array(need||'{"record_id":"other","key":"player-life:need:other"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Duplicate need accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01',jsonb_build_array(letter||'{"status":"read"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Undelivered letter read';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01',jsonb_build_array(letter||'{"status":"delivered","message":"Changed"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Sent letter changed';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01',jsonb_build_array(letter||'{"status":"delivered","sender_notified":true}',item||'{"action":"transfer","counterparty":"Boris"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01',jsonb_build_array(outfit),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Transferred clothing equipped';end if;
+ req:=gen_random_uuid();
+ perform public.nw_commit_scene(wid,bid,h,req,body,'1994-08-01',jsonb_build_array(letter||'{"status":"read"}'),0);
+ if (select count(*) from public.nw_scenes where world_id=wid)<>3 then raise exception 'Rejected life scenes persisted';end if;
+end $life$;
 rollback;
