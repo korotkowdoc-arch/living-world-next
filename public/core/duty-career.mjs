@@ -69,7 +69,7 @@ export function dutyCrossError(r,e,events,i){
  if(e.dynamics_version!==1||e.dynamics_kind!=='family_event'||!e.duty_id||!['completed','cancelled'].includes(e.status))return null;
  const t=[...r.values()].find(x=>x.life_kind==='household_task'&&x.duty_id===e.duty_id&&x.scheduled_on===e.scheduled_on&&activeTask(x));
  if(!t)return null;
- const statuses=e.status==='completed'?['completed']:['missed','cancelled'];
+ const statuses=e.status==='completed'?['completed','cancelled']:['missed','cancelled'];
  if(!events.slice(i+1).some(x=>x.player_life_version===1&&x.life_kind==='household_task'&&x.key===t.key&&x.actor===t.actor&&statuses.includes(x.status)&&(x.status==='cancelled'||x.family_event_id===e.record_id)))return 'Resolve assigned task in same scene as family event';
  return null;
 }
