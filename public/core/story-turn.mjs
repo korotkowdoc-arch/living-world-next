@@ -47,6 +47,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  }
  const stockByKey=new Map((projection.stock||[]).map(s=>[JSON.stringify([s.holder,s.product_id,s.unit]),s]));
  const recipeById=new Map(records.filter(r=>r.life_kind==='service_recipe').map(r=>[r.record_id,r]));
+ const activeRecipeByService=new Map(records.filter(r=>r.life_kind==='service_recipe'&&r.status==='active').map(r=>[r.service_id,r]));
  const enterpriseById=new Map(records.filter(r=>r.dynamics_kind==='enterprise').map(r=>[r.record_id,r]));
  const balancesByActor=new Map((projection.balances||[]).map(b=>[JSON.stringify([b.actor,b.currency]),b]));
  const itemsById=new Map((projection.items||[]).map(i=>[i.item_id,i]));
@@ -80,7 +81,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
    for(const l of row.stock_lines){const s=stockByKey.get(JSON.stringify([supplier,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity<l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
   if(kind==='service_provider'||kind==='market_review'){
-   const recipe=recipeById.get(row.recipe_id);
+   const recipe=kind==='market_review'?activeRecipeByService.get(row.record_id):recipeById.get(row.recipe_id);
    for(const l of recipe?.stock_lines||[]){const s=stockByKey.get(JSON.stringify([row.actor,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity< -l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:-l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
   if(row.dynamics_kind==='production_order'){
