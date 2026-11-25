@@ -3,7 +3,8 @@
 
 ## v0.47.0 — студенческая жизнь, спорт и культура (candidate)
 - [x] Canonical community events, invitations/RSVP/attendance, distinct results and communicated reports. Capacity, recorded team membership, immutable schedule, confirmed scores and actor-specific partial match statistics. Integrated with communities/education, calendar, NPC opportunities, menu intents, release and cache version. No automatic attendance, payment or invented scores.
-- [ ] CI, database guard parity, cloud verification and real gameplay. Season scheduling and official league-specific ranking rules remain open.
+- [x] Found and repaired old SQL whitelist blocking rooms/civic saves. Migration 032 extends actual owner RPC fold, private helpers, current memberships and office authority, immutable identity, room title revision, ballot tally, RSVP capacity, event outcomes and result reports. SQL rollback test exercises real nw_commit_scene. Knowledge boundary fixes: scores only if communicated; unreported cancellation preserves participant's known calendar.
+- [ ] Final CI, production migration, cloud verification and real gameplay. Season scheduling and official league-specific ranking rules remain open.
 
 ## v0.46.0 — общественные институты
 - [x] Seven canonical civic record types: recorded appointment/revocation, court case and handover, delivered notice, submission, decision, fixed-electorate motion, unique informed ballot. Existing institution/group/membership gate, immutable identities, separate decision before closure, verified quorum and vote outcome. No automatic sanctions or laws.

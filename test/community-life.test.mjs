@@ -32,8 +32,8 @@ test('only actual completed match yields scores; reports expose only observed re
  assert.ok(communityTransition(r,result));put(r,{...event,status:'completed',outcome:'Played'});put(r,result);
  const view=()=>communityIndex({worldFacts:[...r.values()]}).view('Hero');
  assert.equal(view().results.total,0);
- const report=ev('community_report','report',{actor:'Hero',reporter:'Coach',result_id:'score',event_id:'match',description:'Red won',status:'received'});put(r,report);
- assert.equal(view().results.records[0].description,'Red won');assert.doesNotMatch(JSON.stringify(view()),/Private result/);
+ const report=ev('community_report','report',{actor:'Hero',reporter:'Coach',result_id:'score',event_id:'match',description:'Red won 30–10',home_score:30,away_score:10,status:'received'});put(r,report);
+ assert.equal(view().results.records[0].description,'Red won 30–10');assert.doesNotMatch(JSON.stringify(view()),/Private result/);
  assert.equal(view().standings.records[0].recorded_matches,1);assert.equal(view().standings.records[0].teams[0].won,1);
  assert.ok(communityTransition(r,{...result,key:'player-life:community_result:duplicate',record_id:'duplicate'}));
 });
@@ -48,4 +48,18 @@ test('replay, menu and NPC candidates share records, hidden participants and inv
  assert.equal(communityIndex(p).view('Other').participation.total,0);
  assert.ok(communityIndex(p).opportunities().some(x=>x.kind==='community_rsvp'&&x.row.actor==='Hero'));
  assert.equal(communityIndex(p,{complete:false}).opportunities().length,0);
+});
+
+test('report without a communicated score does not disclose numbers or standings; hidden cancellation does not change player calendar',()=>{
+ const r=rows(initial),a=invite('Hero','a');put(r,event);put(r,a);put(r,{...a,status:'accepted',outcome:'Accepted'});
+ put(r,{...event,status:'cancelled',outcome:'Cancelled privately'});
+ assert.equal(communityWindows({worldFacts:[...r.values()]},'Hero').length,1);
+ assert.equal(communityWindows({worldFacts:[...r.values()]}).length,0);
+ put(r,{...a,status:'cancelled',outcome:'Notice received'});
+ assert.equal(communityWindows({worldFacts:[...r.values()]},'Hero').length,0);
+ const s=rows(initial);put(s,event);put(s,{...event,status:'in_progress'});put(s,{...event,status:'completed',outcome:'Played'});
+ const result=ev('community_result','score',{actor:'Coach',event_id:'match',description:'Secret score',home_score:30,away_score:10,status:'recorded'});put(s,result);
+ const report=ev('community_report','report',{actor:'Hero',reporter:'Coach',result_id:'score',event_id:'match',description:'Red won',status:'received'});
+ assert.ok(communityTransition(s,{...report,home_score:99,away_score:0}));put(s,report);
+ const v=communityIndex({worldFacts:[...s.values()]}).view('Hero');assert.equal(v.results.records[0].home_score,null);assert.equal(v.standings.total,0);
 });

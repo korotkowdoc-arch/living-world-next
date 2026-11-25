@@ -1,3 +1,4 @@
+import {communityWindows} from './community-life.mjs';
 /** Read-only cross-system coordination on the active canonical ancestry.
  * No wall clock, no automatic debt, no NPC/player action and no inferred attendance.
  * This is narrator-only; never copy private rows to the player-facing menu. */
@@ -22,6 +23,10 @@ function scheduleRows(records,from,to){
    const id=key(actor,r.key);if(seen.has(id))continue;seen.add(id);
    out.push({actor,key:r.key,kind:r.life_kind,title:clip(r.title),place:clip(r.place),starts_at:a.literal,ends_at:b.literal,order:a.order,end:b.order,source:r.source});
   }
+ }
+ for(const e of communityWindows({worldFacts:records})){
+  const a=exact(e.starts_at),b=exact(e.ends_at);if(!a||!b||b.order<=a.order||b.order<=from.order||a.order>to.order)continue;
+  out.push({actor:e.window_actor,key:e.window_id,kind:'community_event',title:clip(e.title),place:clip(e.place),starts_at:a.literal,ends_at:b.literal,order:a.order,end:b.order,source:e.window_source});
  }
  return out;
 }
