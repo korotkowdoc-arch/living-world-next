@@ -801,4 +801,74 @@ begin
  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2006-09-01',jsonb_build_array(school,milestone),0);
  if (select count(*) from public.nw_scenes where world_id=wid)<>5 then raise exception 'Rejected scene persisted';end if;
 end $family_goals$;
+-- Durable JS projection snapshots: service-only, exact ancestry and branch isolation.
+reset role;
+do $snapshot_privileges$
+begin
+ if has_table_privilege('authenticated','public.nw_projection_snapshots','SELECT') or has_table_privilege('authenticated','public.nw_projection_snapshots','INSERT') or has_table_privilege('anon','public.nw_projection_snapshots','SELECT') or has_function_privilege('authenticated','public.nw_projection_snapshot_put(uuid,uuid,uuid,uuid,text,jsonb)','EXECUTE') or has_function_privilege('authenticated','public.nw_projection_snapshot_input(uuid,uuid,uuid,uuid,text)','EXECUTE') then raise exception 'Derived snapshots exposed to clients';end if;
+end $snapshot_privileges$;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $snapshot_seed$
+declare wid uuid; bid uuid; h uuid; body text:='Anna recorded an event.';
+begin
+ wid:=public.nw_create_world('Durable snapshot test','Synthetic ancestry','2000-01-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ for i in 1..16 loop h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-01-01 09:00','[]',0);end loop;
+ perform set_config('nw.snapshot_world',wid::text,true);perform set_config('nw.snapshot_branch',bid::text,true);perform set_config('nw.snapshot_head',h::text,true);perform set_config('nw.snapshot_owner',auth.uid()::text,true);
+end $snapshot_seed$;
+reset role;
+set local role service_role;
+do $snapshot_store$
+declare wid uuid:=current_setting('nw.snapshot_world')::uuid;bid uuid:=current_setting('nw.snapshot_branch')::uuid;h uuid:=current_setting('nw.snapshot_head')::uuid;u uuid:=current_setting('nw.snapshot_owner')::uuid;result jsonb;cp jsonb;
+begin
+ result:=public.nw_projection_snapshot_input(u,wid,bid,h,'nw-js-test');
+ if result->>'status'<>'ready' or jsonb_array_length(result->'suffix')<>16 or result->'checkpoint'<>'null'::jsonb then raise exception 'Initial snapshot input wrong';end if;
+ if public.nw_projection_snapshot_input(gen_random_uuid(),wid,bid,h,'nw-js-test')->>'status'<>'unavailable' then raise exception 'Foreign owner allowed';end if;
+ cp:=jsonb_build_object('version',1,'evidence_prevalidated',true,'scene_count',16,'head_scene_id',h,'state','{}'::jsonb);
+ if public.nw_projection_snapshot_put(u,wid,bid,h,'nw-js-test',cp||'{"scene_count":15}') then raise exception 'Incorrect snapshot count accepted';end if;
+ if public.nw_projection_snapshot_put(u,wid,bid,h,'nw-js-test',cp||'{"evidence_prevalidated":false}') then raise exception 'Unvalidated snapshot accepted';end if;
+ if not public.nw_projection_snapshot_put(u,wid,bid,h,'nw-js-test',cp) then raise exception 'Snapshot not stored';end if;
+ result:=public.nw_projection_snapshot_input(u,wid,bid,h,'nw-js-test');
+ if result->'checkpoint' is distinct from cp or jsonb_array_length(result->'suffix')<>0 then raise exception 'Exact snapshot not reused';end if;
+ result:=public.nw_projection_snapshot_input(u,wid,bid,h,'nw-js-new');
+ if result->'checkpoint'<>'null'::jsonb or jsonb_array_length(result->'suffix')<>16 then raise exception 'Stale engine reused';end if;
+end $snapshot_store$;
+reset role;
+set local role authenticated;
+do $snapshot_extend$
+declare wid uuid:=current_setting('nw.snapshot_world')::uuid;bid uuid:=current_setting('nw.snapshot_branch')::uuid;h uuid:=current_setting('nw.snapshot_head')::uuid;
+begin
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),'Anna recorded an event.','2000-01-01 09:00','[]',0);
+ perform set_config('nw.snapshot_next',h::text,true);
+end $snapshot_extend$;
+reset role;
+set local role service_role;
+do $snapshot_suffix$
+declare wid uuid:=current_setting('nw.snapshot_world')::uuid;bid uuid:=current_setting('nw.snapshot_branch')::uuid;h uuid:=current_setting('nw.snapshot_head')::uuid;next_head uuid:=current_setting('nw.snapshot_next')::uuid;u uuid:=current_setting('nw.snapshot_owner')::uuid;result jsonb;
+begin
+ result:=public.nw_projection_snapshot_input(u,wid,bid,next_head,'nw-js-test');
+ if result->'checkpoint'->>'head_scene_id' is distinct from h::text or jsonb_array_length(result->'suffix')<>1 or result->'suffix'->0->>'id' is distinct from next_head::text then raise exception 'Incremental suffix wrong';end if;
+ if public.nw_projection_snapshot_input(u,wid,bid,h,'nw-js-test')->>'status'<>'unavailable' then raise exception 'Stale head allowed';end if;
+end $snapshot_suffix$;
+reset role;
+set local role authenticated;
+do $snapshot_fork$
+declare wid uuid:=current_setting('nw.snapshot_world')::uuid;bid uuid;next_head uuid:=current_setting('nw.snapshot_next')::uuid;
+begin
+ perform public.nw_fork_before(wid,next_head,'Alternative');select active_branch_id into bid from public.nw_worlds where id=wid;
+ perform set_config('nw.snapshot_fork',bid::text,true);
+end $snapshot_fork$;
+reset role;
+set local role service_role;
+do $snapshot_isolation$
+declare wid uuid:=current_setting('nw.snapshot_world')::uuid;bid uuid:=current_setting('nw.snapshot_fork')::uuid;h uuid:=current_setting('nw.snapshot_head')::uuid;u uuid:=current_setting('nw.snapshot_owner')::uuid;result jsonb;cp jsonb;
+begin
+ result:=public.nw_projection_snapshot_input(u,wid,bid,h,'nw-js-test');
+ if result->'checkpoint'<>'null'::jsonb or jsonb_array_length(result->'suffix')<>16 then raise exception 'Cross-branch snapshot reused';end if;
+ cp:=jsonb_build_object('version',1,'evidence_prevalidated',true,'scene_count',16,'head_scene_id',h,'state','{}'::jsonb);
+ for i in 1..5 loop if not public.nw_projection_snapshot_put(u,wid,bid,h,'nw-js-new-'||i,cp) then raise exception 'Snapshot write failed';end if;end loop;
+ if (select count(*) from public.nw_projection_snapshots where world_id=wid)>4 then raise exception 'Snapshot storage cap exceeded';end if;
+end $snapshot_isolation$;
+reset role;
 rollback;
