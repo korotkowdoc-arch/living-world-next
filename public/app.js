@@ -238,15 +238,20 @@ function readableMaterials(section,overview,index,w,actor){
     card.append(para(r.source?.world_time||r.status));
     if(r.message!=null)card.append(body(r.message));
     else card.append(para('Первое чтение происходит в истории.'),button('Прочитать в истории',()=>intent('read_letter','Прочитать письмо от '+r.from,{letter_id:r.id}),'btn secondary'));
-    if(r.from&&r.status==='read')card.append(button('Ответить в ChatGPT',()=>intent('reply_letter','Ответить на письмо от '+r.from,{letter_id:r.id}),'btn secondary'));
+    if(r.from&&r.status==='read'){
+     const reply=field('Полный текст ответа');reply.rows=6;card.append(reply,button('Передать ответ в ChatGPT',()=>intent('reply_letter','Ответить на письмо от '+r.from,{letter_id:r.id,letter_recipient:r.from,letter_subject:('Re: '+r.subject).slice(0,200),letter_body:reply.value}),'btn secondary'));
+    }
     if(r.source?.scene_id)card.append(sceneLink(w.id,r.source.scene_id,'Источник'));
     out.append(card);
    }
   }
+  const recipient=field('Получатель'),subject=field('Тема письма'),message=field('Полный текст письма');recipient.rows=1;subject.rows=1;message.rows=7;
+  out.append(title('Написать письмо'),recipient,subject,message,button('Передать письмо в ChatGPT',()=>intent('send_letter','Отправить письмо',{letter_recipient:recipient.value,letter_subject:subject.value,letter_body:message.value}),'btn secondary'));
   return out;
  }
  if(!d?.memory_complete){out.append(para('Для чтения нужна полная подтверждённая история.'));return out;}
- const rows=section==='library'?d.library:section==='news'?d.newspapers:section==='documents'?d.documents:section==='archives'?d.archives:d.authored;
+ const rows=section==='library'?d.library:section==='news'?d.newspapers:section==='documents'?d.documents:section==='archives'?d.archives:section==='publishing'?d.authored:d[section];
+ if(!rows){out.append(para('Нет доступных материалов.'));return out;}
  const q=node('input','field');q.type='search';q.placeholder='Поиск по названию, автору или оглавлению';
  const shelf=node('div','menu-data');out.append(q,shelf);
  const draw=()=>{shelf.replaceChildren();const search=q.value.trim().toLocaleLowerCase('ru');
@@ -268,8 +273,8 @@ function readableMaterials(section,overview,index,w,actor){
     if(data.notes.length)reader.append(title('Личные заметки'),...data.notes.map(n=>body(n.body)));
     if(data.links.length)reader.append(title('Связанные сведения'),...data.links.map(n=>para(n.label+' · '+n.target_kind)));
     const ids={edition_id:r.id,chapter_id:ch.id};
-    reader.append(row(button('Читать / изучить',()=>intent('study_document','Изучить «'+data.title+'» из «'+r.title+'»',ids),'btn secondary'),button(ch.bookmark?'Закладка сохранена':'Закладка',()=>intent('bookmark_document','Поставить закладку «'+ch.title+'»',ids),'btn secondary')));
-    if(data.can_read&&data.body!=null){const note=field('Личная заметка к главе');note.rows=2;reader.append(note,button('Передать заметку в ChatGPT',()=>intent('write_document_note',note.value,ids),'btn secondary'));}
+    if(data.access==='available')reader.append(row(button(ch.read?'Изучить повторно':'Прочитать в истории',()=>intent(ch.read?'study_document':'read_document',(ch.read?'Изучить ':'Прочитать ')+'«'+data.title+'» из «'+r.title+'»',ids),'btn secondary'),button(ch.bookmark?'Убрать закладку':'Закладка',()=>intent(ch.bookmark?'remove_document_bookmark':'bookmark_document',(ch.bookmark?'Убрать':'Поставить')+' закладку «'+ch.title+'»',ids),'btn secondary')));
+    if(data.access==='available'&&data.can_read&&data.body!=null){const note=field('Личная заметка к главе');note.rows=2;reader.append(note,button('Передать заметку в ChatGPT',()=>intent('write_document_note',note.value,ids),'btn secondary'));}
     if(data.source?.scene_id)reader.append(sceneLink(w.id,data.source.scene_id,'Источник текста'));
    };
    chapters.addEventListener('change',show);
@@ -438,7 +443,7 @@ function renderGameMenu(){
   if(saved.section==='dashboard'){output.append(title('Обзор'));if(prefs.settings.hud)output.append(hudView(overview));output.append(title('Уведомления'));for(const n of overview.dashboard.notifications.records){output.append(button(n.title||n.kind,()=>{const s=sections.find(x=>x.id===n.section);if(s)go(s);},'btn secondary'));}output.append(renderMenuData(overview.dashboard.counts));for(const q of [...(overview.life.quick_actions||[]),...(overview.dashboard.quick_actions||[])])output.append(button(q.label||MENU_ACTION_LABELS[q.action]||q.action,()=>busy(()=>copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+(q.detail||q.label)+'. Проверь актуальный get_game_menu и validate_game_menu_action: '+JSON.stringify({action:q.action,detail:q.detail||q.label,...Object.fromEntries(Object.entries(q).filter(([k])=>k.endsWith('_id')))})+'. Не выполняй автоматически.')),'btn secondary'));return;}
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
   output.append(title(section.label));
-  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(['library','documents','archives','publishing','letters','news'].includes(section.id)){
+  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
    output.append(readableMaterials(section.id,overview,documentIndex(scenes,projection,{complete}),w,saved.actor));
    if(section.id==='news')output.append(title('Известия и подписки'),renderMenuData({knowledge:overview.world_depth.news,...overview.advanced.channels}));
   }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
@@ -469,7 +474,7 @@ function renderGameMenu(){
     const intent=menuActionIntent(input,overview);await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Проверь актуальный head и validate_game_menu_action: '+JSON.stringify(input)+'. Намерение: '+intent.intent+'. Сыграй результат, не считай действие выполненным.');
    })));
   }
-  if(['library','documents','archives','publishing','letters','timeline','news','investments','psychology','map','magic','magical_medicine','rituals','alchemy','magical_ecology','magical_clinics','magical_science'].includes(section.id)){
+  if(['library','documents','archives','publishing','letters','notebooks','catalogues','medical_records','bank_records','gallery','timeline','news','investments','psychology','map','magic','magical_medicine','rituals','alchemy','magical_ecology','magical_clinics','magical_science'].includes(section.id)){
    const data=menuSection(overview,section.id).data;
    const hasNext=v=>v&&typeof v==='object'&&(v.next_offset!=null||Object.values(v).some(x=>!Array.isArray(x)&&x&&typeof x==='object'&&hasNext(x)));
    const move=offset=>{const y=window.scrollY;saved.offset=offset;show();window.scrollTo({top:Math.min(y,output.getBoundingClientRect().top+window.scrollY),behavior:'instant'});};
@@ -479,7 +484,7 @@ function renderGameMenu(){
   if(docs.length){
    const sel=node('select','field'),record=node('select','field'),chapter=node('select','field'),detail=field('Что именно сделать?');detail.rows=3;
    for(const a of docs){const o=node('option','',DOCUMENT_ACTIONS[a]);o.value=a;sel.append(o);}
-   const redrawChapter=()=>{chapter.replaceChildren();const need=['read_document','study_document','bookmark_document','write_document_note'].includes(sel.value);chapter.hidden=!need;if(!need)return;
+   const redrawChapter=()=>{chapter.replaceChildren();const need=['read_document','study_document','bookmark_document','remove_document_bookmark','write_document_note'].includes(sel.value);chapter.hidden=!need;if(!need)return;
     const r=documentActionRows({action:sel.value},overview).find(x=>x.id===record.value);for(const x of r?.contents||[]){if(sel.value==='write_document_note'&&!x.read)continue;const o=node('option','',x.title);o.value=x.id;chapter.append(o);}
    };
    const redraw=()=>{record.replaceChildren();record.hidden=!DOCUMENT_ACTION_IDS[sel.value];for(const r of documentActionRows({action:sel.value},overview)){const o=node('option','',r.title||r.subject||r.id);o.value=r.id;record.append(o);}redrawChapter();};

@@ -55,7 +55,7 @@ test('immutable text, editions, access, note, reading continuity and precise int
  assert.throws(()=>menuActionIntent({action:'study_document',edition_id:'second',chapter_id:'one',detail:'Study'},o));
  assert.throws(()=>menuActionIntent({action:'write_document_note',edition_id:'first',chapter_id:'two',detail:'Note'},o));
  assert.throws(()=>menuActionIntent({action:'publish_document',edition_id:'first',detail:'Publish'},o));
- const revoked=[...h2,scene('s5',[{...grant,status:'revoked'}])];assert.throws(()=>ix(revoked).read('Hero','first','one'));
+ const revoked=[...h2,scene('s5',[{...grant,status:'revoked'}])];assert.equal(ix(revoked).read('Hero','first','one').body,chapter.body);assert.equal(ix(revoked).view('Hero').library.records[0].access,'previously_read');assert.equal(ix(revoked).view('Hero').library.records[0].contents.length,1);assert.throws(()=>ix(revoked).read('Hero','first','two'));assert.throws(()=>ix(revoked).authoring('Hero','first','one'));
  assert.ok(documentShapeError({...chapter,body:''}));
  assert.equal(validateScene({body:evidence,events:[{...doc,document_version:2}]}).ok,false);
 });
@@ -71,4 +71,19 @@ test('royalties require separate exact payments; pagination does not disclose un
  assert.equal(v.letters.incoming.total,35);assert.equal(v.letters.incoming.records.length,5);
  assert.equal(v.letters.incoming.records[0].message,null);assert.equal(v.letters.incoming.records[4].message,'Secret 34');
  assert.equal(v.letters.incoming.next_offset,null);
+});
+
+test('narrator can retrieve exact stored text before first read without exposing it in menu',()=>{
+ const d=ix(base);assert.equal(d.authoring('Hero','first','one').body,chapter.body);
+ assert.equal(d.authoring('Hero','first','two').requires_authoring,true);
+ assert.equal(d.authoring('Hero','first','two').body,null);
+ assert.equal(d.read('Hero','first','one').body,null);
+ assert.throws(()=>d.authoring('Stranger','first','one'));
+ assert.throws(()=>d.authoring('Hero','first','missing'));
+ const o=playerMenuOverview(replay(base),'Hero',null,{scenes:base});
+ assert.equal(menuSection(o,'medical_records').data.books.total,0);
+ assert.equal(menuSection(o,'catalogues').data.books.total,0);
+ const letter=menuActionIntent({action:'send_letter',detail:'Send',letter_recipient:'Friend',letter_subject:'Subject',letter_body:'A'.repeat(3000)},o);
+ assert.equal(letter.letter_body.length,3000);
+ assert.throws(()=>menuActionIntent({action:'send_letter',detail:'Send',letter_recipient:'Friend',letter_subject:'Subject',letter_body:'A'.repeat(5001)},o));
 });
