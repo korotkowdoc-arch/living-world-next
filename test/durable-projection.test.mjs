@@ -12,9 +12,10 @@ const input=(scenes,checkpoint=null)=>({status:'ready',head:scenes.at(-1).id,eng
 const response=cp=>({status:'ready',engine_id:PROJECTION_ENGINE_ID,checkpoint:cp});
 const args={world_id:uid(8000),branch_id:uid(8001),head:uid(3000),engine_id:PROJECTION_ENGINE_ID};
 const token='test-token-012345678901234567890';
-test('durable engine ID is versioned with the release',()=>{
+test('durable engine ID matches the explicitly pinned projection format',()=>{
  const p=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'));
- assert.equal(PROJECTION_ENGINE_ID,'nw-js-'+p.version);
+ assert.match(p.projectionEngineVersion,/^\d+\.\d+\.\d+$/);
+ assert.equal(PROJECTION_ENGINE_ID,'nw-js-'+p.projectionEngineVersion);
 });
 test('durable snapshot replay matches canonical full history and survives a cold process',()=>{
  const all=history(3000),prefix=all.slice(0,2900);

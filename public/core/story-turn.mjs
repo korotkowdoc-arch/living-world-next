@@ -1,7 +1,7 @@
 import {taskAccessible} from './duty-career.mjs';
 import {householdAccessible,jobEligibility} from './households-careers.mjs';
 import {recordedPlayerActors} from './social-dashboard.mjs';
-import {npcInitiativeView} from './npc-initiatives.mjs';
+import {npcInitiativeView,independentSocialOpportunities,recordedHabitContext,recordedMarketOpportunities} from './npc-initiatives.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
 /** A unified turn preparation view. All candidates are read-only. The narrator
@@ -47,6 +47,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  }
  const stockByKey=new Map((projection.stock||[]).map(s=>[JSON.stringify([s.holder,s.product_id,s.unit]),s]));
  const recipeById=new Map(records.filter(r=>r.life_kind==='service_recipe').map(r=>[r.record_id,r]));
+ const activeRecipeByService=new Map(records.filter(r=>r.life_kind==='service_recipe'&&r.status==='active').map(r=>[r.service_id,r]));
  const enterpriseById=new Map(records.filter(r=>r.dynamics_kind==='enterprise').map(r=>[r.record_id,r]));
  const balancesByActor=new Map((projection.balances||[]).map(b=>[JSON.stringify([b.actor,b.currency]),b]));
  const itemsById=new Map((projection.items||[]).map(i=>[i.item_id,i]));
@@ -56,6 +57,9 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  }
  function candidateChecks(row,participants,kind){
   const checks=[];
+  if(kind==='employer_response'&&row.status==='offered')checks.push({kind:'candidate_qualification_requires_review',policy:'Check the recorded applicant and job requirements before any decision.'});
+  if(kind==='consequence_opportunity')checks.push({kind:'consequence_awareness_requires_review',policy:'Verify the participant’s own knowledge before narrating a response; do not infer guilt or awareness.'});
+  if(kind==='agreement_party')checks.push({kind:'agreement_terms_require_review',policy:'Retrieve the original agreement and each party’s resources before a settlement.'});
   if(row.status==='paused')checks.push({kind:'paused_intention',source:source(row),policy:'Need a narrated reason to resume.'});
   if(row.obstacle)checks.push({kind:'recorded_obstacle',description:clip(row.obstacle),source:source(row)});
   if(row.place){
@@ -77,8 +81,8 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
    const b=balancesByActor.get(JSON.stringify([buyer,row.currency]));checks.push({kind:b?.known?(b.balance<row.amount?'insufficient_recorded_funds':'recorded_funds_cover_price'):'funds_unknown',actor:buyer,amount:row.amount,currency:row.currency,balance:b?.known?b.balance:null,source:source(b)});
    for(const l of row.stock_lines){const s=stockByKey.get(JSON.stringify([supplier,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity<l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
-  if(kind==='service_provider'){
-   const recipe=recipeById.get(row.recipe_id);
+  if(kind==='service_provider'||kind==='market_review'){
+   const recipe=kind==='market_review'?activeRecipeByService.get(row.record_id):recipeById.get(row.recipe_id);
    for(const l of recipe?.stock_lines||[]){const s=stockByKey.get(JSON.stringify([row.actor,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity< -l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:-l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
   if(row.dynamics_kind==='production_order'){
@@ -153,9 +157,14 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const p of projection.plans||[])if(['active','paused'].includes(p.status)){
   if(!openPlanGoals.has(p.actor))openPlanGoals.set(p.actor,new Set());openPlanGoals.get(p.actor).add(text(p.goal));
  }
+ const habitContext=recordedHabitContext(records,scenes,clock?.literal);
  const goalFields=new Set(['personal_goal','family_goal','career_goal']);
+ const structuredHabitActors=new Set(records.filter(r=>r.activity_version===1&&r.activity_kind==='habit').map(r=>r.actor));
  for(const person of projection.people||[]){
   for(const field of person.state_fields||[]){
+   if(field.field==='habit'&&text(field.value)&&field.source?.scene_id&&!structuredHabitActors.has(person.name)&&!habitContext(person.name,field.value)?.matching_active){
+    add('habit_opportunity',{actor:person.name,key:JSON.stringify([person.name,'character_habit']),title:field.value,status:'recorded_habit',source:field.source},{timing:'frequency_not_a_schedule',habit_history:habitContext(person.name,field.value),guidance:'Observed personal habit, not a schedule or a performed event.'});
+   }
    if(!goalFields.has(field.field)||!text(field.value)||openPlanGoals.get(person.name)?.has(text(field.value)))continue;
    add('goal_opportunity',{actor:person.name,key:JSON.stringify([person.name,field.field]),title:field.value,status:'recorded_goal',source:field.source},{goal_field:field.field,timing:'requires_character_choice',guidance:'Consider whether the recorded goal warrants a new concrete plan or independent action; do not assume progress or invent a goal.'});
   }
@@ -200,8 +209,10 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   const due=!!at&&!!anchor&&(anchor.precision==='minute'?at.order<=anchor.order:at.day<anchor.day);
   add('appointment',{...r,actors:r.participants},{timing:due?'reached_requires_story':'future',starts_at:r.starts_at,ends_at:r.ends_at,policy:'Confirmed meeting requires scene evidence for attendance or outcome.'});
  }
- for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active')
-  add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),guidance:'Optional established tendency, not a scheduled or completed action.'});
+ for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active'){
+  const history=habitContext(r.actor,r.name);
+  if(!history?.matching_active)add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),habit_history:history,guidance:'Optional established tendency, not a scheduled or completed action.'});
+ }
  // Shared circumstances offer interaction without asserting a meeting or shared knowledge.
  // Aggregate by place/group instead of generating quadratic pairs.
  const byPlace=new Map(),groups=new Map(),members=new Map();
@@ -228,6 +239,15 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const r of records)if(r.growth_version===1&&r.growth_kind==='skill'&&['learning','practicing'].includes(r.status)&&text(r.teacher)&&r.teacher!==r.actor){
   add('mentorship_opportunity',{key:JSON.stringify(['mentorship_opportunity',r.key]),title:r.name,actor:r.actor,counterparty:r.teacher,status:'opportunity',source:r.source},{skill_status:r.status,guidance:'Recorded learner and teacher may practice, disagree or reschedule. Do not grant progress or assume a lesson happened.'});
  }
+ // Distinct owners for group, market and contest activity. Do not treat the first
+ // participant of a shared record as its only autonomous decision-maker.
+ for(const {kind,row,info} of independentSocialOpportunities(records,projection.people||[])){
+  // A counterparty is not the original payer/employee; do not apply the original
+  // record's actor-specific financial checks to the newly derived role.
+  add(kind,kind==='agreement_party'?{...row,dynamics_kind:null}:row,info);
+ }
+ // Review real order states, not an invented demand multiplier.
+ if(opts.complete!==false)for(const {kind,row,info} of recordedMarketOpportunities(records,scenes,clock?.literal))add(kind,row,info);
  const life_context=[];
  for(const person of projection.people||[]){
   const before=characterAge(person,clock?.literal),after=characterAge(person,anchor?.literal);
