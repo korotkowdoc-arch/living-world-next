@@ -1,9 +1,13 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.59.1 — уточнение назначения и повторная проекция заметок
+- [x] Candidate: keep rent and paid-until metadata out of the travel destination; preserve the actual room name. Reproject cached review notes after ancestry expands, instead of caching a filtered partial list.
+- [ ] CI and deployment verification.
+
 ## v0.59.0 — историческая память в меню
 - [x] Candidate: reject narrative absence of residence including reverse Russian wording; distinguish unconfirmed housing prose from actionable destinations. Group same-source historical evidence without deleting notes, preserve alternative interpretations and distinct actor scopes. Explicit single-holder reviewed history expanded to property, relationships, skills; actor-scoped paging up to 480 notes in app/MCP; verify literal quote when source body available. No promotion to canonical current state.
-- [ ] CI, merge, deployment and live menu verification; bounded review still may omit old rows.
+- [x] PR #55 merged (c9a22b4); JS/Chromium and SQL passed. [ ] Deployment and live menu verification; bounded review still may omit old rows.
 
 ## v0.58.0 — развитие личности и жизненный опыт
 - [x] Candidate: per-character verified trajectory of persistent traits, motives, habits/skills/projects; first observation, latest source, actual changes and bounded history. Distinct accepted life episodes, never automatic causation. Connect turn, actor and focused reads, character state and psychology menu with native trajectory cards and source links. Preserve current traits before dropping long history under context budget; exact total/omitted history counts. Review persistent fields versus transient mood. NPC need estimate invalidated after long unobserved scene gap, same conservative day threshold as hero.

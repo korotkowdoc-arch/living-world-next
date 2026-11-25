@@ -627,7 +627,7 @@ function renderGameMenu(){
   try{for(let i=0;i<12;i++){const page=await readMemoryNotes(w,{actor:name,offset:i*40,limit:40});if(!Array.isArray(page)||page.length>40)throw Error('Неверная страница памяти');rows.push(...page);if(page.length<40){done=true;break;}}}catch{failed=true;}
   finally{reviewJobs.delete(name);}
   if(!alive())return;
-  reviews.set(name,{...reviewedMenuHistory(rows,scenes,name,{complete:done&&complete}),failed});
+  reviews.set(name,{rows,done,failed});
   if(saved.actor===name&&REVIEWED_HISTORY_SECTIONS.includes(saved.section))show();
  }
  const selectActor=()=>{
@@ -752,7 +752,7 @@ function renderGameMenu(){
   if(saved.section==='settings'){output.append(settingsView(prefs));return;}
   if(!complete){output.append(para('Данные раздела появятся после загрузки полной памяти.'));return;}
   if(!saved.actor){output.append(para('Герой определяется по сохранённому выбору игрока. Пока он не установлен, доступна настройка мира.'));return;}
-  const overview=playerMenuOverview(projection,saved.actor,scenes.at(-1)?.world_time??null,{scenes,complete,reviewedHistory:reviews.get(saved.actor),offset:saved.offset||0,limit:24});
+  const overview=playerMenuOverview(projection,saved.actor,scenes.at(-1)?.world_time??null,{scenes,complete,reviewedHistory:reviews.has(saved.actor)?reviewedMenuHistory(reviews.get(saved.actor).rows,scenes,saved.actor,{complete:reviews.get(saved.actor).done&&complete}):undefined,offset:saved.offset||0,limit:24});
   if(saved.section==='dashboard'){
    const hud=node('div','menu-dashboard');hud.append(title(overview.actor),para([overview.clock,overview.dashboard.location?.value].filter(Boolean).join(' · ')||'Текущее состояние героя'));
    if(prefs.settings.hud)hud.append(hudView(overview));
@@ -767,7 +767,7 @@ function renderGameMenu(){
   output.append(add(node('div','menu-screen-heading'),menuGlyph(section.icon),title(section.label)));
   if(REVIEWED_HISTORY_SECTIONS.includes(section.id)){
    const review=reviews.get(saved.actor);if(!review){output.append(para('Проверяю ранее разобранные сцены…'));void loadReviews(saved.actor);}
-   else if(!review.scan_complete)output.append(row(para('Исторические заметки загружены не полностью.'),button('Обновить заметки',()=>{reviews.delete(saved.actor);show();},'btn secondary')));
+   else if(!review.done||!complete)output.append(row(para('Исторические заметки загружены не полностью.'),button('Обновить заметки',()=>{reviews.delete(saved.actor);show();},'btn secondary')));
   }
   if(['illustrations','portraits'].includes(section.id)){output.append(visualLibrary(w,overview,section.id,saved.visualFocus));return;}
   if(['gallery','character','wardrobe','inventory','library','news','documents','places','property','magical_ecology','rituals'].includes(section.id)){const gallery=node('details','menu-data-group');gallery.append(node('summary','','Иллюстрации раздела'));let opened=false;gallery.addEventListener('toggle',()=>{if(gallery.open&&!opened){opened=true;gallery.append(visualLibrary(w,overview,section.id));}});output.append(gallery);}
