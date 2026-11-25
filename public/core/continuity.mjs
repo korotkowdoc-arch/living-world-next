@@ -187,7 +187,7 @@ export function buildNextContext({world,directives=[],scenes=[],evidencePrevalid
     recorded_consequences:consequenceView(projection,{complete:historyComplete,limit:8}),
     recorded_growth:growthView(projection,{complete:historyComplete,limit:6}),
     world_dynamics:dynamicsView(projection,{complete:historyComplete,limit:6}),
-    next_turn:prepareStoryTurn(scenes,projection,directives,{limit:12,...turnOptions,complete:historyComplete}),
+    next_turn:prepareStoryTurn(scenes,projection,directives,{limit:12,...turnOptions,branchId:world.active_branch_id,complete:historyComplete}),
     recent_scenes:scenes.slice(-3).map(s=>({id:s.id,world_time:s.world_time,body:s.body})),
     history_available_by_pagination:true,
     memory_warning:(historyComplete?'':'История загружена не полностью. Результаты памяти НЕ полны. ')+'События проецируются только из размеченных фактов. Неразмеченные сцены необходимо читать, а не считать, будто событий в них не было.'};
