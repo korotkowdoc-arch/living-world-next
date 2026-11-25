@@ -144,6 +144,11 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   }
  }
  // A recorded active habit can motivate leisure without assuming that it is due today.
+ for(const r of records)if(r.player_life_version===1&&r.life_kind==='appointment'&&r.status==='confirmed'){
+  const at=parseStoryDate(r.starts_at);
+  const due=!!at&&!!anchor&&(anchor.precision==='minute'?at.order<=anchor.order:at.day<anchor.day);
+  add('appointment',{...r,actors:r.participants},{timing:due?'reached_requires_story':'future',starts_at:r.starts_at,ends_at:r.ends_at,policy:'Confirmed meeting requires scene evidence for attendance or outcome.'});
+ }
  for(const r of records)if(r.activity_version===1&&r.activity_kind==='habit'&&r.status==='active')
   add('habit_opportunity',r,{timing:'frequency_not_a_schedule',frequency:clip(r.frequency),guidance:'Optional established tendency, not a scheduled or completed action.'});
  // Shared circumstances offer interaction without asserting a meeting or shared knowledge.
@@ -203,7 +208,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  };
  // Latest source in canonical ancestry first; updates of old keys are not insert order.
  const recent=rows=>rows.slice().reverse().sort((a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
- const stateFields=new Set(['location','residence','availability','occupation','condition','injury','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','preference','aversion','habit','coping_style','humor','register','life_stage','education','career_goal']);
+ const stateFields=new Set(['location','residence','availability','occupation','condition','injury','appearance','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','preference','aversion','habit','coping_style','humor','register','life_stage','education','career_goal']);
  for(const p of projection.people||[]){
   if(!actorIndex.has(p.name))continue;
   const ctx=actorIndex.get(p.name);ctx.age=characterAge(p,anchor?.literal);
