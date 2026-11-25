@@ -1,3 +1,4 @@
+import {workView} from './work-systems.mjs';
 import {travelServiceView} from './travel-services.mjs';
 /** Player-visible opportunities, not guarantees of access, money or NPC consent. */
 import {parseStoryDate} from './world-time.mjs';
@@ -30,7 +31,10 @@ export function playerOpportunities(projection={},actor,{scenes=[],clock=null,co
  });
  const options=[];
  const add=(action,label,detail,extra={})=>options.push({id:action+':'+options.length,action,label,detail,availability:'requires_scene_check',...extra});
- const travel=travelServiceView(projection,actor);
+ const travel=travelServiceView(projection,actor),work=workView(projection,actor,clock??scenes.at(-1)?.world_time);
+ for(const x of work.shifts.records.filter(x=>x.actor===actor&&(x.status==='working'||x.status==='scheduled'&&x.place===place&&atHead)).slice(0,3))add(x.status==='working'?'finish_shift':'start_shift',x.title,x.status==='working'?'Закончить текущую смену':'Начать запланированную смену',{shift_id:x.id,place:x.place,source:x.source});
+ for(const x of work.shifts.records.filter(x=>x.actor===actor&&x.settlement==='unpaid').slice(0,2))add('claim_wage','Получить оплату: '+x.title,'Обратиться за оплатой отработанной смены',{shift_id:x.id,amount:x.earned,currency:x.currency,source:x.source});
+ for(const x of work.transport.records.filter(x=>x.status==='scheduled'&&x.timing==='upcoming'&&x.from===place&&atHead).slice(0,3))add('choose_transport',x.title,'Уточнить доступность транспорта до '+x.to,{transit_id:x.id,place:x.from,amount:x.amount,currency:x.currency,source:x.source});
  for(const x of travel.journeys.records.filter(x=>['travelling','paused','planned'].includes(x.status)).slice(0,3))add('continue_journey','Продолжить: '+x.title,'Продолжить путешествие '+x.title,{journey_id:x.id,place:x.next_stop?.place??null,source:x.source});
  for(const x of travel.visits.records.filter(x=>x.status==='accepted').slice(0,4))add('complete_service',x.title,'Воспользоваться принятой услугой '+x.title,{visit_id:x.id,place:x.place,amount:x.amount,currency:x.currency,source:x.source});
  for(const x of travel.catalogue.records.filter(x=>x.status==='available'&&x.place===place&&atHead).slice(0,8))add('request_service',x.title,'Уточнить условия и заказать '+x.title,{service_id:x.id,place:x.place,amount:x.amount,currency:x.currency,affordability:x.affordability,availability:x.affordability==='insufficient_recorded_funds'?'recorded_funds_insufficient':'requires_scene_check',source:x.source});
