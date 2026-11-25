@@ -35,7 +35,7 @@ test('growth routing separates skill, project, rumor and cause',()=>{for(const [
 
 import {identityReview} from '../public/core/state-delta.mjs';
 import {needsStatePreflight} from '../public/core/continuity.mjs';
-test('ordinary character, relationship, knowledge and commitment changes get state preflight',()=>{for(const type of ['character','relationship','knowledge','commitment','offscreen','world'])assert.equal(needsStatePreflight([{type}]),true);assert.equal(needsStatePreflight([{type:'world',scene_memory_version:1}]),false);});
+test('ordinary character, relationship, knowledge and commitment changes get state preflight',()=>{for(const type of ['character','relationship','knowledge','commitment','offscreen'])assert.equal(needsStatePreflight([{type}]),true);assert.equal(needsStatePreflight([{type:'world',interaction_version:1}]),true);assert.equal(needsStatePreflight([{type:'world',key:'legacy'}]),false);assert.equal(needsStatePreflight([{type:'world',scene_memory_version:1}]),false);});
 test('identity review spots duplicate need/skill/plan scopes without confusing independent actors or completed tasks',()=>{
  const need={id:'a',type:'world',player_life_version:1,life_kind:'need',key:'need:a',actor:'Hero',need:'hunger'};
  const skill={id:'s',type:'world',growth_version:1,growth_kind:'skill',key:'skill:a',actor:'Hero',name:'Repair'};

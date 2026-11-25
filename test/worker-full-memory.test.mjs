@@ -107,3 +107,26 @@ test('focused recall uses old source hits to retrieve historical notes beyond th
   assert.equal(h.scan_complete,false);assert.equal(h.targeted_source_lookup.loaded,1);
  }finally{globalThis.fetch=old;}
 });
+
+test('new scene save receipt reports actual validated state under the committed source ID',async()=>{
+ const old=globalThis.fetch,saved='77777777-7777-4777-8777-777777777777';let writes=0;
+ const body='Гарри пришёл в мастерскую.';
+ const event={id:'location',type:'character',name:'Гарри',state_patch:{location:'Мастерская'},evidence:body};
+ const prior={id:head,parent_scene_id:null,world_time:'1994-09-05 16:00',events:[{...event,id:'old',state_patch:{location:'Сквер'},evidence:'Гарри был в сквере.'}]};
+ globalThis.fetch=requestHandler((p,opt)=>{
+  if(p.pathname==='/auth/v1/user')return Response.json({id:u});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([world]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:b,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/nw_directives')return Response.json([]);
+  if(p.pathname==='/rest/v1/rpc/nw_scene_receipt')return Response.json({saved:false});
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page')return Response.json([prior]);
+  if(p.pathname==='/rest/v1/rpc/nw_commit_scene'){writes++;return Response.json(saved);}
+ });
+ try{
+  const res=await worker.fetch(call('save_scene',{world_id:w,branch_id:b,expected_head:head,expected_rules_version:3,request_id:reqId,body,world_time:'1994-09-05 17:00',events:[event]}),env);
+  const data=(await res.json()).result;assert.equal(data.isError,false,JSON.stringify(data));assert.equal(writes,1);
+  const delta=data.structuredContent.state_delta;assert.equal(delta.status,'validated_projection_then_committed');
+  const row=delta.records.find(x=>x.registry==='people');assert.equal(row.source.scene_id,saved);assert.equal(row.fields.find(x=>x.field==='location').before,'Сквер');assert.equal(row.fields.find(x=>x.field==='location').after,'Мастерская');
+  assert.equal(row.fields.find(x=>x.field==='location').source.scene_id,saved);
+ }finally{globalThis.fetch=old;}
+});

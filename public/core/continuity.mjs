@@ -278,7 +278,7 @@ export function validateEconomyAppend(scenes,events,body){
  * SQL still protects expected head; direct RPC and revision integration are separate.
  */
 export function needsStatePreflight(events=[]){
- return events.some(e=>e&&TYPES.has(e.type)&&!isSceneMemory(e));
+ return events.some(e=>e&&TYPES.has(e.type)&&!isSceneMemory(e)&&(e.type!=='world'||isWealth(e)||isDocument(e)||isMagicSociety(e)||isMagic(e)||isAdvanced(e)||['world_record_version','social_record_version','interaction_version','activity_version','consequence_version','growth_version','dynamics_version','player_life_version'].some(k=>e[k]===1)));
 }
 export function validateStateAppend(scenes,events,body,{checkpoint=null,worldTime=null,includeProjection=false}={}){
  const routingErrors=events.map(knowledgeRoutingError).filter(Boolean);if(routingErrors.length)return {ok:false,errors:routingErrors};
