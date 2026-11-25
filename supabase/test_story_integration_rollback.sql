@@ -765,6 +765,7 @@ declare wid uuid; bid uuid; h uuid; bad boolean; body text:='Anna recorded an ev
  dyn jsonb:='{"type":"world","dynamics_version":1,"description":"Recorded","evidence":"Anna recorded an event."}';
  birth_event jsonb:='{"id":"birth-event","dynamics_kind":"family_event","record_id":"birth","key":"dynamics:family_event:birth","actors":["Anna","Lia","Alex"],"title":"Birth","family_kind":"birth","status":"completed","outcome":"Born"}';
  bond jsonb:='{"id":"bond","dynamics_kind":"bond","record_id":"parent","key":"dynamics:bond:parent","actor":"Anna","counterparty":"Alex","bond_type":"parenthood","status":"active"}';
+ child_character jsonb:='{"id":"child-character","type":"character","name":"Alex","state_patch":{"birth_date":"2000-08-01"},"evidence":"Anna recorded an event."}';
  birth jsonb:='{"id":"birth","life_kind":"child_birth","record_id":"child","key":"player-life:child_birth:child","actor":"Alex","parent":"Anna","born_on":"2000-08-01","family_event_id":"birth","status":"recorded"}';
  school jsonb:='{"id":"school","dynamics_kind":"family_event","record_id":"school","key":"dynamics:family_event:school","actors":["Anna","Alex"],"title":"School","family_kind":"education","status":"completed","outcome":"Attended"}';
  milestone jsonb:='{"id":"milestone","life_kind":"child_milestone","record_id":"school","key":"player-life:child_milestone:school","actor":"Anna","child_id":"child","family_event_id":"school","occurred_on":"2006-09-01","title":"School","category":"education","description":"Attended school","status":"recorded"}';
@@ -777,11 +778,13 @@ begin
  wid:=public.nw_create_world('Family goals test','Synthetic family','2000-08-01');select active_branch_id into bid from public.nw_worlds where id=wid;
  birth_event:=birth_event||dyn;bond:=bond||dyn;birth:=birth||common;school:=school||dyn;milestone:=milestone||common;goal:=goal||common;invite:=invite||common;step:=step||common;
  step2:=step||'{"id":"step2","record_id":"second","key":"player-life:shared_goal_step:second","actor":"Anna","step_id":"prepare","completion_id":"b"}';
- bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(birth_event,birth),0);exception when raise_exception then bad:=true;end;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(child_character,birth_event,birth),0);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Birth accepted without parenthood';end if;
- bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-02 09:00',jsonb_build_array(bond,birth_event,birth),0);exception when raise_exception then bad:=true;end;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-02 09:00',jsonb_build_array(bond,child_character,birth_event,birth),0);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Birth accepted on mismatched date';end if;
- h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(bond,birth_event,birth,goal,invite),0);
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(bond,child_character,birth_event,birth,goal,invite),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(child_character||'{"state_patch":{"birth_date":"2000-08-02"}}'),0);exception when raise_exception then bad:=true;end if;
+ if not bad then raise exception 'Registered birth date changed';end if;
  bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(goal||'{"status":"active"}'),0);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Goal activated without agreement';end if;
  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(invite||'{"status":"accepted","outcome":"Agreed"}',goal||'{"status":"active"}'),0);
