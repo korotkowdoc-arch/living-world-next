@@ -90,7 +90,7 @@ export function dashboardSummary(overview){
  for(const e of h?.budgets.records||[])if(e.status==='active'&&e.over_recorded_limit===true)add('budget','finances',e.title,e.source,'normal');
  notices.sort((a,b)=>Number(b.priority==='urgent')-Number(a.priority==='urgent'));
  const field=name=>overview.character?.fields.find(x=>x.field===name)??null;
- return {actor:overview.actor,clock:overview.clock,location:field('location'),appearance:field('appearance'),notifications:{records:notices.slice(0,15),total:notices.length,omitted:Math.max(0,notices.length-15)},quick_actions:overview.opportunities?.options.slice(0,6)??[],counts:{inventory:overview.inventory.total,tasks:overview.tasks.total,contacts:s?.contacts.total??0,letters:l?.letters.incoming.total??0},policy:'Notifications are derived from visible recorded state, not automatic events; a past unresolved date is not proof of failure.'};
+ return {actor:overview.actor,clock:overview.clock,location:field('location'),appearance:field('appearance'),notifications:{records:notices.slice(0,15),total:notices.length,omitted:Math.max(0,notices.length-15)},quick_actions:overview.opportunities?.options.slice(0,6)??[],counts:{inventory:overview.inventory.total,tasks:overview.tasks.total,contacts:s?.contacts.total??0,letters:l?.letters.incoming.total??0,library:overview.archive?.library?.total??0},policy:'Notifications are derived from visible recorded state, not automatic events; a past unresolved date is not proof of failure.'};
 }
 export function menuSection(overview,section){
  const l=overview.life,s=overview.social_dashboard,h=overview.home_systems,w=overview.work_systems,t=overview.travel;
