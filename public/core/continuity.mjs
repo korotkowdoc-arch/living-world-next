@@ -1,3 +1,4 @@
+import {employmentGate,householdSceneError,householdReplayError} from './households-careers.mjs';
 import {curriculumCrossError,supplySceneError,supplyReplayError} from './curriculum-supply.mjs';
 import {prepaidSceneError,prepaidReplayError,applyPrepaid} from './prepaid-travel.mjs';
 import {applyMarketAdjustment,invalidateFurnishing} from './market-home.mjs';
@@ -44,6 +45,7 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
     ids.add(event.id);
     if(!asText(event.evidence)||(!evidencePrevalidated&&(typeof body!=='string'||!body.includes(event.evidence))))errors.push(`${prefix}: нужна дословная цитата из сцены.`);
     const playerLifeShape=playerLifeError(event);if(playerLifeShape)errors.push(prefix+': '+playerLifeShape);
+    const householdError=householdSceneError(event,events,i,paymentTransfers);if(householdError)errors.push(prefix+': '+householdError);
     const supplyError=supplySceneError(event,events,i,paymentTransfers);if(supplyError)errors.push(prefix+': '+supplyError);
     const prepaidError=prepaidSceneError(event,events,i,paymentTransfers);if(prepaidError)errors.push(prefix+': '+prepaidError);
     const propertyError=propertyPaymentError(event,events,i,paymentTransfers);if(propertyError)errors.push(prefix+': '+propertyError);
@@ -155,7 +157,7 @@ function runReplay(scenes,{evidencePrevalidated=false,checkpoint=null,capture=fa
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
-          const err=curriculumCrossError(worldFacts,event,events,events.indexOf(event))||socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||journeyArrivalError(event,worldFacts.get(event.key),acceptedLocations)||workReplayError(worldFacts,event,acceptedStock,acceptedMoney)||prepaidReplayError(event,acceptedMoney)||supplyReplayError(event,acceptedMoney,acceptedStock)||(event.life_kind==='estate_sale'&&event.status==='settled'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Estate payment was not accepted':null)||(event.life_kind==='service_visit'&&event.status==='completed'&&event.amount>0&&event.prepayment_id==null&&!acceptedMoney.has(event.transfer_event_id)?'Service transfer was not accepted':null)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
+          const err=employmentGate(worldFacts,event)||curriculumCrossError(worldFacts,event,events,events.indexOf(event))||socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||journeyArrivalError(event,worldFacts.get(event.key),acceptedLocations)||workReplayError(worldFacts,event,acceptedStock,acceptedMoney)||prepaidReplayError(event,acceptedMoney)||supplyReplayError(event,acceptedMoney,acceptedStock)||householdReplayError(event,acceptedMoney)||(event.life_kind==='estate_sale'&&event.status==='settled'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Estate payment was not accepted':null)||(event.life_kind==='service_visit'&&event.status==='completed'&&event.amount>0&&event.prepayment_id==null&&!acceptedMoney.has(event.transfer_event_id)?'Service transfer was not accepted':null)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
           else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);applyPropertySettlement(worldFacts,event,value);applyMarketAdjustment(worldFacts,event,value);applyPrepaid(worldFacts,event,value);invalidateFurnishing(worldFacts,items,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
         }break;
