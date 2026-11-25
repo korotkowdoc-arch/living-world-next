@@ -1,3 +1,4 @@
+import {compareRegistryState,identityReview} from './state-delta.mjs';
 import {taskSaveReview} from './task-tracker.mjs';
 import {sceneSaveAudit,isSceneMemory} from './scene-memory-routing.mjs';
 import {replay,replayWithCheckpoint,validateScene,needsStatePreflight,validateProjectedAppend} from './continuity.mjs';
@@ -12,11 +13,12 @@ export function reviewSceneDraft(memory,{body,events=[],directives=[],world_time
  if(!memory?.complete&&needsStatePreflight(events)){result.ok=false;result.errors.push('Для проверки переходов нужна полная память.');return result;}
  const scenes=memory?.scenes||[],id='__draft_preview__';
  const before=memory?.projection??replay(scenes,[],{evidencePrevalidated:true});
- result.task_review=taskSaveReview(before,events,body);
+ result.task_review=taskSaveReview(before,events,body);result.identity_review=identityReview(before,events);
  const history=[...scenes,{id,body,events,world_time}];
  const after=memory?.checkpoint?replayWithCheckpoint(history,{evidencePrevalidated:true,checkpoint:memory.checkpoint}).projection:replay(history,[],{evidencePrevalidated:true});
  const rejected=validateProjectedAppend(history,after,id,events);
  if(!rejected.ok){result.ok=false;result.errors.push(...rejected.errors);return result;}
+ result.state_delta=compareRegistryState(before,after,{sceneId:id});
  const clock=parseStoryDate(scenes.at(-1)?.world_time),next=parseStoryDate(world_time);
  if(world_time&&!next)result.warnings.push('Время не имеет точного формата; длительность не установлена.');
  if(clock&&next&&next.order<clock.order&&(clock.precision===next.precision||clock.day!==next.day))result.warnings.push('Дата раньше последней сцены: проверь флешбэк или выбери альтернативную ветку.');
