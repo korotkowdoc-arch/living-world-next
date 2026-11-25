@@ -1,3 +1,4 @@
+import {operationalIndex} from './operational-life.mjs';
 import {civilizationReview,orderTurnCandidates,continuityAnchors} from './civilization-review.mjs';
 import {wealthIndex} from './wealth-world.mjs';
 import {documentIndex} from './documents-world.mjs';
@@ -279,6 +280,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const {kind,row,info} of documents.opportunities())add(kind,row,info);
  for(const {kind,row,info} of magic.opportunities())add(kind,row,info);
  for(const {kind,row,info} of advanced.opportunities())add(kind,row,info);
+ for(const {kind,row,info} of operationalIndex(projection,{complete:opts.complete!==false}).opportunities())add(kind,row,info);
  for(const {kind,row,info} of depth.opportunities())add(kind,row,info);
  for(const {kind,row,info} of longLife.opportunities())add(kind,row,info);
  const life_context=[];

@@ -147,6 +147,18 @@ export function advancedIndex(scenes=[],projection={}, {complete=true}={}){
   for(const r of byKind('channel'))if(r.status==='active'&&!seen.has(r.actor)){
    seen.add(r.actor);out.push({kind:'publication_opportunity',row:{actor:r.actor,key:r.key,title:r.title,status:r.status,source:r.source},info:{record_key:r.key,timing:'requires_character_choice',publication:{channel_id:r.record_id,channel_kind:r.channel_kind},guidance:'Publisher may prepare a new edition based on facts and sources actually available to them. A published edition does not automatically give anyone knowledge.'}});
   }
+  // Subscriptions are a reason to seek a publication, not a received issue.
+  // Keep titles and topic identifiers in narrator-only context.
+  const latest=new Map();
+  for(const r of byKind('edition'))latest.set(r.channel_id,r);
+  const known=new Set((projection.knowledge||[]).filter(k=>k.status==='knows').map(k=>JSON.stringify([k.actor,k.topic_id])));
+  const emitted=new Set();
+  for(const sub of byKind('subscription')){
+   const channel=get('channel',sub.channel_id),edition=latest.get(sub.channel_id),id=JSON.stringify([sub.actor,sub.channel_id]);
+   if(sub.status!=='active'||channel?.status!=='active'||!edition||known.has(JSON.stringify([sub.actor,edition.topic_id]))||emitted.has(id))continue;
+   emitted.add(id);
+   out.push({kind:'news_subscription_review',row:{actor:sub.actor,key:JSON.stringify(['news_subscription',sub.record_id,edition.record_id]),title:channel.title,status:'opportunity',source:sub.source},info:{record_key:sub.key,timing:'requires_character_choice',news_subscription:{channel_id:channel.record_id,edition_id:edition.record_id,topic_id:edition.topic_id,source:edition.source},guidance:'The subscriber may seek or receive an issue or radio broadcast if access and delivery are established. No automatic delivery, knowledge or disclosure; record separate actual reception.'}});
+  }
   return out;
  }
  return {view,opportunities,warnings};

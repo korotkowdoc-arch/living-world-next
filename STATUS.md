@@ -6,6 +6,7 @@
 - [x] Aggregate unreviewed scheduled payments per payer/currency against recorded balance, with explicit unknowns and no debt or transfer assumption. Segment-scoped due queue with canonical sources, exact clock and pending-choice gate.
 - [x] Integrated into prepareStoryTurn, PWA shell and checks. Unit regressions added; Node CI 45650053662 and PostgreSQL CI 45650053799 passed before integration; combined CI/live verification pending. No new database schema or tool discovery required.
 - [x] Candidate ordering now respects global urgency tiers with fair category rounds; NPC initiative rotation accounts for accepted offscreen participation; bounded old-source callback anchors match exact active-ancestry participants/place/record or words. All remain proposals, not simulation outcomes. Regression coverage added.
+- [x] Operational queues for actual submitted assignments, module/qualification review, property condition/current title, aggregate completed unpaid shifts and accepted service/production resource exposure. Own dashboard notifications and education/work/property menu data. Active subscriptions can motivate seeking issues, never imply delivery. Tests added; combined CI pending.
 - [ ] Continue autonomous event resolution, institutional life, housing, media, deeper university simulation and full private asset backups. Existing menu settings and NPC psychology remain canonical; do not duplicate them.
 
 - [x] Player-facing dashboard reports conflicts from its own existing calendar projection. No narrator-private records are exposed.
