@@ -42,3 +42,10 @@ test('selected explicit goal appears as a prioritized narrative opportunity with
  const t=prepareStoryTurn([scene],p,rules,{actors:['Hero'],branchId:b});
  const g=t.candidates.find(x=>x.kind==='life_goal');assert.equal(g.player_priority,1);assert.equal(g.certainty,'candidate_only_not_performed');
 });
+
+ test('health, calendar and inventory history are displayed without creating current records',()=>{
+ const rows=['health','calendar','inventory'].map(k=>({scene_id:'s',note_key:'menu-'+k+'-1',note:{kind:k==='calendar'?'claim':'action',summary:k+' history',quote:'Hero worked',actors:['Hero']}}));
+ const reviewedHistory=reviewedMenuHistory(rows,[scene],'Hero',{complete:true});const p=replay([scene]);const o=playerMenuOverview(p,'Hero',scene.world_time,{scenes:[scene],reviewedHistory});
+ assert.equal(menuSection(o,'health').data.reviewed_health.total,1);assert.equal(menuSection(o,'calendar').data.reviewed_calendar.total,1);assert.equal(menuSection(o,'inventory').data.reviewed_inventory.total,1);
+ assert.equal(o.inventory.total,0);assert.equal(o.life.calendar.total,0);assert.equal(o.social_dashboard.health.total,0);
+ });

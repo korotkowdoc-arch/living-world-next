@@ -3,6 +3,8 @@ import {taskAccessible} from './duty-career.mjs';
 /** Fictional clock projections: advisory, no wall clock and no implicit player actions. */
 import {parseStoryDate} from './world-time.mjs';
 const DAY=1440;
+// A long skipped interval is not evidence of continuous deprivation.
+export const NEED_UNOBSERVED_GAP=DAY;
 const ranks=['comfortable','noticeable','urgent','critical'];
 // Game pacing constants, not medical claims. Each value is minutes per urgency step.
 export const NEED_INTERVALS=Object.freeze({hunger:240,thirst:180,energy:480,hygiene:720});
@@ -23,6 +25,7 @@ export function needForecast(need,scenes=[],targetTime=null,{complete=true}={}){
  for(const s of scenes.slice(idx)){
   const t=date(s.world_time);
   if(t?.precision!=='minute'||t.order<previous)return {...base,certainty:'chronology_uncertain'};
+  if(t.order-previous>NEED_UNOBSERVED_GAP)return {...base,elapsed_minutes:end.order-start.order,certainty:'unobserved_gap'};
   previous=t.order;
  }
  if(end.order<previous)return {...base,certainty:'chronology_uncertain'};
@@ -115,7 +118,9 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
  }
  const records=(projection.worldFacts||[]).filter(x=>x.player_life_version===1&&x.life_kind==='need'&&x.actor===actor);
  const forecasts=records.map(x=>needForecast(x,scenes,target.literal,{complete}));
- for(const f of forecasts)if(f.estimated_status==='critical'){
+ for(const f of forecasts)if(f.certainty==='unobserved_gap'){
+  gates.push({kind:'need',id:f.need,title:f.need,at:clock.literal,reason:'need_observation_after_gap'});
+ }else if(f.estimated_status==='critical'){
   const start=date(f.recorded_at),rank=ranks.indexOf(f.recorded_status),at=start.order+(3-rank)*NEED_INTERVALS[f.need];
   gates.push({kind:'need',id:f.need,title:f.need,at:literal(Math.max(clock.order,at)),reason:'estimated_critical_if_no_relief'});
  }
@@ -126,4 +131,4 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
  const first=gates[0],stop=Math.min(cap,first?date(first.at).order:Infinity);
  return {status:stop===clock.order?'review_now':'proposed',can_advance:stop>clock.order,from:clock.literal,target:target.literal,proposed_until:literal(stop),remaining_minutes:target.order-stop,gate:first&&date(first.at).order<=cap?first:null,calendar_omitted:calendar.omitted,forecast:forecasts,policy:'Proposal only. Check all world candidates and pending choices before each committed segment. Never auto-eat, sleep, complete an appointment or make a decision for the player.'};
 }
-export const TIME_LIFE_GUIDANCE='ВРЕМЯ И КАЛЕНДАРЬ: состояние потребности из сцены и оценка при отсутствии удовлетворения различаются. estimate_if_no_relief — игровой прогноз, не медицинская модель и не доказательство голода/усталости. При точных часах оценка ухудшается по игровому времени, при неизвестных датах и флешбэках прогноз неизвестен. Не записывай прогноз как уже произошедший факт. Перед длинной перемоткой используй plan_game_time или prepare_story_turn с target_time: соблюдай proposed_until и gate, проверяй обязательства, встречи, NPC и срочные потребности, прерывайся на важных решениях. Темп меняет максимальную длину шага, а не скорость реальных часов. Календарь показывает собственные сроки, повторяющиеся занятия и встречи, конфликты не означают пропуск или нарушение. Не создавай сцену при просмотре.';
+export const TIME_LIFE_GUIDANCE='ВРЕМЯ И КАЛЕНДАРЬ: состояние потребности из сцены и оценка при отсутствии удовлетворения различаются. estimate_if_no_relief — игровой прогноз, не медицинская модель и не доказательство голода/усталости. При точных часах оценка ухудшается по игровому времени, при неизвестных датах и флешбэках прогноз неизвестен. При пропущенном в сохранённой истории интервале более суток (unobserved_gap) текущая потребность не установлена: обнови её реальным наблюдением, не переносись дальше на основании старой оценки. При еде, сне, питье, гигиене, травме или заметном изменении самочувствия извлекай соответствующие наблюдения в том же сохранении. Не записывай прогноз как уже произошедший факт. Перед длинной перемоткой используй plan_game_time или prepare_story_turn с target_time: соблюдай proposed_until и gate, проверяй обязательства, встречи, NPC и срочные потребности, прерывайся на важных решениях. Темп меняет максимальную длину шага, а не скорость реальных часов. Календарь показывает собственные сроки, повторяющиеся занятия и встречи, конфликты не означают пропуск или нарушение. Не создавай сцену при просмотре.';

@@ -5,16 +5,21 @@ import {parseStoryDate} from './world-time.mjs';
 const str=(v,max=300)=>typeof v==='string'?v.slice(0,max):null;
 const source=x=>x?.source??null;
 const closed=new Set(['closed','restricted','damaged','destroyed']);
+// Narrative absence markers are not destinations; do not infer a replacement home.
+const absence=/^(?:без (?:постоянного )?(?:жилья|дома|места жительства)|бездомн\p{L}*|нет (?:постоянного )?(?:жилья|дома)|не (?:установлено|известно)|unknown\b|homeless\b|no (?:fixed |permanent )?(?:home|residence|housing)\b|none\b)/iu;
+const isPlace=v=>typeof v==='string'&&v.trim()&&!absence.test(v.trim());
 export function playerOpportunities(projection={},actor,{scenes=[],clock=null,complete=true}={}){
  const head=scenes.at(-1)?.id??null,character=(projection.people||[]).find(x=>x.name===actor);
  const location=character?.state_fields?.find(x=>x.field==='location');
- const place=location?.value||null,atHead=!!head&&source(location)?.scene_id===head;
+ const place=isPlace(location?.value)?location.value:null,atHead=!!head&&source(location)?.scene_id===head;
  const records=projection.worldFacts||[],knownPlaces=new Map();
- const remember=(name,s,reason)=>{if(typeof name==='string'&&name.trim()&&!knownPlaces.has(name))knownPlaces.set(name,{name,source:s,reason});};
+ const remember=(name,s,reason)=>{if(isPlace(name)&&!knownPlaces.has(name))knownPlaces.set(name,{name,source:s,reason});};
  remember(place,source(location),'last_recorded_location');
  const home=character?.state_fields?.find(x=>x.field==='residence');
  remember(home?.value,source(home),'recorded_residence');
- for(const s of scenes)for(const e of s.events||[])if(e.type==='character'&&e.name===actor){
+ const rejectedScenes=new Set(),rejectedEvents=new Set();
+ for(const w of projection.validation_warnings||[])if(w.scene_id){if(w.event_id)rejectedEvents.add(JSON.stringify([w.scene_id,w.event_id]));else rejectedScenes.add(w.scene_id);}
+ for(const s of scenes)for(const e of s.events||[])if(!rejectedScenes.has(s.id)&&!rejectedEvents.has(JSON.stringify([s.id,e.id]))&&e.type==='character'&&e.name===actor){
   const from={scene_id:s.id,event_id:e.id,world_time:s.world_time??null};
   remember(e.state_patch?.location,from,'recorded_visit');remember(e.state_patch?.residence,from,'recorded_residence');
  }
@@ -40,7 +45,7 @@ export function playerOpportunities(projection={},actor,{scenes=[],clock=null,co
  for(const x of travel.catalogue.records.filter(x=>x.status==='available'&&x.place===place&&atHead).slice(0,8))add('request_service',x.title,'Уточнить условия и заказать '+x.title,{service_id:x.id,place:x.place,amount:x.amount,currency:x.currency,affordability:x.affordability,availability:x.affordability==='insufficient_recorded_funds'?'recorded_funds_insufficient':'requires_scene_check',source:x.source});
  for(const x of travel.work.records.filter(x=>x.status==='active'&&x.actor===actor&&x.place===place&&atHead).slice(0,3))add('perform_work',x.title,'Выполнить рабочие обязанности: '+x.title,{employment_id:x.id,place:x.place,source:x.source});
  if(place&&atHead)add('explore','Осмотреться','Осмотреться в '+place,{source:source(location)});
- if(home?.value&&home.value!==place)add('travel','Вернуться домой','Отправиться домой: '+home.value,{place:home.value,source:source(home)});
+ if(isPlace(home?.value)&&home.value!==place)add('travel','Вернуться домой','Отправиться домой: '+home.value,{place:home.value,source:source(home)});
  for(const x of activities.slice(0,6))add('continue_activity',str(x.name,140),'Продолжить занятие: '+x.name,{activity_id:x.record_id,place:x.place??null,source:source(x)});
  for(const x of habits.slice(0,6))add('practice_habit',str(x.name,140),'Заняться привычным делом: '+x.name,{activity_id:x.record_id,place:x.place??null,source:source(x)});
  for(const x of places.filter(x=>!x.current_location&&!closed.has(x.access)).slice(0,10))if(!options.some(o=>o.action==='travel'&&o.place===x.name))add('travel','Отправиться: '+x.name,'Отправиться в '+x.name,{place:x.name,source:x.source});

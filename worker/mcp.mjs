@@ -335,7 +335,7 @@ async function callTool(name,args,env,token){
    const clock=recordedWorldAgenda(history.scenes,projection);
    const choice=playerChoiceView(history.scenes,projection,{worldId:world.id,branchId:world.active_branch_id,rulesVersion:world.directive_version,complete:history.complete});
    if(choice.pending&&choice.pending.actor!==args.actor)throw Error('Actor does not match the current player choice');
-   const reviewed=name==='get_game_menu'&&(!args.section||['goals','work','education','interests'].includes(args.section))?await readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:[args.actor],menuActor:args.actor}):null;
+   const reviewed=name==='get_game_menu'&&(!args.section||['goals','work','education','interests','health','calendar','inventory'].includes(args.section))?await readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:[args.actor],menuActor:args.actor}):null;
    const overview=playerMenuOverview(projection,args.actor,clock.anchor_is_latest_scene?clock.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,reviewedHistory:reviewed?.menu_reviews,offset:args.offset??0,limit:name==='validate_game_menu_action'?50000:args.limit??24});
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id||current.directive_version!==world.directive_version)throw Error('Menu changed during read; refresh.');
@@ -740,7 +740,7 @@ export default {
     let hint='Bearer';try{hint=challenge(env);}catch{}
     return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
    }
-   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.51.0'},instructions:narratorWorkflow})));
+   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.52.0'},instructions:narratorWorkflow})));
    if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
    if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
    if(msg.method==='resources/templates/list')return response(JSON.stringify(done(msg.id,{resourceTemplates:[]})));

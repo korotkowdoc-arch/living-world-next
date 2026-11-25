@@ -63,3 +63,11 @@ test('time gates do not disappear when the calendar display is paginated',()=>{
  p.plans.push({actor,plan_id:'urgent',goal:'Urgent',status:'active',due_at:'1994-08-01 08:30'});
  assert.equal(planTimeAdvance(scenes,p,actor,'1994-08-01 15:00').proposed_until,'1994-08-01 08:30');
 });
+
+ test('long unobserved interval is not current critical deprivation and requires review before further skip',()=>{
+ const scenes=[sc('s',clock,[need]),sc('jump','1994-08-15 08:00')],p=replay(scenes),n=p.worldFacts[0];
+ const f=needForecast(n,scenes);assert.equal(f.estimated_status,null);assert.equal(f.certainty,'unobserved_gap');assert.equal(f.recorded_status,'comfortable');
+ assert.equal(playerLifeView(p,actor,{scenes}).quick_actions.find(x=>x.need==='hunger').status,'unknown');
+ const menu=playerMenuOverview(p,actor,scenes.at(-1).world_time,{scenes});assert.ok(menu.dashboard.notifications.records.some(x=>x.kind==='need_review'&&x.priority==='normal'));
+ const next=planTimeAdvance(scenes,p,actor,'1994-08-16 08:00');assert.equal(next.can_advance,false);assert.equal(next.gate.reason,'need_observation_after_gap');
+ });

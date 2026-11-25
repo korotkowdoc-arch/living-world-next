@@ -19,3 +19,9 @@ test('offscreen access changes are not exposed as player knowledge',()=>{
  const v=playerOpportunities(p,actor,{scenes:[{id:'s',events:[]},{id:'secret',events:[]}]});
  assert.equal(v.known_places.records[0].access,'unknown');
 });
+
+ test('absence of housing and rejected locations are not travel destinations',()=>{
+ const p={people:[{name:actor,state_fields:[{field:'location',value:'Park',source:src},{field:'residence',value:'Без постоянного жилья, ночует на улице',source:src}]}],validation_warnings:[{scene_id:'s',event_id:'bad'}]};
+ const scenes=[{id:'s',events:[{id:'bad',type:'character',name:actor,state_patch:{location:'Secret'}},{id:'old',type:'character',name:actor,state_patch:{residence:'Без постоянного жилья'}}]}];
+ const v=playerOpportunities(p,actor,{scenes});assert.deepEqual(v.known_places.records.map(x=>x.name),['Park']);assert.equal(v.options.some(x=>x.action==='travel'),false);
+ });

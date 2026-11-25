@@ -63,14 +63,14 @@ export function hasMenuRecords(v){
  * classification, not authority to create state. Single explicit holder only.
  * Rows returned by the owner-pinned historical notes RPC; ancestry is checked.
  */
-const reviewKinds={work:'action',education:'action',interests:'other',goals:'intention'};
+const reviewKinds={work:'action',education:'action',interests:'other',goals:'intention',health:'action',calendar:'claim',inventory:'action'};
 export function reviewedMenuHistory(rows,scenes,actor,{complete=false}={}){
- const ids=new Map(scenes.map((s,i)=>[s.id,i])),groups={work:[],education:[],interests:[],goals:[]},seen=new Set();
+ const ids=new Map(scenes.map((s,i)=>[s.id,i])),groups=Object.fromEntries(Object.keys(reviewKinds).map(k=>[k,[]])),seen=new Set();
  for(const r of rows||[]){
-  const n=r?.note,match=/^menu-(work|education|interests|goals)-[a-z0-9_-]+$/.exec(r?.note_key??'');
+  const n=r?.note,match=/^menu-(work|education|interests|goals|health|calendar|inventory)-[a-z0-9_-]+$/.exec(r?.note_key??'');
   if(!match||!ids.has(r.scene_id)||!n||n.kind!==reviewKinds[match[1]]||!Array.isArray(n.actors)||n.actors.length!==1||n.actors[0]!==actor||typeof n.summary!=='string'||!n.summary.trim()||n.summary.length>600||typeof n.quote!=='string'||!n.quote.trim()||n.quote.length>1200)continue;
   const key=JSON.stringify([r.scene_id,r.note_key]);if(seen.has(key))continue;seen.add(key);
-  groups[match[1]].push({title:n.summary,status:'historical_review',source:{scene_id:r.scene_id},order:ids.get(r.scene_id)});
+  groups[match[1]].push({title:n.summary,status:'historical_review',source:{scene_id:r.scene_id,world_time:scenes[ids.get(r.scene_id)]?.world_time??null},order:ids.get(r.scene_id)});
  }
  return {canonical:false,scan_complete:complete,...Object.fromEntries(Object.entries(groups).map(([k,v])=>[k,page(v.sort((a,b)=>b.order-a.order).map(({order,...x})=>x))])),policy:'Reviewed source annotations, not current tasks, qualifications, formal shifts or ledger events.'};
 }
