@@ -1,3 +1,4 @@
+import {activeTaskRecall} from './task-tracker.mjs';
 import {characterAge} from './character-state.mjs';
 import {limitedNarratorMemory} from './narration-budget.mjs';
 const text=v=>typeof v==='string'?v.trim():'';
@@ -21,17 +22,20 @@ function includesText(value,queries){
  return typeof value==='string'&&queries.some(q=>norm(value).includes(norm(q)));
 }
 const groups=['people','relationships','knowledge','plans','obligations','balances','items','stock','worldFacts','offscreen'];
-export function focusedSceneContext(projection,focus,{complete=true,maxChars=18000,worldTime=null}={}){
+export function focusedSceneContext(projection,focus,{complete=true,maxChars=18000,worldTime=null,scenes=[]}={}){
  const input=sceneFocusInput(focus);
  const actorSet=new Set(input.actors);
  // Case-sensitive recorded identities: exact actor keys do not merge distinct characters.
  const match=v=>actorSet.has(text(v));
  const selected={};
  const queries=input.queries;
+ const queryFields=['key','id','record_id','item_id','plan_id','commitment_id','product_id','topic_id','goal','title','name','fact','description','place','next_step','obstacle','evidence','claim','resource','activity','terms','function','purpose','milestone'];
+ const queryScore=entry=>{let score=0;for(const query of queries){const q=norm(query),exact=queryFields.some(k=>norm(entry[k])===q);const hit=queryFields.some(k=>norm(entry[k]).includes(q))||(entry.state_fields||[]).some(x=>norm(x.value).includes(q))||(entry.relationship_fields||[]).some(x=>norm(x.evidence).includes(q));if(exact)score+=12;else if(hit)score+=6;}return score;};
  for(const key of groups){
   const entries=Array.isArray(projection[key])?projection[key]:[];
   selected[key]=entries.filter(entry=>{
    if(!entry)return false;
+   if(queryScore(entry))return true;
    // Never include all knowledge merely because another selected actor knows a related phrase.
    // A query may find a fact, but its actual holder and source remain explicit.
    if(key==='people')return match(entry.name)||includesText(entry.name,queries)||includesText(entry.description,queries)||
@@ -47,7 +51,7 @@ export function focusedSceneContext(projection,focus,{complete=true,maxChars=180
  }
  selected.events_replayed=projection.events_replayed;
  selected.validation_warnings=projection.validation_warnings||[];
- return {focus:input,memory_complete:complete,memory:limitedNarratorMemory(selected,{maxChars,maxEntriesPerCategory:20}),
+ return {focus:input,memory_complete:complete,memory:limitedNarratorMemory(selected,{maxChars,maxEntriesPerCategory:20,scenes,rankRecord:queries.length?queryScore:null}),active_tasks:activeTaskRecall(projection,input.actors,{clock:worldTime,complete,limit:12,maxChars:7000}),
   life_context:input.actors.flatMap(name=>{const age=characterAge((projection.people||[]).find(p=>p.name===name),worldTime);return age?[{actor:name,age}]:[];}),
   matched_actor_names:input.actors.filter(name=>(projection.people||[]).some(p=>p.name===name)),
   identity_policy:'Names are exact recorded labels. Unmatched names and missing fields do not prove that a character or fact is absent. Search the source text for variants.',

@@ -79,3 +79,9 @@ test('connected narrator prompt uses compact menu instructions without losing us
  const p=promptForNarrator({world:{seed:'Мир'},directives:[{active:true,text:rule}],projection:{plans:[]},history:[{id:'source',world_time:'1994-07-01',body:'Сцена'.repeat(12000)}],technicalGuidance:false});
  assert.ok(p.includes(rule));assert.match(p,/narrator_workflow/);assert.match(p,/get_story_scene\(source\)/);assert.ok(p.length<53000);
 });
+
+test('updated old identity ranks by latest source instead of first insertion, and stable keys survive compaction',()=>{
+ const old={...Object.fromEntries(Array.from({length:25},(_,i)=>['unimportant_'+i,'text'])),key:'growth:skill:old',record_id:'old',actor:'Hero',status:'competent',source:{scene_id:'latest'}};
+ const r=limitedNarratorMemory({worldFacts:[old,{key:'recent-insertion',source:{scene_id:'earlier'}}]},{scenes:[{id:'earlier'},{id:'latest'}],maxEntriesPerCategory:1});
+ assert.equal(r.records.worldFacts[0].key,'growth:skill:old');assert.equal(r.records.worldFacts[0].record_id,'old');assert.equal(r.records.worldFacts[0].source.scene_id,'latest');
+});

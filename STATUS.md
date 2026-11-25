@@ -1,10 +1,15 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.54.0 — этапы заданий, активная память и контроль извлечения
+- [x] Candidate: explicit child plan IDs use existing plan events and lifecycle; actual step checklist, count and source links. Parent/child completion independent; orphan steps remain visible. Priority influences child candidates. Focused active task recall independent of generic candidate budget. Exact query/ID matches take precedence over broad actor matches, context compaction retains stable IDs, and updated old records are ranked by latest source. When historical note scanning reaches its cap, source hits trigger targeted retrieval of older scene notes with explicit partial coverage.
+- [x] Candidate: scene draft review flags possible missed updates to active tasks and missing/closed parents; per-occurrence extraction cues, ambiguous repeated evidence cannot silently certify coverage. No automatic fact inference or extra API.
+- [ ] CI, merge, deployment and real story verification. No SQL schema change; child relation is a derived view convention, not a separate DB constraint.
+
 ## v0.53.0 — трекер заданий и автоматическая синхронизация меню
 - [x] Candidate: project accepted plan history as current tasks and archive; stable IDs, next step, obstacle, deadline, source links, no fabricated percentages. Include task transition IDs, stable record identities and affected sections in scene receipt and plan context in next-turn candidates. Extend narrator extraction guidance to update touched records rather than create duplicates.
 - [x] Candidate: safe auto-refresh of open read-only menu after new cloud scene; preserves section, refuses dirty forms, dialogs, settings and branch changes; polling every 15 seconds. Regression tests added.
-- [ ] CI, merge, deployment and live gameplay verification. No new canonical milestone/checklist schema yet; existing plan transitions are the tracker.
+- [x] PR #49 merged (34af12e); final JavaScript/Chromium and SQL CI passed. [ ] Deployment and live gameplay verification.
 
 ## v0.52.0 — исторические сведения о здоровье, вещах и встречах
 - [x] Candidate code: prevent absence-of-housing strings and rejected historical places from becoming destinations; long unobserved jumps yield unknown current needs rather than false critical forecasts; require observation before further time skip. Show separately reviewed health, calendar and inventory notes; keep ownership, appointments, diagnoses and scene history unchanged. Tests added.

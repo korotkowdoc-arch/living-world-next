@@ -92,7 +92,7 @@ const toolsList=[
   {name:'create_world',description:'Create a world from one natural-language premise. No advance NPC forms. Returns new world ID.',inputSchema:{type:'object',properties:{description:{type:'string',minLength:8,maxLength:12000},title:{type:'string'},start_marker:{type:'string'}},required:['description']}},
   {name:'add_world_directive',description:'Save the owner’s plain-language world rule verbatim. Never rewrite it to sound more conciliatory.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},text:{type:'string'}},required:['world_id','text']}},
   {name:'validate_player_choice',description:'Read-only verification of a user-selected option or free action against the current saved player choice, branch, head and rules version. Call only after real user input. Does not save or perform an action.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:'string',format:'uuid'},expected_rules_version:{type:'integer',minimum:0},choice_id:{type:'string',maxLength:80},selected_option:{type:'string',maxLength:80},action_text:{type:'string',maxLength:5000}},required:['world_id','branch_id','expected_head','expected_rules_version','choice_id','selected_option']}},
-  {name:'review_scene_draft',description:'Read-only review of a proposed scene against pinned branch, rules, literal evidence and state transitions. Returns corrections, domain routing, missing-domain lexical review cues and preview of changed records. Never saves.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},body:{type:'string'},events:{type:'array',items:{type:'object'}},world_time:{type:['string','null']}},required:['world_id','branch_id','expected_head','expected_rules_version','body']}},
+  {name:'review_scene_draft',description:'Read-only review of a proposed scene against pinned branch, rules, literal evidence and state transitions. Returns corrections, domain routing, possible missing updates to active tasks, missing-domain lexical review cues and preview of changed records. Never saves.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},body:{type:'string'},events:{type:'array',items:{type:'object'}},world_time:{type:['string','null']}},required:['world_id','branch_id','expected_head','expected_rules_version','body']}},
   {name:'save_scene',description:'Atomically save an already narrated scene on the currently selected branch using expected_head and request_id; requires owner opt-in auto_save. Narrator extracts significant changes from the entire scene, including NPC and world events, with literal evidence and existing domain schemas. Optional isolated scene_memory_version=1 records preserve other important contextual details. Returns extraction routing receipt including stable task IDs and transitions. Never save unplayed proposals.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},branch_id:{type:'string',format:'uuid'},expected_head:{type:['string','null']},expected_rules_version:{type:'integer',minimum:0},request_id:{type:'string',format:'uuid'},body:{type:'string'},world_time:{type:['string','null']},events:{type:'array',items:{type:'object'}}},required:['world_id','branch_id','expected_head','expected_rules_version','request_id','body']}},
   {name:'fork_before_scene',description:'Create a new active alternative branch before the given scene; does not delete older history.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},scene_id:{type:'string',format:'uuid'},name:{type:'string'}},required:['world_id','scene_id']}},
   {name:'get_scene_receipt',description:'Check whether a request_id has already saved a scene, especially after a lost network response; never retry with a NEW id blindly.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},request_id:{type:'string',format:'uuid'}},required:['world_id','request_id']}},
@@ -222,7 +222,13 @@ async function readHistoricalIndex(env,token,world,head,history,focus={}){
   if(!Array.isArray(batch)||batch.length>40)throw Error('Invalid historical page');
   rows.push(...batch);if(batch.length<40){complete=true;break;}
  }}catch{unavailable=true;}
- return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),menu_reviews:focus.menuActor?reviewedMenuHistory(rows,history.scenes,focus.menuActor,{complete:complete&&history.complete}):undefined,status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
+ const targeted={requested:0,loaded:0,failed:0,possibly_truncated:0};
+ if(!complete&&head!==null&&Array.isArray(focus.sourceSceneIds)){
+  const ancestry=new Set(history.scenes.map(s=>s.id)),ids=[...new Set(focus.sourceSceneIds)].filter(id=>ancestry.has(id)).slice(0,8);targeted.requested=ids.length;
+  const batches=await Promise.all(ids.map(async id=>{try{const batch=await rpc(env,token,'nw_read_memory_notes',{p_world_id:world.id,p_expected_head:head,p_actor:null,p_scene_id:id,p_limit:40,p_offset:0});if(!Array.isArray(batch)||batch.length>40||batch.some(r=>r.scene_id!==id))throw Error('Invalid targeted historical page');return batch;}catch{return null;}}));
+  for(const batch of batches){if(!batch){targeted.failed++;continue;}targeted.loaded++;if(batch.length===40)targeted.possibly_truncated++;rows.push(...batch);}
+ }
+ return {...historicalNoteIndex(rows,history.scenes,{...focus,complete,historyComplete:history.complete}),targeted_source_lookup:targeted,menu_reviews:focus.menuActor?reviewedMenuHistory(rows,history.scenes,focus.menuActor,{complete:complete&&history.complete}):undefined,status:unavailable?(rows.length?'partial':'unavailable'):complete&&history.complete?'available':'partial'};
 }
 async function visualStorageFetch(env,token,a,{method='GET',bytes,mime}={}){
  const base=new URL(env.SUPABASE_URL);if(base.protocol!=='https:')throw Error('Invalid storage configuration');
@@ -371,7 +377,7 @@ async function callTool(name,args,env,token){
    const [historicalHints,historicalIndex]=await Promise.all([readFocusedNotes(env,token,world,active.head_scene_id,focusActors),readHistoricalIndex(env,token,world,active.head_scene_id,history,{actors:focusActors,menuActor:playerActor})]);
    const finalWorld=await ownerWorld(env,token,world.id),finalBranch=await branch(env,token,finalWorld);
    if(finalWorld.active_branch_id!==world.active_branch_id||finalBranch.head_scene_id!==active.head_scene_id||finalWorld.directive_version!==world.directive_version)throw Error('Story or rules changed while preparing world context; retry.');
-   const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12});
+   const compactMemory=limitedNarratorMemory(ctx.memory,{maxChars:18000,maxEntriesPerCategory:12,scenes:history.scenes});
    const menu=gameMenuContext({world,directives:rules,context:ctx});
    if(playerActor)menu.overview=playerMenuOverview(ctx.memory,playerActor,ctx.recorded_agenda?.anchor_is_latest_scene?ctx.recorded_agenda.latest_recorded_time:null,{scenes:history.scenes,complete:history.complete,reviewedHistory:historicalIndex.menu_reviews});
    if(menu.overview)menu.overview.visuals={...menu.overview.visuals,...await compactVisualContext(env,token,world)};
@@ -407,7 +413,8 @@ async function callTool(name,args,env,token){
     readFocusedNotes(env,token,world,active.head_scene_id,focus.actors)
    ]);
    const projection=memory.projection;
-   const historicalIndex=await readHistoricalIndex(env,token,world,active.head_scene_id,memory,focus);
+   const sourceSceneIds=[];for(let i=0;i<8;i++)for(const batch of hits){const id=Array.isArray(batch)?batch[i]?.scene_id:null;if(id)sourceSceneIds.push(id);}
+   const historicalIndex=await readHistoricalIndex(env,token,world,active.head_scene_id,memory,{...focus,sourceSceneIds});
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
     throw Error('Story changed while building focused scene context; retry.');
@@ -740,7 +747,7 @@ export default {
     let hint='Bearer';try{hint=challenge(env);}catch{}
     return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
    }
-   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.53.0'},instructions:narratorWorkflow})));
+   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.54.0'},instructions:narratorWorkflow})));
    if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
    if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
    if(msg.method==='resources/templates/list')return response(JSON.stringify(done(msg.id,{resourceTemplates:[]})));

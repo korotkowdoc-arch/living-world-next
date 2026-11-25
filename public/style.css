@@ -76,3 +76,5 @@ body{background:var(--bg)}.panel,.panel.subtle,.scene,.rule,.world-card,.copybox
 
 /* Evidence-backed task tracker */
 .task-tracker .task-card{display:grid;gap:.45rem;border-left:3px solid var(--accent,#8099d0)}.task-status{font-size:.8rem;opacity:.8}.task-history{margin-top:.3rem}.task-history .rule{padding:.5rem 0}.task-card p{margin:.15rem 0;overflow-wrap:anywhere}
+
+.task-checklist{display:grid;gap:.45rem}.task-checklist progress{width:100%}.task-step{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.task-step-symbol{font-weight:bold;min-width:1em}.task-step .btn{margin-left:auto}

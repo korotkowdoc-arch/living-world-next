@@ -3,6 +3,7 @@
  * this file only limits what is copied into one story-generation prompt.
  */
 const PRIORITY=['plans','obligations','relationships','knowledge','balances','stock','people','worldFacts','items','offscreen'];
+const IDENTITIES=new Set(['source','id','key','record_id','plan_id','commitment_id','item_id','product_id','actor','holder','name','a','b','topic_id','currency','unit','status','custody_status','type','goal','title','next_step','obstacle','due_at','fact','balance','known']);
 const META=new Set(['source','world_time','event_id','scene_id','id','status','actor','a','b','stance','goal','known','state_fields','relationship_fields','stance_source','name','topic_id','channel','fact','social_kind','actors','group_id','visibility','growth_kind','dynamics_kind','resource','counterparty','bond_type','sender','recipient','claim','from_key','to_key']);
 function compactValue(value,depth=0){
  if(value===null||typeof value==='boolean'||typeof value==='number')return value;
@@ -16,7 +17,8 @@ function compactValue(value,depth=0){
  }
  if(value&&typeof value==='object'){
   const out={};let n=0;
-  const ordered=Object.keys(value).sort((a,b)=>Number(META.has(b))-Number(META.has(a)));
+  const importance=k=>IDENTITIES.has(k)?2:META.has(k)?1:0;
+  const ordered=Object.keys(value).sort((a,b)=>importance(b)-importance(a));
   for(const k of ordered){
    if((k==='state_fields'||k==='relationship_fields')&&Array.isArray(value[k])){
     // Preserve per-field source links rather than generic nested-data placeholders.
@@ -36,14 +38,14 @@ function compactValue(value,depth=0){
     out.latest_history=value[k].slice(-3).map(v=>compactValue(v,depth+1));
     continue;
    }
-   if(n++>=14){out.additional_fields_omitted=true;break;}
+   if(n++>=18&&!IDENTITIES.has(k)){out.additional_fields_omitted=true;continue;}
    out[k]=compactValue(value[k],depth+1);
   }
   return out;
  }
  return String(value).slice(0,360);
 }
-export function limitedNarratorMemory(projection,{maxChars=18000,maxEntriesPerCategory=12}={}){
+export function limitedNarratorMemory(projection,{maxChars=18000,maxEntriesPerCategory=12,scenes=[],rankRecord=null}={}){
  const max=Math.max(2500,Math.min(50000,Number(maxChars)||18000));
  if(!projection||typeof projection!=='object')return {status:'not_loaded',notice:'Не выдумывай факты, запрашивай первоисточники.'};
  if(projection.incomplete)return {status:'explicitly_incomplete',notice:'История загружена частично; нельзя считать отсутствующее неизвестным фактом.'};
@@ -51,15 +53,15 @@ export function limitedNarratorMemory(projection,{maxChars=18000,maxEntriesPerCa
   source_rule:'Для новых фактов открой конкретную сцену в MCP; сокращённый список не заменяет первоисточник.',
   records:{},omitted:{},counts:{}};
  const limit=Math.max(1,Math.min(40,Math.floor(Number(maxEntriesPerCategory)||12)));
- const queues=new Map();
+ const queues=new Map(),positions=new Map(scenes.map((s,i)=>[s.id,i]));
  // Reserve all count/omission metadata BEFORE adding records. Metadata may
  // otherwise push the final JSON over the advertised character budget.
  for(const category of PRIORITY){
   const rows=Array.isArray(projection[category])?projection[category]:[];
   summary.records[category]=[];summary.counts[category]=rows.length;
   if(rows.length)summary.omitted[category]=rows.length;
-  const newest=rows.slice().reverse();
-  const candidates=category==='plans'
+  const newest=rows.slice().reverse().sort((a,b)=>(rankRecord?.(b,category)??0)-(rankRecord?.(a,category)??0)||(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
+  const candidates=category==='plans'&&!rankRecord
     ?[...newest.filter(x=>!['completed','abandoned'].includes(x?.status)),...newest.filter(x=>['completed','abandoned'].includes(x?.status))]
     :newest;
   queues.set(category,candidates.slice(0,limit));

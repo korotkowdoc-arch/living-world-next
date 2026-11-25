@@ -81,3 +81,29 @@ test('exact scene lookup labels an inactive alternative, preventing cross-branch
   assert.equal(body.in_active_branch,false);assert.match(body.memory_policy,/not evidence/);
  }finally{globalThis.fetch=old;}
 });
+
+test('focused recall uses old source hits to retrieve historical notes beyond the recent scan cap',async()=>{
+ const old=globalThis.fetch,older='66666666-6666-4666-8666-666666666666';
+ const recent={id:head,parent_scene_id:older,world_time:'1994-09-05T17:08',events:[]};
+ const past={id:older,parent_scene_id:null,world_time:'1994-08-13T19:32',events:[]};
+ let targeted=0;
+ const note=(scene_id,note_key,summary)=>({scene_id,note_key,note:{kind:'other',summary,quote:summary,actors:['Hero']}});
+ globalThis.fetch=requestHandler((p,opt)=>{
+  if(p.pathname==='/auth/v1/user')return Response.json({id:u});
+  if(p.pathname==='/rest/v1/nw_worlds')return Response.json([world]);
+  if(p.pathname==='/rest/v1/nw_branches')return Response.json([{id:b,head_scene_id:head}]);
+  if(p.pathname==='/rest/v1/rpc/nw_active_memory_page'){const a=JSON.parse(opt.body);return Response.json([recent,past].slice(a.p_offset,a.p_offset+a.p_limit));}
+  if(p.pathname==='/rest/v1/rpc/nw_search_history')return Response.json([{scene_id:older,snippet:'Редкие очки',world_time:past.world_time}]);
+  if(p.pathname==='/rest/v1/rpc/nw_read_memory_notes'){
+   const a=JSON.parse(opt.body);if(a.p_scene_id===older){targeted++;return Response.json([note(older,'old-glasses','Редкие очки')]);}
+   if(a.p_actor)return Response.json([]);
+   return Response.json(Array.from({length:40},(_,i)=>note(head,'recent-'+(a.p_offset+i),'Недавняя заметка')));
+  }
+ });
+ try{
+  const res=await worker.fetch(call('get_scene_context',{world_id:w,actors:['Hero'],queries:['очки']}),env);
+  const data=(await res.json()).result;assert.equal(data.isError,false);
+  const h=data.structuredContent.historical_index;assert.equal(targeted,1);assert.equal(h.notes[0].scene_id,older);
+  assert.equal(h.scan_complete,false);assert.equal(h.targeted_source_lookup.loaded,1);
+ }finally{globalThis.fetch=old;}
+});

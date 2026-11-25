@@ -88,3 +88,11 @@ test('record routing identifies both sides of transfers and stable mutable recor
  assert.equal(a.record_updates.some(x=>x.event_id===n.id),false);
  assert.ok(a.affected_sections.some(x=>x.section==='tasks'));
 });
+
+test('two distinct transactions in one paragraph require independent evidence review',()=>{
+ const body='Анна заплатила за книгу. Борис заплатил за котёл.';
+ const a=sceneSaveAudit(body,[{id:'m',type:'money',evidence:'Анна заплатила за книгу.'}]);
+ assert.ok(a.review_cues.some(x=>x.domain==='finance'&&x.excerpt.includes('Борис')));
+ const repeated='Анна заплатила за книгу. Анна заплатила за книгу.';
+ assert.ok(sceneSaveAudit(repeated,[{id:'m',type:'money',evidence:'Анна заплатила за книгу.'}]).review_cues.some(x=>x.domain==='finance'));
+});
