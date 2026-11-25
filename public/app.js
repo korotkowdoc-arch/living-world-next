@@ -1,3 +1,4 @@
+import {documentIndex,DOCUMENT_ACTIONS,DOCUMENT_ACTION_IDS,documentActionRows} from './core/documents-world.mjs';
 import {SOCIETY_ACTIONS,SOCIETY_ACTION_IDS,societyActionRows} from './core/magic-society.mjs';
 import {MAGIC_ACTIONS,MAGIC_ACTION_IDS,magicActionRows} from './core/magic-world.mjs';
 import {ADVANCED_ACTIONS,ADVANCED_ACTION_IDS} from './core/advanced-world.mjs';
@@ -218,9 +219,70 @@ function renderWorld(){if(!state.world)return openWorlds();const w=state.world;s
  root.append(tabs);worldSectionContent(tabs);
 }
 
-const MENU_LABELS={rituals:'Ритуалистика',protocols:'Ритуальные протоколы',sessions:'Ритуальные сеансы',participants:'Участники',stages:'Этапы',completed_stages:'Выполнено этапов',alchemy:'Алхимия',ingredients:'Реагенты',formulas:'Формулы',batches:'Партии зелий',enchantments:'Работы с артефактами',ecology:'Экология',species:'Виды существ',habitats:'Места обитания',populations:'Наблюдения популяций',encounters:'Встречи',clinics:'Лечебницы',credentials:'Допуски целителей',admissions:'Госпитализации',visits:'Процедуры',science:'Наука',laboratories:'Лаборатории',memberships:'Членства',patents:'Патенты',licenses:'Лицензии',occupied:'Занятые места',magic:'Магия',magical_medicine:'Магическая медицина',traditions:'Школы магии',techniques:'Техники и заклинания',training:'Владение техникой',research:'Исследования',reserves:'Магический ресурс',casts:'Применение магии',artifacts:'Артефакты',laws:'Магические законы',conditions:'Магические болезни',diagnoses:'Диагнозы',therapies:'Методы лечения',courses:'Курсы лечения',treatments:'Проведённые процедуры',requirements:'Требования',limits:'Ограничения',risks:'Риски',effect:'Эффект',hypothesis:'Гипотеза',findings:'Наблюдения',remaining:'Остаток',capacity:'Ёмкость',interests:'Интересы',habits:'Привычки и увлечения',activities:'Занятия',goals:'Жизненные цели',projects:'Проекты',circles:'Сообщества',contacts:'Знакомые',character:'Персонаж',fields:'Состояние',needs:'Потребности',episodes:'Эпизоды',care:'Забота',care_plans:'Планы заботы',quick_actions:'Быстрые действия',wardrobe:'Одежда',outfit:'Комплект',presets:'Сохранённые комплекты',households:'Семья и хозяйство',household_tasks:'Домашние обязанности',children:'Дети',shared_goals:'Совместные цели',balances:'Средства',budgets:'Бюджеты',observed_prices:'Известные цены',housing:'Жильё',estates:'Недвижимость',sales:'Сделки',furnishing:'Обстановка',employment:'Работа',businesses:'Предприятия',shifts:'Смены',recipes:'Рецепты',services:'Услуги',price_changes:'Изменения цен',supply_contracts:'Поставки',job_eligibility:'Требования',career_history:'Карьера',enrollment:'Обучение',assessments:'Испытания',practice:'Практика',lessons:'Уроки',assignments:'Задания',programs:'Программы',qualifications:'Квалификации',entries:'Сроки',travel:'Поездки',transport:'Транспорт',reservations:'Бронирования',tickets:'Билеты',payments:'Платежи',incoming:'Входящие',outgoing:'Исходящие',tasks:'Дела',consequences:'Последствия',consequence_responses:'Решение проблем',threads:'Сюжетные линии',experience:'Жизненный опыт',causes:'Причинные связи',personality_history:'Изменения личности',due:'На ближайший этап',later:'Позднее',recurring:'Повторяющиеся дела',optional:'Дополнительные инициативы',segment_until:'До даты',remaining_minutes:'Осталось минут',minimum_remaining_segments:'Минимум следующих этапов',from:'От',target:'Цель',status:'Статус',title:'Название',name:'Имя',actor:'Персонаж',description:'Описание',frequency:'Частота',next_step:'Следующий шаг',obstacle:'Препятствие',outcome:'Результат',before:'Раньше',after:'Теперь',field:'Свойство',value:'Значение',role:'Роль',due_at:'Срок',place:'Место',amount:'Сумма',currency:'Валюта',balance:'Остаток',known:'Подтверждено',estimated_status:'Прогноз',recorded_status:'Записано',forecast:'Прогноз',need:'Потребность',preference:'Предпочтение',aversion:'Антипатия',habit:'Привычка',personal_goal:'Личная цель',family_goal:'Семейная цель',career_goal:'Карьерная цель',active:'Активно',paused:'Приостановлено',abandoned:'Оставлено',completed:'Завершено',unknown:'Не установлено',planned:'Запланировано',member:'Участник',left:'Вышел',candidate:'Кандидат',comfortable:'В норме',noticeable:'Заметно',urgent:'Срочно',critical:'Критично'};
+const MENU_LABELS={library:'Библиотека',documents:'Документы',archives:'Архив',publishing:'Рукописи и публикации',newspapers:'Газеты',books:'Книги',bookmarks:'Закладки',notes:'Заметки',reviews:'Рецензии',royalties:'Авторские выплаты',contents:'Оглавление',rituals:'Ритуалистика',protocols:'Ритуальные протоколы',sessions:'Ритуальные сеансы',participants:'Участники',stages:'Этапы',completed_stages:'Выполнено этапов',alchemy:'Алхимия',ingredients:'Реагенты',formulas:'Формулы',batches:'Партии зелий',enchantments:'Работы с артефактами',ecology:'Экология',species:'Виды существ',habitats:'Места обитания',populations:'Наблюдения популяций',encounters:'Встречи',clinics:'Лечебницы',credentials:'Допуски целителей',admissions:'Госпитализации',visits:'Процедуры',science:'Наука',laboratories:'Лаборатории',memberships:'Членства',patents:'Патенты',licenses:'Лицензии',occupied:'Занятые места',magic:'Магия',magical_medicine:'Магическая медицина',traditions:'Школы магии',techniques:'Техники и заклинания',training:'Владение техникой',research:'Исследования',reserves:'Магический ресурс',casts:'Применение магии',artifacts:'Артефакты',laws:'Магические законы',conditions:'Магические болезни',diagnoses:'Диагнозы',therapies:'Методы лечения',courses:'Курсы лечения',treatments:'Проведённые процедуры',requirements:'Требования',limits:'Ограничения',risks:'Риски',effect:'Эффект',hypothesis:'Гипотеза',findings:'Наблюдения',remaining:'Остаток',capacity:'Ёмкость',interests:'Интересы',habits:'Привычки и увлечения',activities:'Занятия',goals:'Жизненные цели',projects:'Проекты',circles:'Сообщества',contacts:'Знакомые',character:'Персонаж',fields:'Состояние',needs:'Потребности',episodes:'Эпизоды',care:'Забота',care_plans:'Планы заботы',quick_actions:'Быстрые действия',wardrobe:'Одежда',outfit:'Комплект',presets:'Сохранённые комплекты',households:'Семья и хозяйство',household_tasks:'Домашние обязанности',children:'Дети',shared_goals:'Совместные цели',balances:'Средства',budgets:'Бюджеты',observed_prices:'Известные цены',housing:'Жильё',estates:'Недвижимость',sales:'Сделки',furnishing:'Обстановка',employment:'Работа',businesses:'Предприятия',shifts:'Смены',recipes:'Рецепты',services:'Услуги',price_changes:'Изменения цен',supply_contracts:'Поставки',job_eligibility:'Требования',career_history:'Карьера',enrollment:'Обучение',assessments:'Испытания',practice:'Практика',lessons:'Уроки',assignments:'Задания',programs:'Программы',qualifications:'Квалификации',entries:'Сроки',travel:'Поездки',transport:'Транспорт',reservations:'Бронирования',tickets:'Билеты',payments:'Платежи',incoming:'Входящие',outgoing:'Исходящие',tasks:'Дела',consequences:'Последствия',consequence_responses:'Решение проблем',threads:'Сюжетные линии',experience:'Жизненный опыт',causes:'Причинные связи',personality_history:'Изменения личности',due:'На ближайший этап',later:'Позднее',recurring:'Повторяющиеся дела',optional:'Дополнительные инициативы',segment_until:'До даты',remaining_minutes:'Осталось минут',minimum_remaining_segments:'Минимум следующих этапов',from:'От',target:'Цель',status:'Статус',title:'Название',name:'Имя',actor:'Персонаж',description:'Описание',frequency:'Частота',next_step:'Следующий шаг',obstacle:'Препятствие',outcome:'Результат',before:'Раньше',after:'Теперь',field:'Свойство',value:'Значение',role:'Роль',due_at:'Срок',place:'Место',amount:'Сумма',currency:'Валюта',balance:'Остаток',known:'Подтверждено',estimated_status:'Прогноз',recorded_status:'Записано',forecast:'Прогноз',need:'Потребность',preference:'Предпочтение',aversion:'Антипатия',habit:'Привычка',personal_goal:'Личная цель',family_goal:'Семейная цель',career_goal:'Карьерная цель',active:'Активно',paused:'Приостановлено',abandoned:'Оставлено',completed:'Завершено',unknown:'Не установлено',planned:'Запланировано',member:'Участник',left:'Вышел',candidate:'Кандидат',comfortable:'В норме',noticeable:'Заметно',urgent:'Срочно',critical:'Критично'};
 const menuLabel=k=>MENU_LABELS[k]||String(k).replaceAll('_',' ');
 const menuValue=v=>typeof v==='boolean'?(v?'Да':'Нет'):v==null?'Не установлено':menuLabel(String(v));
+function readableMaterials(section,overview,index,w,actor){
+ const out=node('div','menu-data'),d=overview.documents;
+ const intent=(action,detail,ids={})=>busy(async()=>{
+  const input={action,detail,...ids};menuActionIntent(input,overview);
+  await copy('Мир '+w.title+' ('+w.id+'), герой '+actor+'. Прочитай текущее меню, проверь validate_game_menu_action: '+JSON.stringify(input)+'. Сыграй действие только после моего явного выбора; не считай его выполненным.');
+ });
+ const body=text=>{const el=node('div','document-body',text);el.style.whiteSpace='pre-wrap';el.style.lineHeight='1.75';el.style.overflowWrap='anywhere';return el;};
+ if(section==='letters'){
+  const l=overview.life.letters;
+  for(const [heading,rows] of [['Входящие',l.incoming],['Отправленные',l.outgoing]]){
+   out.append(title(heading));if(!rows.records.length)out.append(para('Пока нет писем.'));
+   for(const r of rows.records){
+    const card=node('details','rule');card.append(node('summary','', (r.status==='delivered'?'● ':'')+(r.from||r.to||'')+' · '+(r.subject||'Непрочитанное письмо')));
+    card.append(para(r.source?.world_time||r.status));
+    if(r.message!=null)card.append(body(r.message));
+    else card.append(para('Первое чтение происходит в истории.'),button('Прочитать в истории',()=>intent('read_letter','Прочитать письмо от '+r.from,{letter_id:r.id}),'btn secondary'));
+    if(r.from&&r.status==='read')card.append(button('Ответить в ChatGPT',()=>intent('reply_letter','Ответить на письмо от '+r.from,{letter_id:r.id}),'btn secondary'));
+    if(r.source?.scene_id)card.append(sceneLink(w.id,r.source.scene_id,'Источник'));
+    out.append(card);
+   }
+  }
+  return out;
+ }
+ if(!d?.memory_complete){out.append(para('Для чтения нужна полная подтверждённая история.'));return out;}
+ const rows=section==='library'?d.library:section==='news'?d.newspapers:section==='documents'?d.documents:section==='archives'?d.archives:d.authored;
+ const q=node('input','field');q.type='search';q.placeholder='Поиск по названию, автору или оглавлению';
+ const shelf=node('div','menu-data');out.append(q,shelf);
+ const draw=()=>{shelf.replaceChildren();const search=q.value.trim().toLocaleLowerCase('ru');
+  const list=rows.records.filter(r=>[r.title,r.author,r.summary,...r.contents.map(c=>c.title)].some(x=>String(x||'').toLocaleLowerCase('ru').includes(search)));
+  if(!list.length)shelf.append(para('Нет доступных материалов на этой странице.'));
+  for(const r of list){
+   const card=node('details','rule'),heading=node('summary','',r.title+' · '+r.author+' · изд. '+r.number);
+   card.append(heading,para(r.category+' · '+r.read_chapters+' / '+r.total_chapters+' глав прочитано'),para(r.summary));
+   const meter=node('progress');meter.max=r.total_chapters;meter.value=r.read_chapters;card.append(meter);
+   const reader=node('div','menu-data');
+   const chapters=node('select','field');
+   for(const ch of r.contents){const o=node('option','',(ch.bookmark?'★ ':'')+(ch.read?'✓ ':'')+ch.title);o.value=ch.id;chapters.append(o);}
+   const show=()=>{reader.replaceChildren();const ch=r.contents.find(x=>x.id===chapters.value);if(!ch)return;
+    let data;try{data=index.read(actor,r.id,ch.id);}catch(e){reader.append(para(String(e.message||e)));return;}
+    reader.append(node('h3','',data.title));
+    if(data.body!=null)reader.append(body(data.body));
+    else reader.append(para(data.text_available?'Текст сохранён, но герой ещё не прочитал главу.':'Полный текст ещё не записан в мире. Он появится при реально сыгранном чтении.'));
+    if(data.summary)reader.append(para('Конспект: '+data.summary));if(data.reaction)reader.append(para('Реакция: '+data.reaction));
+    if(data.notes.length)reader.append(title('Личные заметки'),...data.notes.map(n=>body(n.body)));
+    if(data.links.length)reader.append(title('Связанные сведения'),...data.links.map(n=>para(n.label+' · '+n.target_kind)));
+    const ids={edition_id:r.id,chapter_id:ch.id};
+    reader.append(row(button('Читать / изучить',()=>intent('study_document','Изучить «'+data.title+'» из «'+r.title+'»',ids),'btn secondary'),button(ch.bookmark?'Закладка сохранена':'Закладка',()=>intent('bookmark_document','Поставить закладку «'+ch.title+'»',ids),'btn secondary')));
+    if(data.can_read&&data.body!=null){const note=field('Личная заметка к главе');note.rows=2;reader.append(note,button('Передать заметку в ChatGPT',()=>intent('write_document_note',note.value,ids),'btn secondary'));}
+    if(data.source?.scene_id)reader.append(sceneLink(w.id,data.source.scene_id,'Источник текста'));
+   };
+   chapters.addEventListener('change',show);
+   card.addEventListener('toggle',()=>{if(card.open)show();});
+   const previous=()=>{if(chapters.selectedIndex>0){chapters.selectedIndex--;show();}},next=()=>{if(chapters.selectedIndex<chapters.options.length-1){chapters.selectedIndex++;show();}};
+   card.append(chapters,row(button('← Предыдущая глава',previous,'btn secondary'),button('Следующая глава →',next,'btn secondary')),reader);
+   if(section==='publishing'&&r.own){card.append(row(button('Продолжить рукопись',()=>intent('continue_document','Продолжить «'+r.title+'»',{edition_id:r.id}),'btn secondary'),...(r.status==='draft'?[button('Предложить публикацию',()=>intent('publish_document','Опубликовать «'+r.title+'»',{edition_id:r.id}),'btn secondary')]:[])));}
+   shelf.append(card);
+  }
+ };q.addEventListener('input',draw);draw();
+ if(section==='publishing')out.append(title('Рецензии'),renderMenuData(d.reviews),title('Авторские выплаты'),renderMenuData(d.royalties));
+ return out;
+}
 function renderMenuData(value,depth=0,w=state.world){
  const out=node('div','menu-data');if(depth>5)return out;
  if(value==null){out.append(para('Не установлено'));return out;}
@@ -376,7 +438,10 @@ function renderGameMenu(){
   if(saved.section==='dashboard'){output.append(title('Обзор'));if(prefs.settings.hud)output.append(hudView(overview));output.append(title('Уведомления'));for(const n of overview.dashboard.notifications.records){output.append(button(n.title||n.kind,()=>{const s=sections.find(x=>x.id===n.section);if(s)go(s);},'btn secondary'));}output.append(renderMenuData(overview.dashboard.counts));for(const q of [...(overview.life.quick_actions||[]),...(overview.dashboard.quick_actions||[])])output.append(button(q.label||MENU_ACTION_LABELS[q.action]||q.action,()=>busy(()=>copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Намерение: '+(q.detail||q.label)+'. Проверь актуальный get_game_menu и validate_game_menu_action: '+JSON.stringify({action:q.action,detail:q.detail||q.label,...Object.fromEntries(Object.entries(q).filter(([k])=>k.endsWith('_id')))})+'. Не выполняй автоматически.')),'btn secondary'));return;}
   const section=menu.sections.find(s=>s.id===saved.section);if(!section)return;
   output.append(title(section.label));
-  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
+  if(section.id==='journal'||section.id==='memories'){output.append(para('Открой историю или карточку персонажа для чтения источников.'));}else if(['library','documents','archives','publishing','letters','news'].includes(section.id)){
+   output.append(readableMaterials(section.id,overview,documentIndex(scenes,projection,{complete}),w,saved.actor));
+   if(section.id==='news')output.append(title('Известия и подписки'),renderMenuData({knowledge:overview.world_depth.news,...overview.advanced.channels}));
+  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   output.append(personalActions(section,overview));
   const magical=section.actions.filter(a=>Object.hasOwn(MAGIC_ACTIONS,a)||Object.hasOwn(SOCIETY_ACTIONS,a));
@@ -404,13 +469,27 @@ function renderGameMenu(){
     const intent=menuActionIntent(input,overview);await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Проверь актуальный head и validate_game_menu_action: '+JSON.stringify(input)+'. Намерение: '+intent.intent+'. Сыграй результат, не считай действие выполненным.');
    })));
   }
-  if(['timeline','news','investments','psychology','map','magic','magical_medicine','rituals','alchemy','magical_ecology','magical_clinics','magical_science'].includes(section.id)){
+  if(['library','documents','archives','publishing','letters','timeline','news','investments','psychology','map','magic','magical_medicine','rituals','alchemy','magical_ecology','magical_clinics','magical_science'].includes(section.id)){
    const data=menuSection(overview,section.id).data;
    const hasNext=v=>v&&typeof v==='object'&&(v.next_offset!=null||Object.values(v).some(x=>!Array.isArray(x)&&x&&typeof x==='object'&&hasNext(x)));
    const move=offset=>{const y=window.scrollY;saved.offset=offset;show();window.scrollTo({top:Math.min(y,output.getBoundingClientRect().top+window.scrollY),behavior:'instant'});};
    if(saved.offset>0||hasNext(data))output.append(row(...(saved.offset>0?[button('← Предыдущие записи',()=>move(Math.max(0,saved.offset-24)),'btn secondary')]:[]),...(hasNext(data)?[button('Следующие записи →',()=>move((saved.offset||0)+24),'btn secondary')]:[])));
   }
-  const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a)&&!Object.hasOwn(ADVANCED_ACTIONS,a)&&!Object.hasOwn(MAGIC_ACTIONS,a)&&!Object.hasOwn(SOCIETY_ACTIONS,a));
+  const docs=section.actions.filter(a=>Object.hasOwn(DOCUMENT_ACTIONS,a));
+  if(docs.length){
+   const sel=node('select','field'),record=node('select','field'),chapter=node('select','field'),detail=field('Что именно сделать?');detail.rows=3;
+   for(const a of docs){const o=node('option','',DOCUMENT_ACTIONS[a]);o.value=a;sel.append(o);}
+   const redrawChapter=()=>{chapter.replaceChildren();const need=['read_document','study_document','bookmark_document','write_document_note'].includes(sel.value);chapter.hidden=!need;if(!need)return;
+    const r=documentActionRows({action:sel.value},overview).find(x=>x.id===record.value);for(const x of r?.contents||[]){if(sel.value==='write_document_note'&&!x.read)continue;const o=node('option','',x.title);o.value=x.id;chapter.append(o);}
+   };
+   const redraw=()=>{record.replaceChildren();record.hidden=!DOCUMENT_ACTION_IDS[sel.value];for(const r of documentActionRows({action:sel.value},overview)){const o=node('option','',r.title||r.subject||r.id);o.value=r.id;record.append(o);}redrawChapter();};
+   sel.addEventListener('change',redraw);record.addEventListener('change',redrawChapter);redraw();
+   output.append(title('Действия с материалами'),sel,record,chapter,detail,button('Скопировать намерение в ChatGPT',()=>busy(async()=>{
+    const action=sel.value,id=DOCUMENT_ACTION_IDS[action],input={action,detail:detail.value,...(id?{[id]:record.value}:{}),...(!chapter.hidden?{chapter_id:chapter.value}:{})};
+    menuActionIntent(input,overview);await copy('Мир '+w.title+' ('+w.id+'), герой '+saved.actor+'. Проверь актуальный head и validate_game_menu_action: '+JSON.stringify(input)+'. Сыграй только явное намерение.');
+   })));
+  }
+  const otherActions=section.actions.filter(a=>Object.hasOwn(MENU_ACTION_LABELS,a)&&!Object.hasOwn(PERSONAL_ACTIONS,a)&&!Object.hasOwn(ADVANCED_ACTIONS,a)&&!Object.hasOwn(MAGIC_ACTIONS,a)&&!Object.hasOwn(SOCIETY_ACTIONS,a)&&!Object.hasOwn(DOCUMENT_ACTIONS,a));
   if(otherActions.length){
    const actions=node('select','field'),detail=field('Что именно сделать, с кем или с каким предметом?');detail.rows=3;
    for(const a of otherActions){const o=node('option','',MENU_ACTION_LABELS[a]);o.value=a;actions.append(o);}
