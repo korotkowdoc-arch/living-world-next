@@ -232,4 +232,33 @@ begin
  perform public.nw_commit_scene(wid,bid,h,req,body,'1994-08-01',jsonb_build_array(letter||'{"status":"read"}'),0);
  if (select count(*) from public.nw_scenes where world_id=wid)<>3 then raise exception 'Rejected life scenes persisted';end if;
 end $life$;
+-- Calendar, named outfit and impressions must pass the real scene transaction.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $calendar$
+declare wid uuid; bid uuid; h uuid; bad boolean;
+ body text:='Anna recorded an event.';
+ item jsonb:='{"id":"item","type":"item","item_id":"coat","custody_version":1,"actor":"Anna","action":"acquire","evidence":"Anna recorded an event."}';
+ garment jsonb:='{"id":"garment","type":"world","player_life_version":1,"life_kind":"garment","record_id":"coat","key":"player-life:garment:coat","item_id":"coat","slot":"outer","style":"formal","description":"A coat","evidence":"Anna recorded an event."}';
+ preset jsonb:='{"id":"preset","type":"world","player_life_version":1,"life_kind":"preset","record_id":"formal","key":"player-life:preset:formal","actor":"Anna","title":"Formal","status":"active","slots":{"outer":"coat"},"evidence":"Anna recorded an event."}';
+ meet jsonb:='{"id":"meet","type":"world","player_life_version":1,"life_kind":"appointment","record_id":"visit","key":"player-life:appointment:visit","actor":"Anna","participants":["Anna","Boris"],"title":"Visit","place":"Cafe","starts_at":"1994-08-01 12:00","ends_at":"1994-08-01 13:00","status":"confirmed","evidence":"Anna recorded an event."}';
+ impression jsonb:='{"id":"impression","type":"world","player_life_version":1,"life_kind":"impression","record_id":"seen","key":"player-life:impression:seen","actor":"Anna","observer":"Boris","description":"Compliment","basis":"Coat","status":"positive","known_to_actor":true,"evidence":"Anna recorded an event."}';
+begin
+ wid:=public.nw_create_world('Calendar test','Synthetic calendar','1994-08-01');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 08:00',jsonb_build_array(preset),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Unowned preset accepted';end if;
+ h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 08:00',jsonb_build_array(item,garment,preset,meet,impression),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 08:00',jsonb_build_array(meet||'{"status":"completed","place":"Elsewhere"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Meeting rewritten while closing';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 08:00',jsonb_build_array(meet||'{"starts_at":"1994-02-30 12:00"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Invalid meeting date accepted';end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 08:00',jsonb_build_array(impression||'{"known_to_actor":false}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Witnessed impression erased';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 13:00',jsonb_build_array(meet||'{"status":"completed"}',item||'{"action":"transfer","counterparty":"Boris"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 13:00',jsonb_build_array(preset),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Unavailable garment preset accepted';end if;
+ perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 13:00',jsonb_build_array(preset||'{"status":"removed"}'),0);
+ if (select count(*) from public.nw_scenes where world_id=wid)<>3 then raise exception 'Invalid calendar scene persisted';end if;
+end $calendar$;
 rollback;
