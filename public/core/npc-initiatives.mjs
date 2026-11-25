@@ -20,7 +20,7 @@ export function npcInitiativeView(candidates=[],{focus=[],player=null,settings={
   if(!actor||protectedActors.has(actor))continue;
   const checks=(c.checks||[]).filter(x=>blockers.has(x.kind));
   const stale=c.source?.scene_id&&positions.has(c.source.scene_id)?scenes.length-1-positions.get(c.source.scene_id):null;
-  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length?2:1,scenes_since_update:stale,certainty:'candidate_only_not_performed'};
+  const row={actor,kind:c.kind,key:c.key,title:c.title,status:c.status,source:c.source,place:c.place??null,player_involved:c.actors.some(x=>protectedActors.has(x)),reason:mandatory(c)?'recorded_due':c.timing==='scheduled_window_not_presence'?'routine_window':'own_recorded_motive',checks,checks_omitted:c.checks_omitted??0,next_step:c.next_step??null,obstacle:c.obstacle??null,priority:mandatory(c)?0:checks.length?2:1,scenes_since_update:stale,certainty:'candidate_only_not_performed'};
   if(!byActor.has(actor))byActor.set(actor,[]);
   byActor.get(actor).push(row);
  }
