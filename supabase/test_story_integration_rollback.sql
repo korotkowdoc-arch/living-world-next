@@ -783,7 +783,7 @@ begin
  bad:=false;begin perform public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-02 09:00',jsonb_build_array(bond,child_character,birth_event,birth),0);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Birth accepted on mismatched date';end if;
  h:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(bond,child_character,birth_event,birth,goal,invite),0);
- bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(child_character||'{"state_patch":{"birth_date":"2000-08-02"}}'),0);exception when raise_exception then bad:=true;end if;
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(child_character||'{"state_patch":{"birth_date":"2000-08-02"}}'),0);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Registered birth date changed';end if;
  bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'2000-08-01 09:00',jsonb_build_array(goal||'{"status":"active"}'),0);exception when raise_exception then bad:=true;end;
  if not bad then raise exception 'Goal activated without agreement';end if;
