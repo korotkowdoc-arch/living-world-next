@@ -185,7 +185,7 @@ async function callTool(name,args,env,token){
    const current=await ownerWorld(env,token,world.id),after=await branch(env,token,current);
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id||current.directive_version!==world.directive_version)throw Error('Menu changed during read; refresh.');
    const anchor={world_id:world.id,branch_id:world.active_branch_id,expected_head:active.head_scene_id,expected_rules_version:world.directive_version};
-   if(name==='plan_game_time')return {...anchor,...planTimeAdvance(history.scenes,projection,args.actor,args.target_time,{pending:choice.status==='awaiting_player',complete:history.complete,pace:menuPreferences(rules,world.active_branch_id).settings.pace})};
+   if(name==='plan_game_time')return {...anchor,...planTimeAdvance(history.scenes,projection,args.actor,args.target_time,{pending:choice.status==='awaiting_player',complete:history.complete&&choice.status!=='inconsistent',pace:menuPreferences(rules,world.active_branch_id).settings.pace})};
    if(name==='validate_game_menu_action'){
     if(!history.complete)throw Error('Incomplete history; use source-backed free story action.');
     return {...anchor,...menuActionIntent(args,overview),pending_choice:choice.pending??null};
@@ -263,7 +263,7 @@ async function callTool(name,args,env,token){
    if(current.active_branch_id!==world.active_branch_id||after.head_scene_id!==active.head_scene_id)
     throw Error('Story changed while reading character state; retry.');
    return {world_id:world.id,active_branch_id:world.active_branch_id,head_scene_id:active.head_scene_id,
-    ...characterStateView(projection,actor,{complete:memory.complete,offset:args.offset,limit:args.limit,worldTime:memory.scenes.at(-1)?.world_time})};
+    ...characterStateView(projection,actor,{complete:memory.complete,offset:args.offset,limit:args.limit,worldTime:memory.scenes.at(-1)?.world_time,scenes:memory.scenes})};
   }
   case 'get_actor_memory':{
    const world=await ownerWorld(env,token,args.world_id);
