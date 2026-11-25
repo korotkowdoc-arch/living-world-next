@@ -81,6 +81,10 @@ export function planTimeAdvance(scenes,projection,actor,targetTime,{pending=fals
   const t=date(x.when);if(!t||t.order>target.order)continue;
   gates.push({kind:x.kind,id:x.id,title:x.title,at:literal(Math.max(clock.order,t.order)),reason:t.precision==='day'?'date_only_requires_review':'scheduled_or_unresolved'});
  }
+ for(const x of projection.worldFacts||[])if(x.player_life_version===1&&x.actor===actor){
+  if(x.life_kind==='journey'&&x.status==='travelling')gates.push({kind:'journey',id:x.record_id,title:x.title,at:clock.literal,reason:'resolve_current_leg_before_skip'});
+  if(x.life_kind==='service_visit'&&x.status==='accepted')gates.push({kind:'service_visit',id:x.record_id,title:x.title,at:clock.literal,reason:'review_accepted_service_before_skip'});
+ }
  const records=(projection.worldFacts||[]).filter(x=>x.player_life_version===1&&x.life_kind==='need'&&x.actor===actor);
  const forecasts=records.map(x=>needForecast(x,scenes,target.literal,{complete}));
  for(const f of forecasts)if(f.estimated_status==='critical'){
