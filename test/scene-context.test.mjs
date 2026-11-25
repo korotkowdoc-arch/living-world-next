@@ -37,3 +37,10 @@ test('focused memory remains bounded for thousands of matching records',()=>{
  assert.equal(result.memory.counts.knowledge,3000);
  assert.ok(result.memory.omitted.knowledge>2900);
 });
+
+test('exact stable ID query retrieves an old task or item despite many recent actor matches',()=>{
+ const plans=[{actor:'A',plan_id:'old-task',goal:'Old exact task',status:'completed',source:{scene_id:'old'}},...Array.from({length:100},(_,i)=>({actor:'A',plan_id:'new-'+i,goal:'Recent task '+i,status:'active',source:{scene_id:'new'}}))];
+ const items=[{holder:'A',item_id:'old-glasses',name:'Glasses',source:{scene_id:'old'}},...Array.from({length:100},(_,i)=>({holder:'A',item_id:'new-'+i,name:'Recent item '+i,source:{scene_id:'new'}}))];
+ const r=focusedSceneContext({plans,items},{actors:['A'],queries:['old-task','old-glasses']},{scenes:[{id:'old'},{id:'new'}],maxChars:5000});
+ assert.equal(r.memory.records.plans[0].plan_id,'old-task');assert.equal(r.memory.records.items[0].item_id,'old-glasses');assert.ok(r.active_tasks.total>=100);
+});
