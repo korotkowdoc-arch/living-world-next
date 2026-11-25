@@ -1,3 +1,4 @@
+import {recordedPlayerActors} from './social-dashboard.mjs';
 import {npcInitiativeView} from './npc-initiatives.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
@@ -207,7 +208,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  // Attach a bounded actor context to the actual turn, instead of forcing the narrator
  // to retrieve every subsystem independently. Focused actors precede background actors.
  const pendingActor=records.find(x=>x.dynamics_kind==='player_choice'&&x.status==='pending')?.actor??null;
- const npcInitiatives=npcInitiativeView(all,{focus:[...focus],player:pendingActor,settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:interval});
+ const npcInitiatives=npcInitiativeView(all,{focus:[...focus],player:pendingActor,players:recordedPlayerActors(projection),settings:preferences.settings,scenes,complete:opts.complete!==false,elapsed:interval});
  const selectedActors=scope==='background'?[]:[...focus],omittedActors=new Set();
  const addActor=name=>{if(!text(name)||selectedActors.includes(name))return;if(selectedActors.length<12)selectedActors.push(name);else omittedActors.add(name);};
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
