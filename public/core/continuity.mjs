@@ -1,3 +1,4 @@
+import {applyMarketAdjustment,invalidateFurnishing} from './market-home.mjs';
 import {applyPropertySettlement,propertyPaymentError} from './property-lessons.mjs';
 import {addBudgetFlow,budgetFlowRows} from './home-systems.mjs';
 import {workSceneError,workReplayError} from './work-systems.mjs';
@@ -130,14 +131,14 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
         case 'item': {
           const error=event.type==='money'?applyMoney(balances,event,from):applyItem(items,event,from);
           if(error){failures.push({scene_id:scene.id,event_id:event.id,errors:[error]});accepted=false;}
-          else if(event.type==='item')removeUnavailableGarment(outfits,items,event.item_id);
+          else if(event.type==='item'){removeUnavailableGarment(outfits,items,event.item_id);invalidateFurnishing(worldFacts,items,event,from);}
           break;
         }
         case 'commitment': if(asText(event.commitment_id))obligations.set(event.commitment_id,value);break;
         case 'world': if(asText(event.key)){
           const err=socialTransitionError(worldFacts.get(event.key),event)||activityTransitionError(worldFacts.get(event.key),event)||consequenceTransitionError(worldFacts.get(event.key),event)||growthTransitionError(worldFacts,event)||dynamicsTransitionError(worldFacts,event)||playerLifeTransitionError(worldFacts,items,event)||journeyArrivalError(event,worldFacts.get(event.key),acceptedLocations)||workReplayError(worldFacts,event,acceptedStock,acceptedMoney)||(event.life_kind==='estate_sale'&&event.status==='settled'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Estate payment was not accepted':null)||(event.life_kind==='service_visit'&&event.status==='completed'&&event.amount>0&&!acceptedMoney.has(event.transfer_event_id)?'Service transfer was not accepted':null)||(event.dynamics_kind==='stock_operation'?applyStock(stock,event,from):null);
           if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;}
-          else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);applyPropertySettlement(worldFacts,event,value);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
+          else {worldFacts.set(event.key,projectLifeRecord(worldFacts.get(event.key),event,value));applyOutfit(outfits,event,from);applyPropertySettlement(worldFacts,event,value);applyMarketAdjustment(worldFacts,event,value);invalidateFurnishing(worldFacts,items,event,from);if(event.dynamics_kind==='player_choice')awaiting=event.status==='pending'?value:null;}
         }break;
         case 'offscreen': offscreen.push(value);break;
         case 'plan': {

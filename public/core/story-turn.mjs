@@ -43,6 +43,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(!namedPlaces.has(r.name))namedPlaces.set(r.name,[]);namedPlaces.get(r.name).push(r);
  }
  const stockByKey=new Map((projection.stock||[]).map(s=>[JSON.stringify([s.holder,s.product_id,s.unit]),s]));
+ const recipeById=new Map(records.filter(r=>r.life_kind==='service_recipe').map(r=>[r.record_id,r]));
  const enterpriseById=new Map(records.filter(r=>r.dynamics_kind==='enterprise').map(r=>[r.record_id,r]));
  const balancesByActor=new Map((projection.balances||[]).map(b=>[JSON.stringify([b.actor,b.currency]),b]));
  const itemsById=new Map((projection.items||[]).map(i=>[i.item_id,i]));
@@ -65,6 +66,10 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
     const overlaps=(currentRoutines.get(actor)||[]).filter(r=>r.key!==row.key&&r.place!==row.place);
     if(overlaps.length)checks.push({kind:'competing_schedule',actor,other_places:[...new Set(overlaps.map(r=>r.place))].slice(0,3),sources:overlaps.slice(0,3).map(source),policy:'Possible scheduling conflict, not proof of actual presence.'});
    }
+  }
+  if(kind==='service_provider'){
+   const recipe=recipeById.get(row.recipe_id);
+   for(const l of recipe?.stock_lines||[]){const s=stockByKey.get(JSON.stringify([row.actor,l.product_id,l.unit]));checks.push({kind:!s?.known?'stock_unknown':s.quantity< -l.quantity?'stock_insufficient':'stock_available',product_id:l.product_id,unit:l.unit,required:-l.quantity,quantity:s?.known?s.quantity:null,source:source(s)});}
   }
   if(row.dynamics_kind==='production_order'){
    const enterprise=enterpriseById.get(row.enterprise_id);if(enterprise?.status!=='operating')checks.push({kind:'enterprise_not_operating',status:enterprise?.status||'unknown',source:source(enterprise)});
@@ -155,7 +160,10 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='home_condition'&&['damaged','unsafe'].includes(r.status))add('home_condition',{...r,title:r.area},{timing:'requires_character_choice'});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='work_shift'&&['scheduled','working'].includes(r.status)){const start=parseStoryDate(r.starts_at);add('work_shift',{...r,counterparty:r.employer},{starts_at:r.starts_at,ends_at:r.ends_at,timing:r.status==='working'||start&&anchor&&start.order<=anchor.order?'reached_requires_story':'future'});}
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='journey'&&['travelling','planned','paused'].includes(r.status))add('journey',r,{next_stop:r.stops[r.reached+1]??null,reached:r.reached,timing:'requires_character_choice'});
- for(const r of records)if(r.player_life_version===1&&r.life_kind==='service_visit'&&['requested','accepted'].includes(r.status))add('service_visit',{...r,counterparty:r.provider},{amount:r.amount,currency:r.currency,timing:'requires_character_choice'});
+ for(const r of records)if(r.player_life_version===1&&r.life_kind==='service_visit'&&['requested','accepted'].includes(r.status)){
+  add('service_visit',{...r,counterparty:r.provider},{amount:r.amount,currency:r.currency,timing:'requires_character_choice'});
+  add('service_provider',{...r,actor:r.provider,counterparty:r.actor},{amount:r.amount,currency:r.currency,timing:'requires_character_choice',service_visit_id:r.record_id,provider_action_only:true});
+ }
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='appointment'&&r.status==='confirmed'){
   const at=parseStoryDate(r.starts_at);
   const due=!!at&&!!anchor&&(anchor.precision==='minute'?at.order<=anchor.order:at.day<anchor.day);

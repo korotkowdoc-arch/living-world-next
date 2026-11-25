@@ -481,4 +481,52 @@ begin
  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-03 10:00',jsonb_build_array(assignment||'{"status":"graded","submission":"Work","grade":"A","outcome":"Grade"}'),0);
  if (select count(*) from public.nw_scenes where world_id=wid)<>7 then raise exception 'Rejected scene persisted';end if;
 end $property$;
+-- Market, furnishing and branch-safe server checkpoints.
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select set_config('request.jwt.claims','{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}',true);
+do $market$
+declare wid uuid; bid uuid; h uuid; root uuid; adjusted uuid; bad boolean; body text:='Anna recorded an event.';
+ common jsonb:='{"type":"world","player_life_version":1,"evidence":"Anna recorded an event."}';
+ estate jsonb:='{"id":"estate","life_kind":"estate","record_id":"home","key":"player-life:estate:home","actor":"Anna","title":"Home","place":"London","estate_kind":"house","status":"owned"}';
+ item jsonb:='{"id":"chair","type":"item","item_id":"chair","name":"Chair","custody_version":1,"actor":"Anna","action":"acquire","evidence":"Anna recorded an event."}';
+ furniture jsonb:='{"id":"furniture","life_kind":"furnishing","record_id":"chair","key":"player-life:furnishing:chair","actor":"Anna","item_id":"chair","home_kind":"estate","home_id":"home","area":"Living room","description":"Chair","status":"placed"}';
+ service jsonb:='{"id":"service","life_kind":"venue_service","record_id":"meal","key":"player-life:venue_service:meal","actor":"Cafe","title":"Meal","place":"Cafe","category":"food","amount":5,"currency":"GBP","duration_minutes":30,"status":"available"}';
+ discovery jsonb:='{"id":"quote","life_kind":"discovery","record_id":"quote","key":"player-life:discovery:quote","actor":"Anna","service_id":"meal","provider":"Cafe","title":"Meal","place":"Cafe","category":"food","amount":5,"currency":"GBP","duration_minutes":30,"status":"available"}';
+ adjustment jsonb:='{"id":"adjust","life_kind":"market_adjustment","record_id":"increase","key":"player-life:market_adjustment:increase","actor":"Cafe","service_id":"meal","previous_amount":5,"amount":7,"currency":"GBP","cause":"cost","description":"Costs rose","status":"recorded"}';
+ observation jsonb:='{"id":"observed","life_kind":"market_observation","record_id":"observed","key":"player-life:market_observation:observed","actor":"Anna","service_id":"meal","discovery_id":"quote","provider":"Cafe","title":"Meal","place":"Cafe","amount":5,"currency":"GBP","supply":"unknown","demand":"high","description":"Saw price","status":"recorded"}';
+ visit jsonb:='{"id":"visit","life_kind":"service_visit","record_id":"meal","key":"player-life:service_visit:meal","actor":"Anna","provider":"Cafe","service_id":"meal","title":"Meal","place":"Cafe","amount":5,"currency":"GBP","status":"accepted"}';
+begin
+ wid:=public.nw_create_world('Market checkpoint test','Synthetic market','1994-08-01');select active_branch_id into bid from public.nw_worlds where id=wid;
+ estate:=estate||common;furniture:=furniture||common;service:=service||common;discovery:=discovery||common;adjustment:=adjustment||common;observation:=observation||common;visit:=visit||common;
+ root:=public.nw_commit_scene(wid,bid,null,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(estate,item,service,discovery,visit),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,root,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(adjustment||'{"previous_amount":4}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Incorrect prior price accepted';end if;
+ adjusted:=public.nw_commit_scene(wid,bid,root,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(adjustment,furniture,observation),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,adjusted,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(visit||'{"id":"new","record_id":"new","key":"player-life:service_visit:new"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Stale quote used for new service';end if;
+ h:=public.nw_commit_scene(wid,bid,adjusted,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(item||'{"action":"drop"}'),0);
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(item||'{"action":"recover"}'),0);
+ bad:=false;begin perform public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(furniture||'{"status":"removed"}'),0);exception when raise_exception then bad:=true;end;
+ if not bad then raise exception 'Recovery resurrected old placement';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(furniture),0);
+ for i in 1..128 loop
+  h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00','[]'::jsonb,0);
+ end loop;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(discovery||'{"amount":7}'),0);
+ perform public.nw_fork_before(wid,adjusted,'Before market');
+ select active_branch_id into bid from public.nw_worlds where id=wid;
+ select head_scene_id into h from public.nw_branches where id=bid;
+ if h is distinct from root then raise exception 'Fork did not pin root';end if;
+ h:=public.nw_commit_scene(wid,bid,h,gen_random_uuid(),body,'1994-08-01 09:00',jsonb_build_array(adjustment||'{"amount":6}'),0);
+ perform set_config('nw.test_checkpoint_world',wid::text,true);
+end $market$;
+reset role;
+do $checkpoint_verify$
+declare wid uuid:=current_setting('nw.test_checkpoint_world')::uuid;
+begin
+ if has_table_privilege('authenticated','public.nw_life_checkpoints','SELECT') or has_table_privilege('authenticated','public.nw_life_checkpoints','INSERT') or has_function_privilege('authenticated','public.nw_life_checkpoint_signature()','EXECUTE') then raise exception 'Checkpoint state exposed';end if;
+ if (select count(*) from public.nw_life_checkpoints where world_id=wid)<>2 then raise exception 'Expected root and extended checkpoints';end if;
+ if (select max(scene_count) from public.nw_life_checkpoints where world_id=wid)<>133 then raise exception 'Incorrect checkpoint ancestry count';end if;
+ if exists(select 1 from public.nw_life_checkpoints where world_id=wid and engine_signature<>public.nw_life_checkpoint_signature()) then raise exception 'Incompatible checkpoint written';end if;
+end $checkpoint_verify$;
 rollback;
