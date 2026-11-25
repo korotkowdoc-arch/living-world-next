@@ -58,6 +58,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  function candidateChecks(row,participants,kind){
   const checks=[];
   if(kind==='employer_response'&&row.status==='offered')checks.push({kind:'candidate_qualification_requires_review',policy:'Check the recorded applicant and job requirements before any decision.'});
+  if(kind==='consequence_opportunity')checks.push({kind:'consequence_awareness_requires_review',policy:'Verify the participant’s own knowledge before narrating a response; do not infer guilt or awareness.'});
   if(kind==='agreement_party')checks.push({kind:'agreement_terms_require_review',policy:'Retrieve the original agreement and each party’s resources before a settlement.'});
   if(row.status==='paused')checks.push({kind:'paused_intention',source:source(row),policy:'Need a narrated reason to resume.'});
   if(row.obstacle)checks.push({kind:'recorded_obstacle',description:clip(row.obstacle),source:source(row)});
