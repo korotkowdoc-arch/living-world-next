@@ -146,6 +146,20 @@ export function worldDepthIndex(scenes=[],p={}, {complete=true}={}){
   for(const r of facts)if(r.dynamics_kind==='economic_agreement'&&['active','disputed'].includes(r.status)){
    for(const actor of [r.actor,r.counterparty])if(actor&&!seen.has(actor)){seen.add(actor);out.push({kind:'financial_review',row:{actor,counterparty:actor===r.actor?r.counterparty:r.actor,key:key('financial_review',actor,r.key),title:summary(r),status:r.status,source:r.source},info:{record_key:r.key,timing:'requires_character_choice',financial_review:{currency:r.currency,amount:r.amount,agreement_kind:r.agreement_kind,own_role:actor===r.actor?'actor':'counterparty'},guidance:'Review the original agreement, actual cash and obligations. Consider negotiation or resource allocation; no automatic investment, profit, price change, payment or settlement.'}});}
   }
+  const boundaries=new Map((p.relationships||[]).map(r=>[key(r.a,r.b),r.relationship_fields?.find(f=>f.field==='boundary')?.value]));
+  const blocked=(a,b)=>[boundaries.get(key(a,b)),boundaries.get(key(b,a))].some(x=>['no_contact','distance'].includes(x));
+  const knownTopics=new Map();
+  for(const r of p.knowledge||[])if(r.topic_id&&r.actor&&r.status!=='forgotten'&&r.status!=='unknown'){if(!knownTopics.has(r.actor))knownTopics.set(r.actor,new Set());knownTopics.get(r.actor).add(r.topic_id);}
+  for(const [actor,g] of profiles){
+   const contacts=[...new Set([...g.contacts.values()].filter(r=>r.kind==='own_attitude'||r.kind==='shared_episode'||r.status==='active').map(r=>r.other))].filter(b=>!blocked(actor,b)).slice(0,8);
+   if(contacts.length>=2){
+    const a=contacts[0],b=contacts.find(n=>n!==a&&!blocked(a,n)&&!profiles.get(a)?.contacts.has(key(n,'own_attitude'))&&!profiles.get(n)?.contacts.has(key(a,'own_attitude'))&&!profiles.get(a)?.contacts.has(key(n,'shared_episode')));
+    if(b){const r=[...g.contacts.values()].find(x=>x.other===a);out.push({kind:'introduction_opportunity',row:{actor,key:key('introduction',actor,a,b),title:'Possible introduction: '+a+' / '+b,status:'opportunity',source:r.source},info:{record_key:key(actor,'introduction'),timing:'requires_character_choice',introduction:{contacts:[a,b]},guidance:'Mediator knows both through recorded links. Confirm both are actually present, willing and not already acquainted. No assumed introduction or new friendship.'}});}
+   }
+   const latest=(newsByActor.get(actor)||[]).slice().sort(recent).find(r=>r.topic_id&&r.status==='knows'&&r.channel);
+   const recipient=latest&&contacts.find(b=>!knownTopics.get(b)?.has(latest.topic_id));
+   if(recipient)out.push({kind:'information_opportunity',row:{actor,counterparty:recipient,key:key('information',actor,recipient,latest.topic_id),title:'Possible discussion',status:'opportunity',source:latest.source},info:{record_key:latest.topic_id,timing:'requires_character_choice',information:{topic_id:latest.topic_id,recipient,channel:latest.channel},guidance:'Review the source and confidentiality, motive and access before any voluntary disclosure. Do not reveal secret information automatically or equate an assertion with fact. Save a separate recipient knowledge event only if communicated.'}});
+  }
   return out;
  }
  return {view,opportunities,chronicle:()=>({memory_complete:complete,...page(complete?order(chronicle):[],40)})};
