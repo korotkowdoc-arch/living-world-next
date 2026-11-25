@@ -37,7 +37,7 @@ test('menu is read-only and preserves current pending selection and versions',()
  const before=JSON.stringify(context);
  const menu=gameMenuContext({world,directives:[rule('s',config)],context});
  assert.equal(JSON.stringify(context),before);assert.equal(menu.expected_head,'h');assert.equal(menu.expected_rules_version,7);assert.equal(menu.pending_choice,'awaiting_player');assert.equal(menu.clock_is_current,false);
- assert.equal(menu.sections.length,34);assert.equal(menu.layout_version,7);assert.ok(menu.sections.every(s=>s.group&&s.icon));assert.ok(menu.sections.find(x=>x.id==='character').actions.includes('change_appearance'));
+ assert.equal(menu.sections.length,42);assert.equal(menu.layout_version,8);assert.ok(menu.sections.every(s=>s.group&&s.icon));assert.ok(menu.sections.find(x=>x.id==='character').actions.includes('change_appearance'));
  assert.ok(menu.sections.find(x=>x.id==='tasks').actions.includes('set_priority'));
  const prompt=promptForNarrator({world,directives:[rule('s',config)]});
  assert.match(prompt,/ИГРОВОЕ МЕНЮ NEXT/);assert.match(prompt,/"pace":"fast"/);
