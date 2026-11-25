@@ -1,3 +1,4 @@
+import {magicIndex} from './magic-world.mjs';
 import {advancedIndex} from './advanced-world.mjs';
 import {taskAccessible} from './duty-career.mjs';
 import {householdAccessible,jobEligibility} from './households-careers.mjs';
@@ -45,6 +46,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const timeAdvance=proposed?.precision==='minute'&&clock?.precision==='minute'&&proposed.order>clock.order&&focus.size===1?planTimeAdvance(scenes,projection,[...focus][0],proposed.literal,{complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor}):null;
  const segmentLimit=backgroundTimeReview([],{clock:clock?.literal,target:proposed?.literal,segmentUntil:timeAdvance?.proposed_until,protectedActors,complete:opts.complete!==false,pace:preferences.settings.pace,pending:!!pendingActor});
  const segmentAnchor=parseStoryDate(segmentLimit?.segment_until)||clock;
+ const magic=magicIndex(scenes,projection,{complete:opts.complete!==false});
  const advanced=advancedIndex(scenes,projection,{complete:opts.complete!==false});
  const depth=worldDepthIndex(scenes,projection,{complete:opts.complete!==false});
  const longLife=buildLongLifeIndex(scenes,projection,{complete:opts.complete!==false});
@@ -268,6 +270,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   for(const {kind,row,info} of npcNeedOpportunities(records,scenes,(segmentLimit?segmentAnchor:anchor)?.literal))add(kind,row,info);
   for(const {kind,row,info} of npcContactOpportunities(scenes,projection,clock?.literal,{shared:all.slice()}))add(kind,row,info);
  }
+ for(const {kind,row,info} of magic.opportunities())add(kind,row,info);
  for(const {kind,row,info} of advanced.opportunities())add(kind,row,info);
  for(const {kind,row,info} of depth.opportunities())add(kind,row,info);
  for(const {kind,row,info} of longLife.opportunities())add(kind,row,info);
@@ -320,7 +323,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
  for(const initiative of npcInitiatives.initiatives)addActor(initiative.actor);
  if(scope==='background')for(const actor of focus)addActor(actor);
- const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],personality_history:[],life_interests:[],life_goals:[],life_threads:[],life_circles:[],life_experience:[],life_causes:[],psychology:[],beliefs:[],motives:[],omitted:{}}]));
+ const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],personality_history:[],life_interests:[],life_goals:[],life_threads:[],life_circles:[],life_experience:[],life_causes:[],psychology:[],beliefs:[],motives:[],magic_training:[],magic_research:[],magic_reserves:[],magical_health:[],omitted:{}}]));
  const actorRows=(actor,kind,row,cap)=>{const ctx=actorIndex.get(actor);if(!ctx)return;
   if(ctx[kind].length<cap)ctx[kind].push(row);else ctx.omitted[kind]=(ctx.omitted[kind]||0)+1;
  };
@@ -332,6 +335,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   actorIndex.get(actor).omitted.personality_history=history.total-history.records.length;
  }
  for(const actor of selectedActors){
+  const magical=magic.view(actor,{director:true,limit:3});for(const [k,rows] of [['magic_training',magical.magic?.training],['magic_research',magical.magic?.research],['magic_reserves',magical.magic?.reserves],['magical_health',magical.medicine?.diagnoses]]){for(const r of rows?.records||[])actorRows(actor,k,r,3);actorIndex.get(actor).omitted[k]=Math.max(0,(rows?.total??0)-3);}
   const extra=advanced.view(actor);for(const row of extra.motives?.records.slice(0,3)||[])actorRows(actor,'motives',row,3);actorIndex.get(actor).omitted.motives=Math.max(0,(extra.motives?.total??0)-3);
   const deeper=depth.view(actor);
   for(const category of ['fields','beliefs']){const rows=deeper.psychology?.[category];if(!rows)continue;const k=category==='fields'?'psychology':'beliefs';for(const row of rows.records.slice(0,3))actorRows(actor,k,row,3);actorIndex.get(actor).omitted[k]=Math.max(0,rows.total-3);}
@@ -376,7 +380,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const o of recent(projection.obligations||[]))if(!closed.has(text(o.status)))actorRows(o.actor,'responsibilities',{kind:'commitment',title:clip(o.description||o.evidence),status:o.status,deadline:o.due_at||o.deadline||o.due||null,source:source(o)},6);
  // Round-robin across actors AND categories, reserving counts up front.
  // Bound extra turn payload even if all participants have lengthy records.
- const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen','resources','experience','responsibilities','personality_history','life_interests','life_goals','life_threads','life_circles','life_experience','life_causes','psychology','beliefs','motives'];
+ const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen','resources','experience','responsibilities','personality_history','life_interests','life_goals','life_threads','life_circles','life_experience','life_causes','psychology','beliefs','motives','magic_training','magic_research','magic_reserves','magical_health'];
  const actor_context=actorQueues.map(({actor,age,omitted,...rows})=>({actor,age,omitted:Object.fromEntries(kinds.map(k=>[k,(omitted[k]||0)+rows[k].length])),...Object.fromEntries(kinds.map(k=>[k,[]]))}));
  const actorBudget=18000;
  for(let i=0;i<12;i++)for(const kind of kinds)for(let j=0;j<actor_context.length;j++){
