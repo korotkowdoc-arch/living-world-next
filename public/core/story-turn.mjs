@@ -70,6 +70,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
     if(overlaps.length)checks.push({kind:'competing_schedule',actor,other_places:[...new Set(overlaps.map(r=>r.place))].slice(0,3),sources:overlaps.slice(0,3).map(source),policy:'Possible scheduling conflict, not proof of actual presence.'});
    }
   }
+  if(kind==='expense_share'&&row.status==='accepted'){const b=balancesByActor.get(JSON.stringify([row.actor,row.currency]));checks.push({kind:b?.known?(b.balance<row.amount?'insufficient_recorded_funds':'recorded_funds_cover_price'):'funds_unknown',actor:row.actor,amount:row.amount,currency:row.currency,balance:b?.known?b.balance:null,source:source(b)});}
   if(kind==='employment'&&row.status==='offered'){const eligibility=jobEligibility(new Map(records.map(x=>[x.key,x])),row);if(eligibility.status==='not_confirmed')checks.push({kind:'qualification_unconfirmed',missing:eligibility.missing,source:eligibility.source});}
   if(['supply_buyer','supply_supplier'].includes(kind)){
    const supplier=kind==='supply_supplier'?row.actor:row.counterparty,buyer=kind==='supply_buyer'?row.actor:row.counterparty;
@@ -166,6 +167,11 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='assignment'&&r.status==='assigned')add('assignment',r,{timing:timing(r)});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='estate_sale'&&['offered','accepted'].includes(r.status)&&records.some(x=>x.life_kind==='estate'&&x.record_id===r.estate_id&&x.actor===r.actor&&(x.last_sale_id??null)===(r.title_revision??null)))add('estate_sale',{...r,counterparty:r.buyer},{amount:r.amount,currency:r.currency,timing:'requires_character_choice'});
  for(const r of records)if(r.player_life_version===1){
+  if(r.life_kind==='expense_share'&&['proposed','accepted'].includes(r.status))add('expense_share',{...r,counterparty:r.host},{timing:timing(r),share_id:r.record_id,amount:r.amount,currency:r.currency});
+  if(r.life_kind==='care_plan'&&['proposed','accepted'].includes(r.status)){
+   add('care_plan',{...r,counterparty:r.supporter},{timing:timing(r),care_plan_id:r.record_id});
+   if(r.supporter)add('care_support',{...r,actor:r.supporter,counterparty:r.actor},{timing:timing(r),care_plan_id:r.record_id,supporter_action_only:true});
+  }
   if(r.life_kind==='household_task'&&['proposed','accepted'].includes(r.status)&&taskAccessible(householdRecords,r))add('household_task',{...r,counterparty:r.host},{timing:timing({...r,due_at:r.scheduled_on}),household_task_id:r.record_id});
   if(r.life_kind==='career_change'&&r.status==='proposed')add('career_change',r,{timing:'requires_character_choice',career_change_id:r.record_id});
   if(r.life_kind==='consequence_response'&&r.status==='planned')add('consequence_response',r,{timing:timing(r),response_id:r.record_id,next_step:clip(r.action_description)});
