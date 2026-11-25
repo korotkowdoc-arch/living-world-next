@@ -2,6 +2,7 @@ import {taskAccessible} from './duty-career.mjs';
 import {householdAccessible,jobEligibility} from './households-careers.mjs';
 import {recordedPlayerActors} from './social-dashboard.mjs';
 import {npcInitiativeView,independentSocialOpportunities,recordedHabitContext,recordedMarketOpportunities} from './npc-initiatives.mjs';
+import {npcNeedOpportunities,npcContactOpportunities,personalityHistory} from './npc-life.mjs';
 import {planTimeAdvance} from './life-calendar.mjs';
 import {playerLifeTurnSummary} from './player-life.mjs';
 /** A unified turn preparation view. All candidates are read-only. The narrator
@@ -248,6 +249,10 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  }
  // Review real order states, not an invented demand multiplier.
  if(opts.complete!==false)for(const {kind,row,info} of recordedMarketOpportunities(records,scenes,clock?.literal))add(kind,row,info);
+ if(opts.complete!==false){
+  for(const {kind,row,info} of npcNeedOpportunities(records,scenes,anchor?.literal))add(kind,row,info);
+  for(const {kind,row,info} of npcContactOpportunities(scenes,projection,clock?.literal,{shared:all.slice()}))add(kind,row,info);
+ }
  const life_context=[];
  for(const person of projection.people||[]){
   const before=characterAge(person,clock?.literal),after=characterAge(person,anchor?.literal);
@@ -276,12 +281,17 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const candidate of candidates)for(const actor of candidate.actors)addActor(actor);
  for(const initiative of npcInitiatives.initiatives)addActor(initiative.actor);
  if(scope==='background')for(const actor of focus)addActor(actor);
- const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],omitted:{}}]));
+ const actorIndex=new Map(selectedActors.map(actor=>[actor,{actor,state_fields:[],intentions:[],knowledge:[],relationships:[],recent_offscreen:[],resources:[],experience:[],responsibilities:[],personality_history:[],omitted:{}}]));
  const actorRows=(actor,kind,row,cap)=>{const ctx=actorIndex.get(actor);if(!ctx)return;
   if(ctx[kind].length<cap)ctx[kind].push(row);else ctx.omitted[kind]=(ctx.omitted[kind]||0)+1;
  };
  // Latest source in canonical ancestry first; updates of old keys are not insert order.
  const recent=rows=>rows.slice().reverse().sort((a,b)=>(positions.get(b.source?.scene_id)??-1)-(positions.get(a.source?.scene_id)??-1));
+ const personality=personalityHistory(scenes,projection,selectedActors,{complete:opts.complete!==false,limit:4});
+ for(const [actor,history] of personality){
+  for(const r of history.records)actorRows(actor,'personality_history',r,4);
+  actorIndex.get(actor).omitted.personality_history=history.total-history.records.length;
+ }
  const stateFields=new Set(['location','residence','availability','occupation','condition','injury','appearance','mood','temperament','speech_style','values','personal_goal','family_goal','pregnancy','preference','aversion','habit','coping_style','humor','register','life_stage','education','career_goal']);
  for(const p of projection.people||[]){
   if(!actorIndex.has(p.name))continue;
@@ -315,7 +325,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const o of recent(projection.obligations||[]))if(!closed.has(text(o.status)))actorRows(o.actor,'responsibilities',{kind:'commitment',title:clip(o.description||o.evidence),status:o.status,deadline:o.due_at||o.deadline||o.due||null,source:source(o)},6);
  // Round-robin across actors AND categories, reserving counts up front.
  // Bound extra turn payload even if all participants have lengthy records.
- const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen','resources','experience','responsibilities'];
+ const actorQueues=[...actorIndex.values()],kinds=['state_fields','intentions','knowledge','relationships','recent_offscreen','resources','experience','responsibilities','personality_history'];
  const actor_context=actorQueues.map(({actor,age,omitted,...rows})=>({actor,age,omitted:Object.fromEntries(kinds.map(k=>[k,(omitted[k]||0)+rows[k].length])),...Object.fromEntries(kinds.map(k=>[k,[]]))}));
  const actorBudget=18000;
  for(let i=0;i<12;i++)for(const kind of kinds)for(let j=0;j<actor_context.length;j++){
