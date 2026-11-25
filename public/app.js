@@ -241,7 +241,8 @@ function visualLibrary(w,overview,section='illustrations',focus=null){
    card.addEventListener('toggle',()=>{if(card.open)open();});body.append(img);
   }else{
    const file=node('input','field');file.type='file';file.accept='image/png,image/jpeg,image/webp';
-   body.append(para('Готовое изображение из ChatGPT или другого генератора можно прикрепить сюда.'),file,row(button('Загрузить и сохранить',()=>busy(async()=>{await uploadVisual(a,file.files?.[0]);toast('Иллюстрация сохранена.');await refresh();})),button('Проверить уже загруженный файл',()=>busy(async()=>{await finishVisual(a.id);await refresh();}),'btn secondary')));
+   const paste=node('div','rule','Можно также вставить скопированное изображение сюда (Ctrl+V).');paste.tabIndex=0;paste.addEventListener('paste',event=>{const image=[...(event.clipboardData?.files||[])].find(x=>x.type.startsWith('image/'));if(!image)return;event.preventDefault();void busy(async()=>{await uploadVisual(a,image);toast('Иллюстрация сохранена.');await refresh();});});
+   body.append(para('Готовое изображение из ChatGPT или другого генератора можно прикрепить сюда.'),paste,file,row(button('Загрузить и сохранить',()=>busy(async()=>{await uploadVisual(a,file.files?.[0]);toast('Иллюстрация сохранена.');await refresh();})),button('Проверить уже загруженный файл',()=>busy(async()=>{await finishVisual(a.id);await refresh();}),'btn secondary')));
   }
   body.append(row(button('Скопировать промпт для генерации',()=>busy(()=>copy(a.prompt)),'btn secondary'),button('Скопировать ссылку на изображение',()=>busy(()=>copy(location.origin+'/'+visualUploadHash(w.id,a.id))),'btn secondary')));
   if(a.scene_id)body.append(sceneLink(w.id,a.scene_id,'Сцена-источник'));
