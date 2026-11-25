@@ -445,7 +445,7 @@ async function openMenuSource(worldId,sceneId){
  }catch(e){if(dialog.open)body.replaceChildren(para('Не удалось прочитать источник: '+menuError(e)));}
 }
 function menuJournal(w,scenes){
- const out=node('div','menu-journal'),list=node('div'),search=node('input','field');box.addEventListener('input',e=>{if(e.target!==search&&e.target!==actor)box.dataset.syncDirty='true';});box.addEventListener('change',e=>{if(e.target!==search&&e.target!==actor)box.dataset.syncDirty='true';});
+ const out=node('div','menu-journal'),list=node('div'),search=node('input','field');
  search.type='search';search.placeholder='Дата или номер сцены';
  let offset=0;const draw=()=>{
   list.replaceChildren();const q=search.value.trim().toLocaleLowerCase('ru'),rows=scenes.map((s,i)=>({s,n:i+1})).reverse().filter(({s,n})=>!q||[s.world_time,'Сцена '+n].some(x=>String(x||'').toLocaleLowerCase('ru').includes(q)));
@@ -603,6 +603,7 @@ function renderGameMenu(){
  const w=state.world,key=w.id+':'+w.active_branch_id;
  const saved=menuUiState.get(key)||{section:'dashboard',actor:'',offset:0,group:'quick'};menuUiState.set(key,saved);
  const box=node('section','native-game-menu'),header=node('div','menu-header'),nav=node('div','menu-directory'),groups=node('div','menu-group-tabs'),tiles=node('div','menu-tiles'),search=node('input','field menu-search'),output=node('div','menu-screen'),actor=node('select','field menu-actor'),status=node('div','menu-sync-status'),breadcrumb=node('div','menu-breadcrumb');
+ box.addEventListener('input',e=>{if(e.target!==search&&e.target!==actor)box.dataset.syncDirty='true';});box.addEventListener('change',e=>{if(e.target!==search&&e.target!==actor)box.dataset.syncDirty='true';});
  search.type='search';search.placeholder='Найти раздел';search.setAttribute('aria-label','Найти раздел меню');actor.setAttribute('aria-label','Герой');
  nav.append(groups,search,tiles);
  const snap=menuSnapshotKey(w),cached=menuMemoryCache?.key===snap?menuMemoryCache:null;
