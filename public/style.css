@@ -73,3 +73,6 @@ body{background:var(--bg)}.panel,.panel.subtle,.scene,.rule,.world-card,.copybox
 @media(min-width:900px){.app-shell:has(.native-game-menu){max-width:1040px}.menu-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:520px){.menu-tile-button{gap:8px;padding:12px 23px 12px 10px;min-height:82px}.menu-tile-text small{display:none}.menu-tile-text strong{font-size:13px}.menu-glyph{width:30px;height:30px}.menu-glyph svg{width:19px;height:19px}.menu-tile-star{width:25px;font-size:15px}.menu-tile-button .menu-chevron{display:none}.menu-tiles{gap:8px}.menu-group-tab{padding:8px 11px}.menu-source-body{padding:14px}.menu-header{gap:10px}}
 @media(max-width:340px){.menu-tiles{grid-template-columns:1fr}.menu-counts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Evidence-backed task tracker */
+.task-tracker .task-card{display:grid;gap:.45rem;border-left:3px solid var(--accent,#8099d0)}.task-status{font-size:.8rem;opacity:.8}.task-history{margin-top:.3rem}.task-history .rule{padding:.5rem 0}.task-card p{margin:.15rem 0;overflow-wrap:anywhere}

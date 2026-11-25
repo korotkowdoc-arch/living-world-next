@@ -1,10 +1,15 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
+## v0.53.0 — трекер заданий и автоматическая синхронизация меню
+- [x] Candidate: project accepted plan history as current tasks and archive; stable IDs, next step, obstacle, deadline, source links, no fabricated percentages. Include task transition IDs in scene receipt and plan context in next-turn candidates. Extend narrator extraction guidance to update touched records rather than create duplicates.
+- [x] Candidate: safe auto-refresh of open read-only menu after new cloud scene; preserves section, refuses dirty forms, dialogs, settings and branch changes; polling every 15 seconds. Regression tests added.
+- [ ] CI, merge, deployment and live gameplay verification. No new canonical milestone/checklist schema yet; existing plan transitions are the tracker.
+
 ## v0.52.0 — исторические сведения о здоровье, вещах и встречах
 - [x] Candidate code: prevent absence-of-housing strings and rejected historical places from becoming destinations; long unobserved jumps yield unknown current needs rather than false critical forecasts; require observation before further time skip. Show separately reviewed health, calendar and inventory notes; keep ownership, appointments, diagnoses and scene history unchanged. Tests added.
 - [x] Actual current story: 15 source-linked notes added to the latest already-saved scene, including five menu-classified records. No scene or choice changes.
-- [ ] CI, merge, deployment and actual play verification. No canonical historical backfill or automatic native-image transfer verified.
+- [x] PR #48 merged (6f51ea0); final JavaScript/Chromium and SQL CI passed. [ ] Deployment and actual play verification. No canonical historical backfill or automatic native-image transfer verified.
 
 ## v0.51.0 — заполнение меню из подтверждённой истории и синхронизация галереи
 - [x] Found live mismatch: 28 scenes, 24 social contacts yet top-level contacts empty because episodes are not keyed worldFacts. Unify menu contacts with accepted social episode view, expose explicit recorded character goals as prioritizable tasks; source-linked historic own intentions and actual receipts with work context in dedicated sections (never retroactive shifts or ledger mutations). Clarify empty sections; route actual future state changes via narrator guidance.

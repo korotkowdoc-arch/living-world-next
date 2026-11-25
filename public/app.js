@@ -35,7 +35,7 @@ import {dynamicsView} from './core/world-dynamics.mjs';
 import {prepareStoryTurn} from './core/story-turn.mjs';
 import {economyView} from './core/economy.mjs';
 import {characterStateView} from './core/character-state.mjs';
-import {detectWorldChange} from './core/cloud-sync.mjs';
+import {detectWorldChange,canAutoSyncMenu} from './core/cloud-sync.mjs';
 import {readReaderPrefs,saveReaderPrefs} from './core/reader.mjs';
 import {sceneReaderUrl,parseSceneReaderHash,readLinkedScene} from './core/scene-links.mjs';
 import {readConfig,readSession,saveConfig,signIn,signUp,signOut} from './lib/session.mjs';
@@ -161,9 +161,10 @@ function renderRestoreArchive(){
 }
 
 async function openWorld(id){clearReaderHash();state.screen='world';state.tab='story';state.revision=null;loading();await reloadWorld(id);renderWorld();}
-async function reloadWorld(id){const [world,branches,directives,history]=await Promise.all([getWorld(id),listBranches(id),listDirectives(id),activeHistory(id,{limit:50,offset:0})]);
+async function reloadWorld(id,{accept=null}={}){const [world,branches,directives,history]=await Promise.all([getWorld(id),listBranches(id),listDirectives(id),activeHistory(id,{limit:50,offset:0})]);
   const branch=branches.find(b=>b.id===world.active_branch_id);
-  state.world={...world,head_scene_id:branch?.head_scene_id||null};state.branches=branches;state.directives=directives;state.scenes=history.slice().reverse();state.hasOlder=history.length===50;state.historyComplete=!state.hasOlder;
+  if(accept&&(!accept()||(branch?.head_scene_id??null)!==(history[0]?.id??null)))return false;
+  state.world={...world,head_scene_id:branch?.head_scene_id||null};state.branches=branches;state.directives=directives;state.scenes=history.slice().reverse();state.hasOlder=history.length===50;state.historyComplete=!state.hasOlder;return true;
 }
 /** Read-only cloud change detection: never replace the text being read or edited. */
 let syncChecking=false;
@@ -189,7 +190,9 @@ async function checkCloudChanges(){
   const head=branches.find(b=>b.id===latest.active_branch_id)?.head_scene_id??null;
   const change=detectWorldChange(snapshot,latest,head);
   if(!change||state.world?.id!==snapshot.id||state.screen!=='world')return;
-  if(document.querySelector('#cloud-change-banner'))return;
+  const autoSafe=()=>{const menu=root.querySelector('.native-game-menu'),section=menuUiState.get(snapshot.id+':'+snapshot.active_branch_id)?.section;return state.world===snapshot&&!state.pending&&state.screen==='world'&&state.tab==='menu'&&canAutoSyncMenu(change,{section,dirty:menu?.dataset.syncDirty==='true',blocked:!menu||!!root.querySelector('dialog[open],.menu-action-panel[open]')||!!document.querySelector('dialog[open]')||document.activeElement?.matches('input,textarea,select,[contenteditable=true]')});};
+  if(autoSafe()&&await reloadWorld(snapshot.id,{accept:autoSafe})){renderWorld();toast('Игровое меню обновлено из сохранённой сцены.');return;}
+  if(state.world!==snapshot||state.screen!=='world'||document.querySelector('#cloud-change-banner'))return;
   const buttonReload=button('Загрузить изменения',()=>busy(()=>refreshFromCloud(snapshot.id)),'btn secondary');
   const banner=panel(title('Есть изменения в облаке'),para(menuError(change.message)),
    para('Текст и место чтения сохранены. Новые данные загрузятся только по твоему нажатию.'),
@@ -442,7 +445,8 @@ async function openMenuSource(worldId,sceneId){
  }catch(e){if(dialog.open)body.replaceChildren(para('Не удалось прочитать источник: '+menuError(e)));}
 }
 function menuJournal(w,scenes){
- const out=node('div','menu-journal'),list=node('div'),search=node('input','field');search.type='search';search.placeholder='Дата или номер сцены';
+ const out=node('div','menu-journal'),list=node('div'),search=node('input','field');box.addEventListener('input',e=>{if(e.target!==search&&e.target!==actor)box.dataset.syncDirty='true';});box.addEventListener('change',e=>{if(e.target!==search&&e.target!==actor)box.dataset.syncDirty='true';});
+ search.type='search';search.placeholder='Дата или номер сцены';
  let offset=0;const draw=()=>{
   list.replaceChildren();const q=search.value.trim().toLocaleLowerCase('ru'),rows=scenes.map((s,i)=>({s,n:i+1})).reverse().filter(({s,n})=>!q||[s.world_time,'Сцена '+n].some(x=>String(x||'').toLocaleLowerCase('ru').includes(q)));
   for(const {s,n} of rows.slice(0,offset+20)){
@@ -654,6 +658,20 @@ function renderGameMenu(){
   for(const [k,[label,items]] of Object.entries(uiOptions)){const sel=node('select','field');for(const [v,l] of Object.entries(items)){const o=node('option','',l);o.value=v;sel.append(o);}sel.value=uiPrefs[k];sel.addEventListener('change',()=>updateUI({[k]:sel.value}));controls.append(add(node('label','input-label',label),sel));}
   controls.append(node('h3','','Показатели HUD'));for(const [k,label] of [['hunger','Голод'],['thirst','Жажда'],['energy','Энергия'],['hygiene','Гигиена'],['comfort','Комфорт'],['stress','Стресс']]){const ch=node('input');ch.type='checkbox';ch.checked=uiPrefs.hudFields.includes(k);ch.addEventListener('change',()=>updateUI({hudFields:ch.checked?[...uiPrefs.hudFields,k]:uiPrefs.hudFields.filter(x=>x!==k)}));controls.append(add(node('label','menu-check'),ch,document.createTextNode(label)));}for(const warning of prefs.warnings)controls.append(para(warning));return controls;
  }
+ function taskTrackerView(tracker){
+  const out=node('div','task-tracker');
+  for(const [label,group] of [['Активные задания',tracker.active],['Архив заданий',tracker.finished]]){
+   const section=node('details','menu-data-group');section.open=label==='Активные задания';section.append(node('summary','',label+' · '+group.total));
+   if(!group.total)section.append(para('Пока нет подтверждённых заданий.'));
+   for(const task of group.records){const card=node('article','menu-record task-card');card.append(node('strong','',task.title),node('span','task-status',menuValue(task.status,'status')));
+    if(task.due_at)card.append(para('Срок: '+task.due_at+' · '+menuValue(task.timing,'status')));
+    if(task.next_step)card.append(para('Следующий шаг: '+task.next_step));if(task.obstacle)card.append(para('Препятствие: '+task.obstacle));
+    const h=task.progress;card.append(para('Зафиксировано изменений: '+h.confirmed_updates));
+    if(h.history.records.length){const history=node('details','task-history');history.append(node('summary','','История выполнения'));for(const step of h.history.records){const line=node('div','rule');line.append(node('strong','',({start:'Задание принято',advance:'Продвижение',pause:'Пауза',resume:'Возобновлено',complete:'Выполнено',abandon:'Оставлено'})[step.action]||'Изменение'),para(step.description||'Описание не установлено'));if(step.source?.scene_id)line.append(sceneLink(w.id,step.source.scene_id,'Сцена'));history.append(line);}if(h.history.omitted)history.append(para('Более ранних записей: '+h.history.omitted));card.append(history);}
+    if(!h.history_complete)card.append(para('История загружена не полностью.'));section.append(card);
+   }if(group.omitted)section.append(para('Дополнительных заданий: '+group.omitted));out.append(section);
+  }return out;
+ }
  function priorityView(overview,prefs){
   const out=node('div'),selected=[...prefs.priorities],choices=node('div');
   const draw=()=>{choices.replaceChildren();for(const t of overview.tasks.records){
@@ -675,6 +693,7 @@ function renderGameMenu(){
   })));return out;
  }
  function show(){
+  delete box.dataset.syncDirty;
   output.replaceChildren();breadcrumb.replaceChildren();groups.replaceChildren();tiles.replaceChildren();
   const prefs=menuPreferences(state.directives,w.active_branch_id);
   const menu=gameMenuContext({world:w,directives:state.directives,context:{head_scene_id:w.head_scene_id,memory_complete:complete}});
@@ -725,7 +744,7 @@ function renderGameMenu(){
   if(section.id==='journal'){output.append(menuJournal(w,scenes));return;}else if(section.id==='memories'){output.append(menuMemories(w,overview,projection));return;}else if(['library','documents','archives','publishing','letters','news','notebooks','catalogues','medical_records','bank_records','gallery'].includes(section.id)){
    output.append(readableMaterials(section.id,overview,documentIndex(scenes,projection,{complete}),w,saved.actor));
    if(section.id==='news')output.append(title('Известия и подписки'),renderMenuData({knowledge:overview.world_depth.news,...overview.advanced.channels}));
-  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else {const data=menuSection(overview,section.id).data;if(!hasMenuRecords(data)&&!['character','health','psychology','calendar'].includes(section.id))output.append(para(EMPTY_SECTION_HINTS[section.id]||EMPTY_SECTION_HINTS.default));output.append(renderMenuData(data));if(section.id==='inventory'&&data.reviewed_inventory?.total)output.append(renderMenuData({reviewed_inventory:data.reviewed_inventory}));}
+  }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else if(section.id==='property'){const {floorplans,...rest}=menuSection(overview,section.id).data;output.append(renderFloorplans(w,overview),renderMenuData(rest));}else {const data=menuSection(overview,section.id).data;if(section.id==='tasks'){output.append(taskTrackerView(data.task_tracker));delete data.task_tracker;data.current_tasks={...data.current_tasks,records:data.current_tasks.records.filter(x=>!x.id.startsWith('plan:'))};}if(!hasMenuRecords(data)&&!['character','health','psychology','calendar'].includes(section.id))output.append(para(EMPTY_SECTION_HINTS[section.id]||EMPTY_SECTION_HINTS.default));output.append(renderMenuData(data));if(section.id==='inventory'&&data.reviewed_inventory?.total)output.append(renderMenuData({reviewed_inventory:data.reviewed_inventory}));}
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   const actionPanel=node('details','menu-action-panel');actionPanel.append(node('summary','','Действия героя в истории'),para('Просмотр данных работает здесь. Эти действия требуют сыгранной сцены в ChatGPT и сами не изменяют мир.'));
   let actionStart=output.childNodes.length;
@@ -1388,8 +1407,8 @@ document.querySelector('#homeLink').addEventListener('click',e=>{e.preventDefaul
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Ошибка подключения. Попробуй обновить страницу.',true);});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void checkCloudChanges();});
 window.addEventListener('focus',()=>void checkCloudChanges());
-// While visible, check only inexpensive owner/branch metadata; never download scenes automatically.
-setInterval(()=>{if(document.visibilityState==='visible')void checkCloudChanges();},90000);
+// Poll owner metadata; only safe read-only menu screens refresh their snapshot automatically.
+setInterval(()=>{if(document.visibilityState==='visible')void checkCloudChanges();},15000);
 if(!(readSession()&&resumeOAuth()))void busy(openLanding);
 window.addEventListener('hashchange',()=>{
  if(state.pending){toast('Дождись завершения операции и обнови страницу для открытия ссылки.',true);return;}
