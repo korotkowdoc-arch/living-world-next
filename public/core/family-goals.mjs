@@ -61,12 +61,18 @@ export function familyGoalTransition(r,e){
  }
  return null;
 }
+export function familyBirthDateError(records,e){
+ if(e.type!=='character'||!Object.hasOwn(e.state_patch||{},'birth_date'))return null;
+ const birth=[...records.values()].find(x=>x.life_kind==='child_birth'&&x.actor===e.name?.trim());
+ return birth&&birth.born_on!==e.state_patch.birth_date?'Recorded birth date cannot be changed by character patch':null;
+}
 export function familyGoalSceneError(e,events,i,worldTime){
  if(e.player_life_version!==1)return null;
  const prior=events.slice(0,i);
  if(['child_birth','child_milestone'].includes(e.life_kind)){
   const stamp=parseStoryDate(worldTime);
   if(worldTime!==undefined&&(!stamp||stamp.day!==(e.born_on??e.occurred_on)))return 'Birth and milestone require recorded scene calendar date';
+  if(e.life_kind==='child_birth'&&!prior.some(x=>x.type==='character'&&x.name?.trim()===e.actor&&x.state_patch?.birth_date===e.born_on))return 'Birth needs matching character birth_date in same scene';
   if(!prior.some(x=>x.dynamics_version===1&&x.dynamics_kind==='family_event'&&x.record_id===e.family_event_id&&x.status==='completed'))return 'Family event must be completed in same scene';
  }
  if(e.life_kind==='shared_goal_step'&&!prior.some(x=>x.record_id===e.completion_id&&x.status==='completed'&&(e.completion_kind==='activity'?x.activity_version===1&&x.activity_kind==='activity':x.dynamics_version===1&&x.dynamics_kind==='family_event')))return 'Goal step requires actual completion in same scene';
@@ -87,4 +93,4 @@ export function familyGoalView(projection={},actor,clock=null){
  });
  return {children:page(children),goals:page(goals),policy:'Age is derived from recorded birth day and fictional date only. Milestones and goals require recorded events; no automatic development, consent or relationship change.'};
 }
-export const FAMILY_GOAL_GUIDANCE='СЕМЬЯ И СОВМЕСТНЫЕ ЦЕЛИ: player_life_version=1,record_id,key=player-life:<life_kind>:<ID>,evidence. child_birth: actor=ребёнок,parent,born_on (дата сцены),family_event_id (completed birth, в той же сцене, оба участника),status=recorded. Нужен bond parenthood parent→child. Не придумывай рождение или согласие персонажей. child_milestone: actor=родитель,child_id,family_event_id (completed в той же сцене),occurred_on=дата сцены,title,category=care/education/birthday/development/other,description,status=recorded; категория соответствует family_event care/education/birthday/other/other, оба участника. Возраст только от даты рождения и игрового времени, не повышает автоматически навыки или самостоятельность. shared_goal: actor=организатор,title,description,due_at,steps:[{id,title}] (1–12),status=proposed/active/completed/cancelled; хотя бы один другой участник должен явно принять для active/completed; все шаги пройдены для completed, outcome при закрытии. shared_goal_member: actor=приглашённый,organizer,goal_id,status=invited/accepted/declined/left/removed,outcome после приглашения. shared_goal_step: actor=принявший участник/организатор,goal_id,step_id,completion_kind=activity/family_event,completion_id, status=completed,outcome; отдельное completed событие с участием исполнителя в этой сцене, не использовать повторно для шагов одной цели. Не выбирать за игрока; совместная цель не означает общие деньги или автоматический успех.';
+export const FAMILY_GOAL_GUIDANCE='СЕМЬЯ И СОВМЕСТНЫЕ ЦЕЛИ: player_life_version=1,record_id,key=player-life:<life_kind>:<ID>,evidence. child_birth: actor=ребёнок,parent,born_on (дата сцены),family_event_id (completed birth, в той же сцене, оба участника),status=recorded. Нужны bond parenthood parent→child и character state_patch.birth_date той же даты в этой сцене. Не придумывай рождение или согласие персонажей. child_milestone: actor=родитель,child_id,family_event_id (completed в той же сцене),occurred_on=дата сцены,title,category=care/education/birthday/development/other,description,status=recorded; категория соответствует family_event care/education/birthday/other/other, оба участника. Возраст только от даты рождения и игрового времени, не повышает автоматически навыки или самостоятельность. shared_goal: actor=организатор,title,description,due_at,steps:[{id,title}] (1–12),status=proposed/active/completed/cancelled; хотя бы один другой участник должен явно принять для active/completed; все шаги пройдены для completed, outcome при закрытии. shared_goal_member: actor=приглашённый,organizer,goal_id,status=invited/accepted/declined/left/removed,outcome после приглашения. shared_goal_step: actor=принявший участник/организатор,goal_id,step_id,completion_kind=activity/family_event,completion_id, status=completed,outcome; отдельное completed событие с участием исполнителя в этой сцене, не использовать повторно для шагов одной цели. Не выбирать за игрока; совместная цель не означает общие деньги или автоматический успех.';
