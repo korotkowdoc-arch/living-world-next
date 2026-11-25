@@ -1,11 +1,18 @@
 # LIVING WORLD NEXT — единый актуальный план
 Обновлено: 2026-11-25. GitHub: `korotkowdoc-arch/living-world-next`, ветка `main`. Отдельный старый проект `living-world` не смешиваем.
 
-## v0.45.1 — комнаты и непрерывность (candidate)
+## v0.46.0 — общественные институты (candidate)
+- [x] Seven canonical civic record types: recorded appointment/revocation, court case and handover, delivered notice, submission, decision, fixed-electorate motion, unique informed ballot. Existing institution/group/membership gate, immutable identities, separate decision before closure, verified quorum and vote outcome. No automatic sanctions or laws.
+- [x] Own civic records and delivered notices in communities menu, NPC review opportunities without committing choices. Regression tests, app shell, release marker. Application preflight; specialized SQL parity remains open.
+- [x] Initial Node CI 45656206722 and SQL CI 45656206741 passed. Additional fail-closed duplicate membership, assigned case access, visible menu actions and explicit ballot choice implemented with regressions; final CI pending.
+- [ ] Final CI, merge, cloud and real-world verification. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
+
+## v0.45.1 — комнаты и непрерывность
 - [x] Room observations with stable area identity, purpose, walls/flooring/lighting, current title epoch, own-room menu, effective furniture, known condition, and image subjects; no implicit repairs or spending. Reconfirm after ownership changes. No new MCP tool or SQL schema.
 - [x] Explicit tests of subscription visibility and academic assessment identity; ambiguous same-title modules no longer auto-match.
 - [x] Fixed growing narrator prompt budget: complete schema instructions remain in narrator_workflow, connected/oversized prose prompt uses compact core guidance without truncating player rules; regression tests.
-- [ ] Combined CI, live deployment and gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
+- [x] PR #39 merged (0aad93d); Node CI 45655801001 and SQL CI 45655800891 passed.
+- [ ] Live deployment and gameplay verification. Floorplan rendering, lease permissions for structural work, autonomous institutional outcomes and asset backups remain open.
 
 ## v0.45.0 — Living Civilization: координация систем
 - [x] Narrator-only coordination of overlapping canonical lessons, assessments, shifts and appointments, including teacher participation but not fictitious employer attendance. Bounded sweep, exact windows, no automatic action.

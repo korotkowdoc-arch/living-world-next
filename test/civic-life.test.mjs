@@ -1,0 +1,78 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {replay,validateStateAppend} from '../public/core/continuity.mjs';
+import {civicIndex,civicTransition,validateCivicAction,civicActionTargets} from '../public/core/civic-life.mjs';
+import {playerMenuOverview,menuSection} from '../public/core/game-menu.mjs';
+const source={scene_id:'s',event_id:'e'};
+const ev=(kind,id,fields)=>({id:'ev_'+id,type:'world',player_life_version:1,life_kind:kind,record_id:id,key:'player-life:'+kind+':'+id,evidence:'Confirmed event.',...fields});
+const group={id:'group',type:'world',social_record_version:1,social_kind:'group',record_id:'g',key:'social:group:g',name:'Council',purpose:'Civic matters',status:'active',evidence:'Confirmed event.'};
+const institution={id:'inst',type:'world',dynamics_version:1,dynamics_kind:'institution',record_id:'i',key:'dynamics:institution:i',name:'Council',function:'Hear and vote',place:'Hall',group_id:'g',description:'Established',status:'operating',evidence:'Confirmed event.'};
+const membership=(id,actor)=>({id:'mem_'+id,type:'world',social_record_version:1,social_kind:'membership',record_id:id,key:'social:membership:'+id,group_id:'g',actor,status:'member',evidence:'Confirmed event.'});
+const office=(id,actor,role)=>ev('civic_office',id,{actor,institution_id:'i',role,status:'active',description:'Appointed'});
+const caseRecord=ev('civic_case','case',{actor:'Officer',institution_id:'i',title:'Complaint',description:'Private complaint',case_kind:'civil',parties:['Hero'],status:'open'});
+const caseNotice=ev('civic_notice','n',{actor:'Hero',sender:'Officer',target_kind:'case',target_id:'case',notice_kind:'opened',role:'party',title:'Notice',description:'A complaint was filed',status:'delivered'});
+const submission=ev('civic_submission','sub',{actor:'Hero',case_id:'case',title:'Response',description:'A statement',submission_kind:'response',status:'submitted'});
+const judgeNotice=ev('civic_notice','judgeNotice',{actor:'Judge',sender:'Officer',target_kind:'case',target_id:'case',notice_kind:'hearing',role:'officer',title:'Hearing',description:'Assigned to review hearing',status:'delivered'});
+const ruling=ev('civic_decision','d',{actor:'Judge',case_id:'case',disposition:'resolved',outcome:'Recorded outcome',status:'issued'});
+const motion=ev('civic_motion','m',{actor:'Councilor',institution_id:'i',title:'Proposal',description:'Private proposal',voters:['Hero','Other'],quorum:2,required_yes:2,status:'open'});
+const ballotNotice=actor=>ev('civic_notice','notice_'+actor,{actor,sender:'Councilor',target_kind:'motion',target_id:'m',notice_kind:'ballot',role:'voter',title:'Ballot notice',description:'A proposal is open',status:'delivered'});
+const ballot=(id,actor,vote)=>ev('civic_ballot',id,{actor,motion_id:'m',vote,status:'cast'});
+const initial=[group,institution,membership('off','Officer'),membership('judge','Judge'),membership('councilor','Councilor'),membership('hero','Hero'),membership('other','Other'),office('officer','Officer','investigator'),office('judge','Judge','magistrate'),office('councilor','Councilor','councillor')];
+const records=xs=>new Map(xs.map(r=>[r.key,{...r,source}]));
+const scene=(id,events)=>({id,events,body:'Confirmed event.',world_time:'2000-01-01 09:00'});
+test('case requires recorded authority, delivered notice, distinct decision before closing and no automatic sanctions',()=>{
+ const r=records(initial);
+ assert.ok(civicTransition(r,{...caseRecord,actor:'Hero'}));assert.equal(civicTransition(r,caseRecord),null);
+ r.set(caseRecord.key,{...caseRecord,source});
+ assert.ok(civicTransition(r,submission));assert.ok(civicTransition(r,ruling));
+ assert.equal(civicTransition(r,caseNotice),null);r.set(caseNotice.key,{...caseNotice,source});
+ assert.equal(civicTransition(r,submission),null);
+ const hearing={...caseRecord,status:'hearing'};assert.equal(civicTransition(r,hearing),null);r.set(hearing.key,{...hearing,source});
+ assert.ok(civicTransition(r,{...hearing,status:'closed'}));assert.ok(civicTransition(r,{...ruling,actor:'Officer'}));
+ assert.ok(civicTransition(r,ruling));assert.equal(civicTransition(r,judgeNotice),null);r.set(judgeNotice.key,{...judgeNotice,source});
+ assert.equal(civicTransition(r,ruling),null);r.set(ruling.key,{...ruling,source});
+ assert.equal(civicTransition(r,{...hearing,status:'closed'}),null);
+ const history=[scene('s1',initial),scene('s2',[caseRecord,caseNotice,submission])],p=replay(history);
+ assert.equal(p.validation_warnings.length,0);
+ assert.equal(validateStateAppend(history,[{...hearing,id:'hearing'},judgeNotice,ruling,{...hearing,id:'close',status:'closed'}],'Confirmed event.').ok,true);
+ const v=civicIndex(p).view('Hero');assert.equal(v.notices.total,1);assert.equal(v.submissions.total,1);assert.equal(v.managed_cases.total,0);
+ assert.doesNotMatch(JSON.stringify(v),/Private complaint/);
+ const overview=playerMenuOverview(p,'Hero',null,{scenes:history});assert.equal(menuSection(overview,'circles').data.civic.notices.total,1);
+});
+test('vote requires notice, eligible membership, one ballot, exact tally and does not expose other votes',()=>{
+ const r=records([...initial,motion]);const a=ballot('a','Hero','yes'),b=ballot('b','Other','no');
+ assert.ok(civicTransition(r,a));
+ for(const actor of ['Hero','Other']){const n=ballotNotice(actor);assert.equal(civicTransition(r,n),null);r.set(n.key,{...n,source});}
+ assert.equal(civicTransition(r,a),null);r.set(a.key,{...a,source});assert.ok(civicTransition(r,ballot('dup','Hero','no')));
+ assert.equal(civicTransition(r,b),null);r.set(b.key,{...b,source});
+ assert.ok(civicTransition(r,{...motion,status:'approved',outcome:'Approved'}));assert.equal(civicTransition(r,{...motion,status:'rejected',outcome:'Rejected'}),null);
+ const p={worldFacts:[...r.values()]},idx=civicIndex(p);
+ assert.equal(idx.view('Councilor').motions.records[0].tally.result,'rejected');
+ const hero=idx.view('Hero');assert.equal(hero.ballots.total,1);assert.equal(hero.motions.total,0);assert.doesNotMatch(JSON.stringify(hero),/Private proposal/);
+ assert.equal(civicIndex(p,{complete:false}).opportunities().length,0);
+});
+test('revoked or lost membership removes office authority; candidates never vote for a player',()=>{
+ const r=records([...initial,motion,ballotNotice('Hero')]);
+ assert.ok(civicIndex({worldFacts:[...r.values()]}).opportunities().some(x=>x.kind==='civic_ballot_review'&&x.row.actor==='Hero'));
+ const lost={...membership('hero','Hero'),status:'left',source};r.set(lost.key,lost);
+ assert.ok(civicTransition(r,ballot('a','Hero','yes')));
+ const revoked={...office('officer','Officer','investigator'),status:'revoked',source};r.set(revoked.key,revoked);
+ assert.ok(civicTransition(r,caseRecord));
+});
+
+test('civic menu actions require a visible notice, explicit vote and no already delivered result',()=>{
+ const n=ballotNotice('Hero'),r=records([...initial,motion,n]),p={worldFacts:[...r.values()]},v=civicIndex(p).view('Hero'),overview={civic:v};
+ assert.equal(civicActionTargets('civic_cast_ballot',v).length,1);
+ assert.doesNotThrow(()=>validateCivicAction({action:'civic_cast_ballot',civic_record_id:n.record_id,civic_vote:'no'},overview));
+ assert.throws(()=>validateCivicAction({action:'civic_cast_ballot',civic_record_id:n.record_id},overview));
+ assert.throws(()=>validateCivicAction({action:'civic_cast_ballot',civic_record_id:'other',civic_vote:'yes'},overview));
+ r.set('player-life:civic_ballot:a',{...ballot('a','Hero','yes'),source});
+ assert.equal(civicActionTargets('civic_cast_ballot',civicIndex({worldFacts:[...r.values()]}).view('Hero')).length,0);
+ const result=ev('civic_notice','res',{...n,id:'ev_res',record_id:'res',key:'player-life:civic_notice:res',notice_kind:'result'});
+ r.delete('player-life:civic_ballot:a');r.set(result.key,{...result,source});
+ assert.equal(civicActionTargets('civic_cast_ballot',civicIndex({worldFacts:[...r.values()]}).view('Hero')).length,0);
+});
+test('conflicting duplicate membership fails closed rather than preserving stale authority',()=>{
+ const r=records(initial),duplicate={...membership('old','Officer'),status:'left',source};
+ r.set(duplicate.key,duplicate);assert.ok(civicTransition(r,caseRecord));
+});
