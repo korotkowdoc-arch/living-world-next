@@ -1,4 +1,4 @@
-import {familyGoalSceneError} from './family-goals.mjs';
+import {familyGoalSceneError,familyBirthDateError} from './family-goals.mjs';
 import {expenseCareSceneError,expenseCareReplayError} from './expense-care.mjs';
 import {dutyCrossError} from './duty-career.mjs';
 import {employmentGate,householdSceneError,householdReplayError} from './households-careers.mjs';
@@ -147,7 +147,7 @@ function runReplay(scenes,{evidencePrevalidated=false,checkpoint=null,capture=fa
       const from={scene_id:scene.id,event_id:event.id,world_time:scene.world_time??null};
       const value={...event,source:from};
       switch(event.type){
-        case 'character': if(asText(event.name)){const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));if(typeof event.state_patch?.location==='string')acceptedLocations.set(name,event.state_patch.location);else if(Object.hasOwn(event.state_patch||{},'location'))acceptedLocations.delete(name);}break;
+        case 'character': if(asText(event.name)){const err=familyBirthDateError(worldFacts,event);if(err){failures.push({scene_id:scene.id,event_id:event.id,errors:[err]});accepted=false;break;}const name=asText(event.name);people.set(name,applyCharacter(people.get(name),event,from));if(typeof event.state_patch?.location==='string')acceptedLocations.set(name,event.state_patch.location);else if(Object.hasOwn(event.state_patch||{},'location'))acceptedLocations.delete(name);}break;
         case 'relationship': {const key=relationshipKey(event);relationships.set(key,applyRelationship(relationships.get(key),event,from));break;}
         case 'knowledge':{
           const key=knowledgeKey(event);
