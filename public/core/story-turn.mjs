@@ -33,6 +33,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  const anchor=proposed||clock;
  const interval=comparable?proposed.order-clock.order:null;
  const records=projection.worldFacts||[],dutyOccurrences=new Map(),paymentOccurrences=new Map();
+ const householdRecords=new Map(records.map(x=>[x.key,x]));
  for(const r of records)if(r.dynamics_kind==='payment_occurrence'&&r.schedule_id){if(!paymentOccurrences.has(r.schedule_id))paymentOccurrences.set(r.schedule_id,[]);paymentOccurrences.get(r.schedule_id).push(r);}
  for(const r of records)if(r.dynamics_kind==='family_event'&&r.duty_id){if(!dutyOccurrences.has(r.duty_id))dutyOccurrences.set(r.duty_id,[]);dutyOccurrences.get(r.duty_id).push(r);}
  const positions=new Map(scenes.map((s,i)=>[s.id,i]));
@@ -131,7 +132,7 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
   if(r.consequence_version===1&&r.status!=='resolved')add('consequence',r);
   if(r.growth_version===1&&r.growth_kind==='project'&&['planned','active','paused'].includes(r.status))add('project',r,{timing:timing(r)});
   if(r.dynamics_version===1){
-   if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor,dutyOccurrences.get(r.record_id)||[]);if(window&&!(window.pending_occurrences===1&&records.some(x=>x.life_kind==='household_task'&&x.duty_id===r.record_id&&x.scheduled_on===window.first_due_on&&['proposed','accepted'].includes(x.status)&&taskAccessible(new Map(records.map(y=>[y.key,y])),x))))add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
+   if(r.dynamics_kind==='family_duty'){const window=familyDutyWindow(r,clock,anchor,dutyOccurrences.get(r.record_id)||[]);if(window&&!(window.pending_occurrences===1&&records.some(x=>x.life_kind==='household_task'&&x.duty_id===r.record_id&&x.scheduled_on===window.first_due_on&&['proposed','accepted'].includes(x.status)&&taskAccessible(householdRecords,x))))add('family_duty',r,{family_kind:r.family_kind,timing:'scheduled_window_not_presence',...window});}
    if(r.dynamics_kind==='production_order'&&['planned','ongoing'].includes(r.status))add('production_order',r,{enterprise_id:r.enterprise_id,stock_lines:r.stock_lines,timing:timing(r)});
    if(r.dynamics_kind==='enterprise'&&['planned','operating','suspended'].includes(r.status))add('enterprise',r,{business_kind:r.business_kind,timing:timing(r)});
    if(r.dynamics_kind==='payment_schedule'){const window=paymentScheduleWindow(r,anchor,paymentOccurrences.get(r.record_id)||[]);if(window)add('payment_schedule',r,{...window,amount:r.amount,currency:r.currency,payment_kind:r.payment_kind,timing:'reached_requires_story'});}
@@ -164,7 +165,6 @@ export function prepareStoryTurn(scenes=[],projection={},directives=[],opts={}){
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='lesson'&&r.status==='scheduled'){const t=parseStoryDate(r.starts_at);add('lesson',{...r,counterparty:r.teacher},{starts_at:r.starts_at,ends_at:r.ends_at,timing:t&&anchor&&t.order<=anchor.order?'reached_requires_story':'future'});}
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='assignment'&&r.status==='assigned')add('assignment',r,{timing:timing(r)});
  for(const r of records)if(r.player_life_version===1&&r.life_kind==='estate_sale'&&['offered','accepted'].includes(r.status)&&records.some(x=>x.life_kind==='estate'&&x.record_id===r.estate_id&&x.actor===r.actor&&(x.last_sale_id??null)===(r.title_revision??null)))add('estate_sale',{...r,counterparty:r.buyer},{amount:r.amount,currency:r.currency,timing:'requires_character_choice'});
- const householdRecords=new Map(records.map(x=>[x.key,x]));
  for(const r of records)if(r.player_life_version===1){
   if(r.life_kind==='household_task'&&['proposed','accepted'].includes(r.status)&&taskAccessible(householdRecords,r))add('household_task',{...r,counterparty:r.host},{timing:timing({...r,due_at:r.scheduled_on}),household_task_id:r.record_id});
   if(r.life_kind==='career_change'&&r.status==='proposed')add('career_change',r,{timing:'requires_character_choice',career_change_id:r.record_id});
