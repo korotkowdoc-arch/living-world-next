@@ -1,3 +1,4 @@
+import {VISUAL_PICKER_URI,VISUAL_PICKER_MIME,VISUAL_PICKER_HTML} from './visual-picker.mjs';
 import {nativeImageDescriptor,fetchNativeImage,transferNativeImage,privateImagePath,limitedBytes,imageMime,base64Image} from './native-visual-transfer.mjs';
 import {visualRequest,visualPreferences,visualSubjects,visualReferences,visualPrompt,visualUploadHash,VISUAL_GUIDANCE} from '../public/core/visual-world.mjs';
 import {WEALTH_GUIDANCE} from '../public/core/wealth-world.mjs';
@@ -47,6 +48,7 @@ import {menuSection,gameMenuContext,MENU_GUIDANCE,menuRecordFromInput,assertMenu
 const version='2025-06-18';
 const narratorWorkflow=VISUAL_GUIDANCE+'\n'+WEALTH_GUIDANCE+'\n'+DOCUMENT_GUIDANCE+'\n'+SOCIETY_GUIDANCE+'\n'+MAGIC_GUIDANCE+'\n'+CAPITAL_GUIDANCE+'\n'+ADVANCED_GUIDANCE+'\n'+MENU_GUIDANCE+'\n'+ 'When the user plays or continues a saved world, read get_world_context with the intended actors, place and fictional target_time before writing; use its next_turn proposal. Use prepare_story_turn for different filters or additional candidate pages. Retrieve exact source scenes or focused context when relevant memory is missing. Focused context includes bounded derived historical hints when storage is available; verify their source scenes and never confuse them with canonical knowledge. Respect the player’s character agency and each NPC’s separate knowledge, goals and relationships. Long-form play by default: aim for 1500–2500 words where appropriate, never pad, pause BEFORE a meaningful decision of the player character. Present 2–5 meaningful options plus unrestricted free text, using clickable chat controls if supported (plain numbered fallback otherwise). Save only the narrated prefix with a pending player_choice event, then wait. When the user responds, validate the saved choice with validate_player_choice and record the answered event first in the next actual scene. Never treat menu options as actions or user consent. After writing the actual scene, extract its significant canonical changes yourself as events with literal evidence; the user need not annotate. When owner autosave is enabled, use save_scene with the pinned branch, expected_head, expected_rules_version and a fresh request_id. If saving fails or is uncertain, check get_scene_receipt before retrying the same request; never claim an unsaved scene is saved. Use review_scene_draft for complex transitions. Do not save brainstorming, out-of-character discussion, or unplayed proposals. When an older story has gaps, use get_memory_review_queue to locate sources and get_annotation_passages/get_story_scene to read them. If historical note storage is available, save_memory_notes can record evidence-backed retrieval aids; do not turn them into retroactive canonical events.';
 const toolsList=[
+  {name:'open_visual_upload',title:'Выбрать картинку из библиотеки ChatGPT',description:'Open the native in-chat file picker for an existing illustration request when automatic file handoff is unavailable. This only reads the request; the user explicitly selects the image and saves it from the widget.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},asset_id:{type:'string',format:'uuid'}},required:['world_id','asset_id'],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false,destructiveHint:false},_meta:{ui:{resourceUri:VISUAL_PICKER_URI},'openai/outputTemplate':VISUAL_PICKER_URI}},
   {name:'save_chatgpt_illustration',title:'Сохранить изображение ChatGPT в мир',description:'Save an actual generated or user-selected ChatGPT Library image to an existing illustration request. Use only the real file attachment supplied by ChatGPT (not invented IDs or URLs). No paid generation API, no story advance. If no authorized file is available, ask user to select the generated image from Library and retry.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},asset_id:{type:'string',format:'uuid'},image:nativeImageDescriptor},required:['world_id','asset_id','image'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:true},_meta:{'openai/fileParams':['image'],'openai/toolInvocation/invoking':'Сохраняю изображение в мир','openai/toolInvocation/invoked':'Проверка сохранённого изображения'}},
   {name:'read_world_illustration_image',title:'Открыть изображение мира',description:'Return actual private saved image pixels as MCP image content to view in chat or use as visual reference when supported. Never generates an image. Use only an active-ancestry ready asset.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},asset_id:{type:'string',format:'uuid'}},required:['world_id','asset_id'],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false,destructiveHint:false}},
   {name:'list_world_illustrations',description:'List actual stored visual library in active ancestry. Pending requests are not generated images. No scene or choice changes.',inputSchema:{type:'object',properties:{world_id:{type:'string',format:'uuid'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},required:['world_id'],additionalProperties:false}},
@@ -237,10 +239,12 @@ async function compactVisualContext(env,token,w){
 }
 async function callTool(name,args,env,token){
  switch(name){
+  case 'open_visual_upload':
   case 'save_chatgpt_illustration':
   case 'read_world_illustration_image':{
    const w=await ownerWorld(env,token,args.world_id),active=await branch(env,token,w);
    const a=await findVisual(env,token,w,x=>x.id===assertUuid(args.asset_id));if(!a)throw Error('Illustration not visible in current branch');
+   if(name==='open_visual_upload')return {world_id:w.id,id:a.id,title:a.title,status:a.status,app_url:visualLink(a).app_url};
    if(name==='read_world_illustration_image'){
     if(a.status!=='ready')throw Error('Image not saved yet');
     const bytes=await visualStorageFetch(env,token,a),mime=imageMime(bytes);
@@ -707,8 +711,8 @@ export default {
   // All protected MCP methods demand OAuth, including the initial handshake and tool scan.
   // Public discovery and health remain available to ChatGPT before the user signs in.
   if(msg.id===undefined||msg.method==='notifications/initialized')return new Response(null,{status:202});
-  if(msg.method==='server/discover')return response(JSON.stringify(done(msg.id,{resultType:'complete',supportedVersions:['2026-07-28',version],capabilities:{tools:{}},ttlMs:0,cacheScope:'public'})));
-  if(['initialize','ping','tools/list','tools/call'].includes(msg.method)){
+  if(msg.method==='server/discover')return response(JSON.stringify(done(msg.id,{resultType:'complete',supportedVersions:['2026-07-28',version],capabilities:{tools:{},resources:{}},ttlMs:0,cacheScope:'public'})));
+  if(['initialize','ping','tools/list','tools/call','resources/list','resources/read','resources/templates/list'].includes(msg.method)){
    let token;
    try{
     const raw=request.headers.get('authorization')||'';
@@ -719,9 +723,15 @@ export default {
     let hint='Bearer';try{hint=challenge(env);}catch{}
     return response(JSON.stringify({jsonrpc:'2.0',id:msg.id,result:fail('Требуется авторизация через Supabase OAuth.')}),401,{'www-authenticate':hint});
    }
-   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'living-world-next',version:'0.6.0'},instructions:narratorWorkflow})));
+   if(msg.method==='initialize')return response(JSON.stringify(done(msg.id,{protocolVersion:msg.params?.protocolVersion||version,capabilities:{tools:{listChanged:false},resources:{listChanged:false,subscribe:false}},serverInfo:{name:'living-world-next',version:'0.44.1'},instructions:narratorWorkflow})));
    if(msg.method==='ping')return response(JSON.stringify(done(msg.id,{})));
    if(msg.method==='tools/list')return response(JSON.stringify(done(msg.id,{resultType:'complete',ttlMs:0,cacheScope:'public',tools:toolsList})));
+   if(msg.method==='resources/templates/list')return response(JSON.stringify(done(msg.id,{resourceTemplates:[]})));
+   if(msg.method==='resources/list')return response(JSON.stringify(done(msg.id,{resources:[{uri:VISUAL_PICKER_URI,name:'NEXT image picker',mimeType:VISUAL_PICKER_MIME,description:'Select a ChatGPT Library image to attach to an existing illustration'}]})));
+   if(msg.method==='resources/read'){
+    if(msg.params?.uri!==VISUAL_PICKER_URI)return response(JSON.stringify(error(msg.id,-32602,'Unknown resource')));
+    return response(JSON.stringify(done(msg.id,{contents:[{uri:VISUAL_PICKER_URI,mimeType:VISUAL_PICKER_MIME,text:VISUAL_PICKER_HTML,_meta:{ui:{prefersBorder:true,csp:{connectDomains:[],resourceDomains:[]}},'openai/widgetCSP':{connect_domains:[],resource_domains:[]}}}]})));
+   }
    const name=msg.params?.name;
    if(typeof name!=='string')return response(JSON.stringify(error(msg.id,-32602,'Missing tool name')),400);
    try{return response(JSON.stringify(done(msg.id,result(await callTool(name,msg.params?.arguments||{},env,token)))));}
