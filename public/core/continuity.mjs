@@ -1,3 +1,4 @@
+import {addBudgetFlow,budgetFlowRows} from './home-systems.mjs';
 import {workSceneError,workReplayError} from './work-systems.mjs';
 import {servicePaymentError,journeyArrivalError} from './travel-services.mjs';
 import {playerLifeError,playerLifeTransitionError,applyOutfit,removeUnavailableGarment,projectLifeRecord} from './player-life.mjs';
@@ -103,8 +104,8 @@ export function validateScene({body,events=[],directives=[],evidencePrevalidated
 /** Replay only the actual ancestry of one branch, oldest first. No other branch can leak in. */
 export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) {
   const people=new Map(), relationships=new Map(), knowledge=new Map(), balances=new Map(), items=new Map(), stock=new Map(), obligations=new Map(), worldFacts=new Map(), plans=new Map(), offscreen=[];
-  const outfits=new Map();
-  const evidence=[]; const failures=[]; const relationshipHistory=[];let awaiting=null;
+  const outfits=new Map(),budgetFlows=new Map();
+  let eventCount=0; const failures=[]; const relationshipHistory=[];let awaiting=null;
   for(const scene of scenes){
     const events=Array.isArray(scene.events)?scene.events:[];
     // Replay checks the whole saved package once; current user rules NEVER rewrite past facts.
@@ -161,11 +162,11 @@ export function replay(scenes=[],directives=[],{evidencePrevalidated=false}={}) 
           break;
         }
       }
-      if(accepted){if(event.dynamics_kind==='stock_operation'&&event.dynamics_version===1)acceptedStock.set(event.id,event);if(event.type==='money')acceptedMoney.add(event.id);evidence.push(from);if(event.type==='relationship'||(event.type==='world'&&event.interaction_version===1))relationshipHistory.push({source:from});}
+      if(accepted){if(event.dynamics_kind==='stock_operation'&&event.dynamics_version===1)acceptedStock.set(event.id,event);if(event.type==='money'){acceptedMoney.add(event.id);addBudgetFlow(budgetFlows,event,from);}eventCount++;if(event.type==='relationship'||(event.type==='world'&&event.interaction_version===1))relationshipHistory.push({source:from});}
     }
   }
   const list=m=>[...m.values()];
-  return {effective_outfits:list(outfits),people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),stock:list(stock),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:evidence.length,validation_warnings:failures};
+  return {budget_flows:budgetFlowRows(budgetFlows),effective_outfits:list(outfits),people:list(people),relationships:list(relationships),knowledge:list(knowledge),balances:list(balances),items:list(items),stock:list(stock),obligations:list(obligations),worldFacts:list(worldFacts),plans:list(plans),offscreen,relationship_history:relationshipHistory,events_replayed:eventCount,validation_warnings:failures};
 }
 
 export function branchAncestry(allScenes,headId) {
