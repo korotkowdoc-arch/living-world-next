@@ -8,15 +8,15 @@ begin
  if kind='estate' then
   if old is not null or status<>'owned' or not public.nw_story_text_valid(e->'title',200) or not public.nw_story_text_valid(e->'place',140) or coalesce(e->>'estate_kind','') not in ('house','apartment','land','commercial','other') then raise exception 'Invalid or repeated estate title';end if;
  elsif kind='estate_sale' then
-  if not public.nw_home_id(e->'estate_id') or not public.nw_story_text_valid(e->'buyer',140) or e->'buyer'=e->'actor' or not public.nw_story_text_valid(e->'currency',80) or status not in ('offered','accepted','settled','cancelled') then raise exception 'Invalid estate sale';end if;
+  if not public.nw_home_id(e->'estate_id') or (e->>'title_revision' is not null and not public.nw_home_id(e->'title_revision')) or not public.nw_story_text_valid(e->'buyer',140) or e->'buyer'=e->'actor' or not public.nw_story_text_valid(e->'currency',80) or status not in ('offered','accepted','settled','cancelled') then raise exception 'Invalid estate sale';end if;
   amount:=public.nw_work_uint(e->'amount');
   if status='settled' then
    if not public.nw_story_text_valid(e->'outcome',600) or amount>0 and not public.nw_story_text_valid(e->'transfer_event_id',180) or amount=0 and e->>'transfer_event_id' is not null then raise exception 'Invalid sale settlement';end if;
   elsif e->>'transfer_event_id' is not null then raise exception 'Only settlement requires transfer';end if;
   ek:='player-life:estate:'||(e->>'estate_id');a:=st->'life'->ek;
-  if a is null or (status<>'cancelled' and a->'actor' is distinct from e->'actor') or old is null and status<>'offered' then raise exception 'Sale requires current estate owner';end if;
+  if a is null or (status<>'cancelled' and (a->'actor' is distinct from e->'actor' or a->>'last_sale_id' is distinct from e->>'title_revision')) or old is null and status<>'offered' then raise exception 'Sale requires current estate owner';end if;
   if old is not null then
-   foreach f in array array['estate_id','buyer','amount','currency'] loop
+   foreach f in array array['estate_id','buyer','amount','currency','title_revision'] loop
     if old->f is distinct from e->f then raise exception 'Changed sale terms';end if;
    end loop;
    if not (case old->>'status' when 'offered' then status in ('accepted','cancelled') when 'accepted' then status in ('settled','cancelled') else false end) then raise exception 'Invalid sale transition';end if;
