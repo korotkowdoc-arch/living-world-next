@@ -1,4 +1,4 @@
-import {taskTracker,TASK_TRACKER_GUIDANCE} from './task-tracker.mjs';
+import {taskTracker,taskLinks,parentPlanId,TASK_TRACKER_GUIDANCE} from './task-tracker.mjs';
 import {menuHistory,explicitGoalTasks} from './menu-history.mjs';
 import {ROOM_ACTIONS,validateRoomAction,ROOM_LAYOUT_GUIDANCE} from './room-layout.mjs';
 import {communityIndex,COMMUNITY_ACTIONS,COMMUNITY_GUIDANCE,validateCommunityAction} from './community-life.mjs';
@@ -204,8 +204,9 @@ export function playerMenuOverview(projection={},actor,clock=null,options={}){
  const fields=(character?.state_fields||[]).filter(x=>['appearance','location','condition','injury','occupation','education','residence','personal_goal','life_stage','birth_date'].includes(x.field));
  const held=(projection.items||[]).filter(x=>own(x.holder,actor)&&x.custody_status==='held');
  const tracker=taskTracker(projection,actor,options.scenes||[],{clock,complete:options.complete!==false,offset:options.offset??0,limit:options.limit??30});
+ const links=taskLinks(projection,actor);
  const goals=[
-  ...(projection.plans||[]).filter(x=>own(x.actor,actor)&&['active','paused'].includes(x.status)).map(x=>({id:'plan:'+x.plan_id,title:display(x.goal),status:x.status,source:sourceOf(x),next_step:x.next_step??null,obstacle:x.obstacle??null,due_at:x.due_at??x.deadline??x.due??null})),
+  ...links.rows.filter(x=>['active','paused'].includes(x.status)&&(!links.linked.has(x.plan_id)||['completed','abandoned'].includes(links.byId.get(parentPlanId(x.plan_id))?.status))).map(x=>({id:'plan:'+x.plan_id,title:display(x.goal),status:x.status,source:sourceOf(x),next_step:x.next_step??null,obstacle:x.obstacle??null,due_at:x.due_at??x.deadline??x.due??null})),
   ...(projection.obligations||[]).filter(x=>own(x.actor,actor)&&!['completed','resolved','fulfilled','cancelled','broken','ended'].includes(x.status)).map(x=>({id:'commitment:'+String(x.commitment_id??x.id??''),title:display(x.description||x.evidence||x.title),status:x.status,source:sourceOf(x)})),
   ...(projection.worldFacts||[]).filter(x=>x.growth_version===1&&x.growth_kind==='project'&&own(x.actor,actor)&&['planned','active','paused'].includes(x.status)).map(x=>({id:'project:'+x.record_id,title:display(x.title),status:x.status,source:sourceOf(x)}))
  ].filter(x=>x.title);
