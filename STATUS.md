@@ -4,7 +4,8 @@
 ## v0.46.0 — общественные институты (candidate)
 - [x] Seven canonical civic record types: recorded appointment/revocation, court case and handover, delivered notice, submission, decision, fixed-electorate motion, unique informed ballot. Existing institution/group/membership gate, immutable identities, separate decision before closure, verified quorum and vote outcome. No automatic sanctions or laws.
 - [x] Own civic records and delivered notices in communities menu, NPC review opportunities without committing choices. Regression tests, app shell, release marker. Application preflight; specialized SQL parity remains open.
-- [ ] CI, merge, cloud and real-world verification. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
+- [x] Initial Node CI 45656206722 and SQL CI 45656206741 passed. Additional fail-closed duplicate membership, assigned case access, visible menu actions and explicit ballot choice implemented with regressions; final CI pending.
+- [ ] Final CI, merge, cloud and real-world verification. Appeals, jurisdiction-specific procedures, open debates, criminal networks and actual execution of decisions remain future work.
 
 ## v0.45.1 — комнаты и непрерывность
 - [x] Room observations with stable area identity, purpose, walls/flooring/lighting, current title epoch, own-room menu, effective furniture, known condition, and image subjects; no implicit repairs or spending. Reconfirm after ownership changes. No new MCP tool or SQL schema.

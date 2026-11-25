@@ -1,3 +1,4 @@
+import {CIVIC_ACTIONS,civicActionTargets} from './core/civic-life.mjs';
 import {VISUAL_KINDS,VISUAL_SUBJECTS,VISUAL_FREQUENCIES,visualSubjects,visualReferences,visualPrompt,visibleVisuals,parseVisualHash,visualUploadHash} from './core/visual-world.mjs';
 import {listVisualAssets,getVisualPreferences,saveVisualPreferences,prepareVisual,uploadVisual,finishVisual,loadVisualBlob,archiveVisual} from './lib/visual-storage.mjs';
 import {WEALTH_ACTIONS,WEALTH_IDS,wealthActionRows} from './core/wealth-world.mjs';
@@ -512,6 +513,21 @@ function renderGameMenu(){
   }else if(section.id==='network')output.append(networkView(overview.world_depth.social,saved.actor));else if(section.id==='map')output.append(placesView(overview.world_depth.places),coordinateMap(overview.advanced.map_points));else if(section.id==='timeline')output.append(timelineView(overview.world_depth.timeline));else output.append(renderMenuData(menuSection(overview,section.id).data));
   if(['tasks','goals'].includes(section.id))output.append(priorityView(overview,prefs));
   output.append(personalActions(section,overview));
+  if(section.id==='circles'&&overview.civic?.memory_complete){
+   const actions=Object.entries(CIVIC_ACTIONS).filter(([action])=>civicActionTargets(action,overview.civic).length);
+   if(actions.length){
+    const form=node('div','rule'),action=node('select','field'),record=node('select','field'),vote=node('select','field'),detail=field('Опиши намерение, заявление или решение героя');
+    for(const [value,label] of actions){const o=node('option','',label);o.value=value;action.append(o);}
+    for(const [value,label] of [['yes','За'],['no','Против'],['abstain','Воздержаться']]){const o=node('option','',label);o.value=value;vote.append(o);}
+    const draw=()=>{record.replaceChildren();for(const r of civicActionTargets(action.value,overview.civic)){const o=node('option','',r.title||r.role||r.id);o.value=r.id;record.append(o);}vote.hidden=action.value!=='civic_cast_ballot';};
+    action.addEventListener('change',draw);draw();
+    form.append(title('Общественное действие'),action,record,vote,detail,button('Передать намерение в ChatGPT',()=>busy(async()=>{
+     const input={action:action.value,civic_record_id:record.value,detail:detail.value.trim()||CIVIC_ACTIONS[action.value],...(action.value==='civic_cast_ballot'?{civic_vote:vote.value}:{})};
+     menuActionIntent(input,overview);
+     await copy('Мир '+w.title+' ('+w.id+'), герой '+overview.actor+'. Проверь актуальный head и validate_game_menu_action: '+JSON.stringify(input)+'. Это намерение игрока, не выполненное действие. Сыграй и сохрани только подтверждённый результат.');
+    }),'btn secondary'));output.append(form);
+   }
+  }
   const magical=section.actions.filter(a=>Object.hasOwn(MAGIC_ACTIONS,a)||Object.hasOwn(SOCIETY_ACTIONS,a));
   if(magical.length){
    const sel=node('select','field'),records=node('select','field'),detail=field('Что именно ты хочешь сделать?');detail.rows=3;
